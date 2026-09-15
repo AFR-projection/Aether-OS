@@ -5,7 +5,7 @@
   "description": "Universal browser-based desktop environment for VPS and local hosts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aether-os/aether-cloud-os.git"
+    "url": "git+https://github.com/AFR-projection/Aether-OS.git"
   },
   "author": "Aether Team",
   "license": "PENDING",
@@ -13,33 +13,27 @@
     "node": ">=20.0.0",
     "pnpm": ">=8.0.0"
   },
-  "packageManager": "pnpm@8.15.0",
+  "packageManager": "pnpm@8.15.1",
   "scripts": {
-    "dev": "pnpm --filter ./packages/* run dev",
-    "dev:frontend": "pnpm --filter frontend dev",
-    "dev:backend": "pnpm --filter backend dev",
-    "dev:agent": "pnpm --filter agent dev",
+    "dev": "pnpm --recursive --parallel run dev",
+    "dev:backend": "pnpm --filter @aether/backend dev",
+    "dev:frontend": "pnpm --filter @aether/frontend dev",
     "build": "pnpm --recursive run build",
-    "build:frontend": "pnpm --filter frontend build",
-    "build:backend": "pnpm --filter backend build",
-    "build:agent": "pnpm --filter agent build",
+    "build:backend": "pnpm --filter @aether/backend build",
+    "build:frontend": "pnpm --filter @aether/frontend build",
     "test": "pnpm --recursive run test",
-    "test:unit": "pnpm --recursive run test:unit",
-    "test:integration": "pnpm --filter backend test:integration",
-    "test:e2e": "pnpm --filter frontend test:e2e",
+    "test:backend": "pnpm --filter @aether/backend test",
+    "test:shared": "pnpm --filter @aether/shared test",
     "lint": "pnpm --recursive run lint",
     "lint:fix": "pnpm --recursive run lint:fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "type-check": "pnpm --recursive run type-check",
-    "clean": "pnpm --recursive run clean && rm -rf node_modules",
-    "db:migrate": "pnpm --filter backend db:migrate",
-    "db:generate": "pnpm --filter backend db:generate",
-    "db:studio": "pnpm --filter backend db:studio",
-    "docker:dev": "docker-compose -f docker/docker-compose.dev.yml up -d",
-    "docker:dev:stop": "docker-compose -f docker/docker-compose.dev.yml down",
-    "docker:dev:logs": "docker-compose -f docker/docker-compose.dev.yml logs -f",
-    "prepare": "husky install"
+    "typecheck": "pnpm --recursive run typecheck",
+    "clean": "pnpm --recursive exec rm -rf dist coverage *.tsbuildinfo",
+    "db:migrate": "pnpm --filter @aether/backend db:migrate",
+    "docker:dev": "docker compose up -d",
+    "docker:dev:stop": "docker compose down",
+    "docker:dev:logs": "docker compose logs -f"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^6.18.0",
@@ -47,19 +41,8 @@
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
-    "husky": "^8.0.3",
-    "lint-staged": "^15.2.0",
     "prettier": "^3.1.1",
     "typescript": "^5.3.3"
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.{json,md}": [
-      "prettier --write"
-    ]
   },
   "workspaces": [
     "packages/*"
