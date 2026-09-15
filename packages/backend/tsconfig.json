@@ -4,7 +4,13 @@
     "outDir": "dist",
     "rootDir": "src",
     "composite": true,
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "types": ["node"],
+    // NodeNext so the emitted JavaScript uses specifiers Node can resolve at
+    // runtime. Relative imports in `src` therefore carry explicit `.js`
+    // extensions.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"],
