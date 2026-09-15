@@ -63,6 +63,13 @@ export interface ProcessInfo {
   state: string;
   startedAt: string | null;
   command: string;
+  /**
+   * Whether this instance will accept a signal for this process. False when the
+   * feature is disabled, and false for processes Aether refuses to touch (pid 1,
+   * and its own process and ancestors). The client renders the control from this
+   * flag rather than guessing, so the boundary is decided on the server.
+   */
+  signalable: boolean;
 }
 
 export interface ProcessListResponse {
@@ -70,4 +77,8 @@ export interface ProcessListResponse {
   total: number;
   /** True when the process table was larger than the returned page. */
   truncated: boolean;
+  /** Number of processes in the `R` state across the whole table, not the page. */
+  running: number;
+  /** True when this instance permits sending signals to processes at all. */
+  signalEnabled: boolean;
 }

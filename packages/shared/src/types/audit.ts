@@ -16,6 +16,7 @@ export const AUDIT_ACTIONS = [
   'file.uploaded',
   'file.downloaded',
   'file.renamed',
+  'process.signalled',
   'permission.denied',
   'rate_limit.exceeded',
   'settings.updated',

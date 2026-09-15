@@ -36,6 +36,10 @@ export default defineConfig({
       JWT_SECRET: 'test-only-jwt-secret-value-of-sufficient-length',
       ENCRYPTION_KEY: 'test-only-encryption-key-value-32-chars-min',
       AETHER_WORKSPACE_ROOT: workspaceRoot,
+      // Enabled so the guard tests exercise the refusal paths rather than only
+      // the "feature is off" branch. The tests never signal a live process:
+      // they assert on the refusals that happen before any signal is sent.
+      AETHER_PROCESS_SIGNAL_ENABLED: 'true',
     },
   },
 });
