@@ -1,11 +1,11 @@
-import { config, describeConfig } from './config.js';
 import { startCacheSweeper, stopCacheSweeper } from './cache/index.js';
-import { closePool, checkDatabaseHealth } from './db/pool.js';
+import { config, describeConfig } from './config.js';
 import { runMigrations } from './db/migrate.js';
-import { ensureUploadDirectory } from './services/files.service.js';
-import { killAllSessions } from './services/terminal.service.js';
+import { closePool, checkDatabaseHealth } from './db/pool.js';
 import { getWorkspaceRoot } from './security/workspace.js';
 import { buildServer } from './server.js';
+import { ensureUploadDirectory } from './services/files.service.js';
+import { killAllSessions } from './services/terminal.service.js';
 import { logger } from './utils/logger.js';
 
 /**

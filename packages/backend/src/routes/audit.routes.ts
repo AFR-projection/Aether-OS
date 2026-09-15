@@ -1,10 +1,11 @@
 import { AUDIT_ACTIONS, paginationSchema } from '@aether/shared';
-import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { listAuditEvents } from '../services/audit.service.js';
 import { parseOrThrow } from '../utils/validate.js';
+
+import type { FastifyInstance } from 'fastify';
 
 const auditQuerySchema = paginationSchema.extend({
   action: z.enum(AUDIT_ACTIONS).optional(),

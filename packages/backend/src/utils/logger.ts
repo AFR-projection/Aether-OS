@@ -1,7 +1,6 @@
 import { pino, type Logger } from 'pino';
 
 import { config, describeConfig } from '../config.js';
-
 import { AETHER_VERSION } from './version.js';
 
 /**

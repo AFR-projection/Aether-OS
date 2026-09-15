@@ -4,7 +4,7 @@ import {
   terminalIdParamSchema,
   terminalInputBodySchema,
 } from '@aether/shared';
-import type { FastifyInstance } from 'fastify';
+
 
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
 import { issueTicket } from '../security/ws-ticket.js';
@@ -21,6 +21,8 @@ import {
 } from '../services/terminal.service.js';
 import { NotFoundError } from '../utils/errors.js';
 import { parseOrThrow } from '../utils/validate.js';
+
+import type { FastifyInstance } from 'fastify';
 
 export async function registerTerminalRoutes(app: FastifyInstance): Promise<void> {
   const guards = [authenticate, requirePermission('terminal:create')];

@@ -127,6 +127,9 @@ importers:
 
   packages/frontend:
     dependencies:
+      '@aether/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@tanstack/react-query':
         specifier: ^5.51.23
         version: 5.102.8(react@18.3.1)

@@ -4,12 +4,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 import { config } from '../config.js';
+import { toPublicUser, type UserRow } from './user.service.js';
 import { query, queryOne } from '../db/pool.js';
-import { UnauthenticatedError } from '../utils/errors.js';
 import { parseDurationMs } from '../utils/duration.js';
+import { UnauthenticatedError } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
 
-import { toPublicUser, type UserRow } from './user.service.js';
 
 const log = subsystemLogger('auth');
 

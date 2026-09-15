@@ -9,7 +9,7 @@ import {
   uploadQuerySchema,
   writeFileBodySchema,
 } from '@aether/shared';
-import type { FastifyInstance } from 'fastify';
+
 
 import { config } from '../config.js';
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
@@ -28,6 +28,8 @@ import {
 } from '../services/files.service.js';
 import { PayloadTooLargeError, PathRejectedError } from '../utils/errors.js';
 import { parseOrThrow } from '../utils/validate.js';
+
+import type { FastifyInstance } from 'fastify';
 
 /**
  * Filesystem API.

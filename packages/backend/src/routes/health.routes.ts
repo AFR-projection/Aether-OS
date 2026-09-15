@@ -1,8 +1,9 @@
-import type { FastifyInstance } from 'fastify';
 
 import { checkDatabaseHealth } from '../db/pool.js';
 import { isTerminalAvailable, terminalStats } from '../services/terminal.service.js';
 import { AETHER_VERSION } from '../utils/version.js';
+
+import type { FastifyInstance } from 'fastify';
 
 /**
  * Liveness and readiness endpoints.

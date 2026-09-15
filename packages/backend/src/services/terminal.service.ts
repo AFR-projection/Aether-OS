@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import type { IPty } from 'node-pty';
 
 import {
   LIMITS,
@@ -14,6 +13,8 @@ import { config } from '../config.js';
 import { getWorkspaceRoot, joinToRoot, resolveExistingPath } from '../security/workspace.js';
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
+
+import type { IPty } from 'node-pty';
 
 const log = subsystemLogger('terminal');
 

@@ -1,12 +1,13 @@
-import type { AuthenticatedPrincipal, Permission } from '@aether/shared';
-import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { cache } from '../cache/index.js';
 import { config } from '../config.js';
+import { recordAuditEvent } from '../services/audit.service.js';
 import { findSessionById, isSessionActive, touchSession, verifyAccessToken } from '../services/auth.service.js';
 import { toPublicUser, findUserById } from '../services/user.service.js';
-import { recordAuditEvent } from '../services/audit.service.js';
 import { ForbiddenError, UnauthenticatedError } from '../utils/errors.js';
+
+import type { AuthenticatedPrincipal, Permission } from '@aether/shared';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 declare module 'fastify' {
   interface FastifyRequest {

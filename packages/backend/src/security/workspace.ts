@@ -1,5 +1,4 @@
 import { lstat, mkdir, realpath } from 'node:fs/promises';
-import type { Stats } from 'node:fs';
 import path from 'node:path';
 
 import { isSafeRelativePath, normalizeRelativePath } from '@aether/shared';
@@ -7,6 +6,8 @@ import { isSafeRelativePath, normalizeRelativePath } from '@aether/shared';
 import { config } from '../config.js';
 import { PathRejectedError } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
+
+import type { Stats } from 'node:fs';
 
 const log = subsystemLogger('workspace');
 

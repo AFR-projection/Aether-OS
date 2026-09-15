@@ -1,6 +1,7 @@
+import { ValidationError } from './errors.js';
+
 import type { z } from 'zod';
 
-import { ValidationError } from './errors.js';
 
 /**
  * Validates `value` against `schema`, throwing a `ValidationError` with

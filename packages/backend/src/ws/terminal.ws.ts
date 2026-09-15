@@ -1,10 +1,12 @@
 import { LIMITS, terminalClientMessageSchema, WS_CLOSE, type TerminalServerMessage } from '@aether/shared';
-import type { FastifyInstance } from 'fastify';
+
 
 import { config } from '../config.js';
 import { redeemTicket } from '../security/ws-ticket.js';
 import { attach, isTerminalAvailable, resizeSession, sendSignal, writeInput } from '../services/terminal.service.js';
 import { subsystemLogger } from '../utils/logger.js';
+
+import type { FastifyInstance } from 'fastify';
 
 const log = subsystemLogger('terminal-ws');
 

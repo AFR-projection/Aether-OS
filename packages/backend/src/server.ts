@@ -11,7 +11,7 @@ import Fastify, {
   type FastifyInstance,
   type RawServerDefault,
 } from 'fastify';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+
 
 import { config } from './config.js';
 import { registerAuditRoutes } from './routes/audit.routes.js';
@@ -23,6 +23,8 @@ import { registerTerminalRoutes } from './routes/terminal.routes.js';
 import { isAppError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
 import { registerTerminalWebSocket } from './ws/terminal.ws.js';
+
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 /** Maximum size of a JSON request body. File uploads stream and are limited separately. */
 const JSON_BODY_LIMIT_BYTES = 6 * 1024 * 1024;

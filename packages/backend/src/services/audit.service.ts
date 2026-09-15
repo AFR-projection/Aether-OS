@@ -1,7 +1,8 @@
-import type { AuditAction, AuditOutcome } from '@aether/shared';
 
 import { query } from '../db/pool.js';
 import { subsystemLogger } from '../utils/logger.js';
+
+import type { AuditAction, AuditOutcome } from '@aether/shared';
 
 const log = subsystemLogger('audit');
 
