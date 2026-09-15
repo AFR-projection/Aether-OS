@@ -4,7 +4,13 @@
     "outDir": "dist",
     "rootDir": "src",
     "composite": true,
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "types": ["node"],
+    // NodeNext, not `bundler`: this package is consumed by a Node process at
+    // runtime, so relative imports must compile to specifiers Node can resolve
+    // (hence the explicit `.js` extensions in source).
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
