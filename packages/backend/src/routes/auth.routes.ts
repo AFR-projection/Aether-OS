@@ -13,7 +13,7 @@ import {
   userIdParamSchema,
   type AuthSession,
 } from '@aether/shared';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+
 
 import { config } from '../config.js';
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
@@ -47,6 +47,8 @@ import {
 } from '../services/user.service.js';
 import { ConflictError, ForbiddenError, NotFoundError, UnauthenticatedError } from '../utils/errors.js';
 import { parseOrThrow } from '../utils/validate.js';
+
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 /** Failed attempts before an account is temporarily locked. */
 const LOCK_THRESHOLD = 10;
@@ -335,10 +337,14 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
 
     await updateUser(user.id, { passwordHash: await hashPassword(body.newPassword) });
 
-    // Every other session is revoked; the current one is kept alive so the user
-    // is not thrown out of the tab they changed the password in.
+    // Every session is revoked, including the one this request arrived on —
+    // changing a password must not leave a stolen refresh token usable. A fresh
+    // session is then issued and its tokens are returned here, because the
+    // caller's existing pair is now dead. (Returning nothing would sign the user
+    // out of the tab they just changed their password in, once the five-second
+    // session cache expired and the next request failed.)
     const revoked = await revokeAllSessionsForUser(user.id, 'password_changed');
-    await createSession({
+    const session = await createSession({
       userId: user.id,
       userAgent: request.headers['user-agent'] ?? null,
       ipAddress: request.ip,
@@ -349,12 +355,14 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       outcome: 'success',
       actorUserId: user.id,
       actorUsername: user.username,
-      sessionId: principal.sessionId,
+      sessionId: session.sessionId,
       metadata: { change: 'password', sessionsRevoked: revoked },
       ...requestContext(request),
     });
 
-    return reply.send({ data: { sessionsRevoked: revoked } });
+    return reply.send({
+      data: { ...buildLoginResponse(user, session), sessionsRevoked: revoked },
+    });
   });
 }
 

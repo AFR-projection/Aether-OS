@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  /* A desktop environment is a fixed-viewport app: the only things that scroll
+     are the individual window bodies, never the page itself. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.surface.500') transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: theme('colors.surface.500');
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme('colors.accent.DEFAULT');
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* xterm.js needs an explicitly positioned container; without this the canvas
+     renderer collapses to zero height inside a flex window body. */
+  .terminal-host {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    padding: 6px 8px;
+    overflow: hidden;
+  }
+
+  .terminal-host .xterm {
+    height: 100%;
+  }
+
+  .terminal-host .xterm-viewport {
+    background-color: transparent !important;
+    scrollbar-width: thin;
+  }
+}
