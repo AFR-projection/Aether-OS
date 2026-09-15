@@ -87,3 +87,17 @@ CREATE TABLE IF NOT EXISTS aether.settings (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid REFERENCES aether.users (id) ON DELETE SET NULL
 );
+
+-- ---------------------------------------------------------------------------
+-- host_agents (paired remote machines)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS aether.host_agents (
+  id              uuid PRIMARY KEY,
+  label           text NOT NULL,
+  token_hash      text NOT NULL,
+  owner_user_id   uuid NOT NULL REFERENCES aether.users (id) ON DELETE CASCADE,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  revoked_at      timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS host_agents_owner_idx ON aether.host_agents (owner_user_id);

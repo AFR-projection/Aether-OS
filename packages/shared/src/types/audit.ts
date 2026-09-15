@@ -20,6 +20,8 @@ export const AUDIT_ACTIONS = [
   'permission.denied',
   'rate_limit.exceeded',
   'settings.updated',
+  'agent.paired',
+  'agent.revoked',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

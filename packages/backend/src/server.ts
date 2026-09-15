@@ -15,6 +15,7 @@ import Fastify, {
 
 import { config } from './config.js';
 import { registerAuditRoutes } from './routes/audit.routes.js';
+import { registerAgentRoutes } from './routes/agent.routes.js';
 import { registerAuthRoutes, registerUserRoutes } from './routes/auth.routes.js';
 import { registerFilesRoutes } from './routes/files.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
@@ -23,6 +24,7 @@ import { registerTerminalRoutes } from './routes/terminal.routes.js';
 import { isAppError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
 import { registerTerminalWebSocket } from './ws/terminal.ws.js';
+import { registerAgentWebSocket } from './ws/agent.ws.js';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -132,7 +134,9 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerTerminalRoutes(app);
   await registerSystemRoutes(app);
   await registerAuditRoutes(app);
+  await registerAgentRoutes(app);
   await registerTerminalWebSocket(app);
+  await registerAgentWebSocket(app);
 
   const servingFrontend = await registerStaticFrontend(app);
 
