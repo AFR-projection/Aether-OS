@@ -13,15 +13,18 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest",
+    "test": "vitest run",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "ws": "^8.18.0",
+    "@aether/shared": "workspace:*",
     "node-pty": "^1.0.0",
+    "pino": "^9.0.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8",
     "chokidar": "^3.6.0"
   },
   "devDependencies": {
