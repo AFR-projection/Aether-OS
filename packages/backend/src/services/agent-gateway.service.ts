@@ -2,18 +2,9 @@ import { Buffer } from 'node:buffer';
 import { readFile, writeFile, readdir, stat, mkdir, unlink, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 
-import { ALLOWED_PROCESS_SIGNALS } from './system.service.js';
-
-import { getSystemInfo, listProcesses, signalProcess } from './system.service.js';
+import { ALLOWED_PROCESS_SIGNALS, getSystemInfo, listProcesses, signalProcess } from './system.service.js';
+import { createSession, writeInput, resizeSession, sendSignal, killSession, listSessionsForUser } from './terminal.service.js';
 import { resolveExistingPath, resolvePathForWrite } from '../security/workspace.js';
-import {
-  createSession,
-  writeInput,
-  resizeSession,
-  sendSignal,
-  killSession,
-  listSessionsForUser,
-} from './terminal.service.js';
 import { subsystemLogger } from '../utils/logger.js';
 
 import type { AgentRecord } from './agent-pairing.service.js';

@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { ForbiddenError, NotImplementedError } from '../utils/errors.js';
-
 import { ALLOWED_PROCESS_SIGNALS, listProcesses, signalProcess } from './system.service.js';
+import { ForbiddenError, NotImplementedError } from '../utils/errors.js';
 
 /**
  * Process-management guardrails.
@@ -87,9 +86,13 @@ describe('listProcesses', () => {
     const listing = await listProcesses({ limit: 5 });
 
     expect(listing).toMatchObject({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       total: expect.any(Number),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       truncated: expect.any(Boolean),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       running: expect.any(Number),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       signalEnabled: expect.any(Boolean),
     });
     expect(Array.isArray(listing.processes)).toBe(true);

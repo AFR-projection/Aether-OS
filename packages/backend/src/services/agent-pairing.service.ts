@@ -2,8 +2,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { config } from '../config.js';
 import { query } from '../db/pool.js';
-import { subsystemLogger } from '../utils/logger.js';
 import { ForbiddenError, UnauthenticatedError } from '../utils/errors.js';
+import { subsystemLogger } from '../utils/logger.js';
 
 const log = subsystemLogger('agent-pairing');
 

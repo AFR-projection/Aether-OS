@@ -13,7 +13,7 @@ const AGENT: AgentRecord = {
 
 function parseReply(raw: string | null): { replyTo: string; ok: boolean; result?: unknown; error?: { code: string; message: string } } {
   expect(raw).not.toBeNull();
-  return JSON.parse(raw as string);
+  return JSON.parse(raw as string) as { replyTo: string; ok: boolean; result?: unknown; error?: { code: string; message: string } };
 }
 
 /**

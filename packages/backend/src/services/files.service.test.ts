@@ -4,9 +4,6 @@ import { Readable } from 'node:stream';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ConflictError, NotFoundError, PathRejectedError, PayloadTooLargeError } from '../utils/errors.js';
-import { getWorkspaceRoot } from '../security/workspace.js';
-
 import {
   createDirectory,
   deletePath,
@@ -18,6 +15,9 @@ import {
   streamToFile,
   writeFile,
 } from './files.service.js';
+import { getWorkspaceRoot } from '../security/workspace.js';
+import { ConflictError, NotFoundError, PathRejectedError, PayloadTooLargeError } from '../utils/errors.js';
+
 
 /**
  * Filesystem service tests against the real filesystem.
