@@ -34,33 +34,33 @@ model User {
   passwordHash          String
   name                  String
   role                  UserRole  @default(MEMBER)
-  
+
   // 2FA
   twoFactorEnabled      Boolean   @default(false)
   twoFactorSecret       String?   // encrypted
-  
+
   // Account status
   emailVerified         Boolean   @default(false)
   accountLocked         Boolean   @default(false)
   lockReason            String?
-  
+
   // Security
   failedLoginAttempts   Int       @default(0)
   lastFailedLoginAt     DateTime?
   lastPasswordChangeAt  DateTime  @default(now())
-  
+
   // Metadata
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   lastLoginAt           DateTime?
-  
+
   // Relations
   sessions              Session[]
   hosts                 Host[]
   auditLogs             AuditLog[]
   notifications         Notification[]
   workspaces            Workspace[]
-  
+
   @@index([email])
   @@map("users")
 }
@@ -76,23 +76,23 @@ model Session {
   id            String    @id @default(cuid())
   userId        String
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   deviceId      String?
   deviceName    String?
   deviceType    String?   // "desktop", "mobile", "tablet"
   ipAddress     String
   userAgent     String
-  
+
   refreshToken  String    @unique // hashed
-  
+
   createdAt     DateTime  @default(now())
   lastActiveAt  DateTime  @default(now())
   expiresAt     DateTime
-  
+
   revoked       Boolean   @default(false)
   revokedAt     DateTime?
   revokedReason String?
-  
+
   @@index([userId])
   @@index([refreshToken])
   @@map("sessions")
@@ -104,13 +104,13 @@ model PairingToken {
   userId        String
   hostId        String?
   agentVersion  String?
-  
+
   createdAt     DateTime  @default(now())
   expiresAt     DateTime
-  
+
   used          Boolean   @default(false)
   usedAt        DateTime?
-  
+
   @@index([token])
   @@map("pairing_tokens")
 }
@@ -124,31 +124,31 @@ model Host {
   hostId            String      @unique // from agent
   userId            String
   user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   name              String?     // user-assigned name
-  
+
   // Host Agent
   agentVersion      String
   agentApiKey       String      // hashed
   agentPublicKey    String?     // for mTLS
-  
+
   // Connection
   status            HostStatus  @default(PAIRED)
   lastConnectedAt   DateTime?
   lastDisconnectedAt DateTime?
   ipAddress         String?
-  
+
   // Capability Report (JSON)
   capabilities      Json?       // HostCapabilityReport
   lastDiscoveryAt   DateTime?
-  
+
   // Metadata
   pairedAt          DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
-  
+
   // Relations
   terminalSessions  TerminalSession[]
-  
+
   @@index([userId])
   @@index([hostId])
   @@map("hosts")
@@ -170,24 +170,24 @@ model TerminalSession {
   hostId        String
   host          Host      @relation(fields: [hostId], references: [id], onDelete: Cascade)
   userId        String
-  
+
   // PTY info
   pid           Int?
   shell         String
   cwd           String
-  
+
   // Window size
   rows          Int       @default(24)
   cols          Int       @default(80)
-  
+
   // Status
   status        String    @default("active") // "active", "closed"
-  
+
   // Lifecycle
   createdAt     DateTime  @default(now())
   closedAt      DateTime?
   exitCode      Int?
-  
+
   @@index([hostId])
   @@index([userId])
   @@map("terminal_sessions")
@@ -200,32 +200,32 @@ model TerminalSession {
 model App {
   id              String    @id @default(cuid())
   appId           String    @unique // e.g., "com.aether.files"
-  
+
   // Metadata
   name            String
   version         String
   description     String
   author          String
   icon            String
-  
+
   // Manifest (JSON)
   manifest        Json      // full AppManifest
-  
+
   // App Store
   category        String?
   tags            String[]
   featured        Boolean   @default(false)
-  
+
   // Stats
   installCount    Int       @default(0)
-  
+
   // Lifecycle
   publishedAt     DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-  
+
   // Relations
   installations   AppInstallation[]
-  
+
   @@index([appId])
   @@map("apps")
 }
@@ -235,19 +235,19 @@ model AppInstallation {
   userId          String
   appId           String
   app             App       @relation(fields: [appId], references: [id], onDelete: Cascade)
-  
+
   version         String
-  
+
   // Permissions
   grantedPermissions String[]
   deniedPermissions  String[]
-  
+
   // Status
   status          String    @default("installed") // "installing", "installed", "updating", "error"
-  
+
   installedAt     DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-  
+
   @@unique([userId, appId])
   @@index([userId])
   @@map("app_installations")
@@ -261,20 +261,20 @@ model Workspace {
   id              String    @id @default(cuid())
   userId          String
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   name            String
   description     String?
-  
+
   // Storage
   storageUsed     BigInt    @default(0) // bytes
   storageQuota    BigInt    // bytes
-  
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-  
+
   // Relations
   files           CloudFile[]
-  
+
   @@index([userId])
   @@map("workspaces")
 }
@@ -283,33 +283,33 @@ model CloudFile {
   id              String    @id @default(cuid())
   workspaceId     String
   workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  
+
   // File info
   path            String    // relative to workspace
   name            String
   type            String    // "file" or "directory"
   mimeType        String?
   size            BigInt    @default(0)
-  
+
   // Storage
   storageKey      String?   // S3 key if type=file
   checksum        String?   // SHA-256
-  
+
   // Metadata
   createdAt       DateTime  @default(now())
   modifiedAt      DateTime  @default(now())
-  
+
   // Versioning
   version         Int       @default(1)
   parentVersion   Int?
-  
+
   // Sync
   syncStatus      String    @default("synced") // "pending", "syncing", "synced", "conflict"
-  
+
   // Soft delete
   deleted         Boolean   @default(false)
   deletedAt       DateTime?
-  
+
   @@unique([workspaceId, path])
   @@index([workspaceId])
   @@map("cloud_files")
@@ -323,22 +323,22 @@ model Notification {
   id              String    @id @default(cuid())
   userId          String
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   title           String
   body            String
   icon            String?
-  
+
   // Action
   actionLabel     String?
   actionUrl       String?
-  
+
   // Status
   read            Boolean   @default(false)
   readAt          DateTime?
-  
+
   createdAt       DateTime  @default(now())
   expiresAt       DateTime?
-  
+
   @@index([userId, read])
   @@map("notifications")
 }
@@ -350,29 +350,29 @@ model Notification {
 model AuditLog {
   id              String    @id @default(cuid())
   timestamp       DateTime  @default(now())
-  
+
   // Actor
   userId          String?
   user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   sessionId       String?
   ipAddress       String?
   userAgent       String?
-  
+
   // Action
   action          String
   resource        String?
   resourceId      String?
-  
+
   // Result
   success         Boolean
   errorMessage    String?
-  
+
   // Context
   metadata        Json?
-  
+
   // Sensitivity
   sensitive       Boolean   @default(false)
-  
+
   @@index([userId, timestamp])
   @@index([action, timestamp])
   @@map("audit_logs")
@@ -385,9 +385,9 @@ model AuditLog {
 model SystemSetting {
   key             String    @id
   value           Json
-  
+
   updatedAt       DateTime  @updatedAt
-  
+
   @@map("system_settings")
 }
 ```
@@ -408,6 +408,7 @@ npx prisma generate
 ```
 
 **Migration Strategy:**
+
 1. All schema changes go through migrations (never manual ALTER)
 2. Migrations are versioned and stored in git
 3. Forward-only migrations (no rollback migrations)
@@ -558,7 +559,7 @@ enum ErrorCode {
   NOT_FOUND = "NOT_FOUND",
   CONFLICT = "CONFLICT",
   RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED",
-  
+
   // Server errors (5xx)
   INTERNAL_ERROR = "INTERNAL_ERROR",
   SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE",
@@ -575,21 +576,25 @@ import { z } from 'zod';
 const readdirSchema = z.object({
   query: z.object({
     path: z.string().min(1),
-    showHidden: z.string().optional().transform(val => val === 'true')
+    showHidden: z
+      .string()
+      .optional()
+      .transform((val) => val === 'true'),
   }),
   params: z.object({
-    hostId: z.string().cuid()
-  })
+    hostId: z.string().cuid(),
+  }),
 });
 
-app.get('/api/hosts/:hostId/filesystem/readdir', 
+app.get(
+  '/api/hosts/:hostId/filesystem/readdir',
   authenticate,
   requirePermission('filesystem', 'read'),
   validate(readdirSchema),
   async (req, res) => {
     const { hostId } = req.params;
     const { path, showHidden } = req.query;
-    
+
     try {
       // Validate path
       const validation = validateFilesystemPath(path, ['/home/user']);
@@ -597,27 +602,26 @@ app.get('/api/hosts/:hostId/filesystem/readdir',
         return res.status(400).json({
           error: {
             code: 'VALIDATION_ERROR',
-            message: validation.reason
-          }
+            message: validation.reason,
+          },
         });
       }
-      
+
       // Forward to Host Agent
       const result = await hostAgent.fs.readdir(hostId, validation.canonicalPath, {
-        showHidden
+        showHidden,
       });
-      
+
       return res.json({ data: result });
-      
     } catch (error) {
       logger.error('Readdir failed', { error, hostId, path });
-      
+
       return res.status(500).json({
         error: {
           code: 'INTERNAL_ERROR',
-          message: 'Failed to read directory'
+          message: 'Failed to read directory',
         },
-        requestId: req.id
+        requestId: req.id,
       });
     }
   }
@@ -633,21 +637,21 @@ Realtime communication for terminal, monitoring, and events.
 ```typescript
 interface WebSocketMessage {
   id: string; // correlation ID
-  type: "request" | "response" | "event" | "error";
+  type: 'request' | 'response' | 'event' | 'error';
   timestamp: string;
   payload: any;
 }
 
 // Request
 interface WSRequest extends WebSocketMessage {
-  type: "request";
+  type: 'request';
   method: string; // "pty.write", "resource.subscribe"
   params: Record<string, any>;
 }
 
 // Response
 interface WSResponse extends WebSocketMessage {
-  type: "response";
+  type: 'response';
   requestId: string;
   result?: any;
   error?: {
@@ -658,14 +662,14 @@ interface WSResponse extends WebSocketMessage {
 
 // Event (server-initiated)
 interface WSEvent extends WebSocketMessage {
-  type: "event";
+  type: 'event';
   event: string; // "pty.data", "resource.update"
   data: any;
 }
 
 // Error
 interface WSError extends WebSocketMessage {
-  type: "error";
+  type: 'error';
   error: {
     code: string;
     message: string;
@@ -697,11 +701,13 @@ ws = new WebSocket('wss://api.aether.io/hosts/host123/terminal/term456');
 
 ws.onopen = () => {
   // Send authentication
-  ws.send(JSON.stringify({
-    type: 'auth',
-    token: accessToken
-  }));
-  
+  ws.send(
+    JSON.stringify({
+      type: 'auth',
+      token: accessToken,
+    })
+  );
+
   // Start heartbeat
   heartbeatInterval = setInterval(() => {
     ws.send(JSON.stringify({ type: 'ping' }));
@@ -710,7 +716,7 @@ ws.onopen = () => {
 
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
-  
+
   if (msg.type === 'pong') {
     lastPongTime = Date.now();
   } else if (msg.type === 'event') {
@@ -726,7 +732,7 @@ ws.onerror = (error) => {
 
 ws.onclose = (event) => {
   clearInterval(heartbeatInterval);
-  
+
   if (!event.wasClean) {
     // Attempt reconnection with exponential backoff
     reconnectWithBackoff();
@@ -737,7 +743,7 @@ ws.onclose = (event) => {
 function reconnectWithBackoff() {
   const maxDelay = 30000; // 30 seconds
   const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxDelay);
-  
+
   setTimeout(() => {
     reconnectAttempts++;
     connectWebSocket();
@@ -750,36 +756,42 @@ function reconnectWithBackoff() {
 ```typescript
 // Pagination schema
 const paginationSchema = z.object({
-  page: z.string().optional().transform(val => parseInt(val || '1')),
-  pageSize: z.string().optional().transform(val => parseInt(val || '20')),
+  page: z
+    .string()
+    .optional()
+    .transform((val) => parseInt(val || '1')),
+  pageSize: z
+    .string()
+    .optional()
+    .transform((val) => parseInt(val || '20')),
   sortBy: z.string().optional(),
-  sortOrder: z.enum(['asc', 'desc']).optional()
+  sortOrder: z.enum(['asc', 'desc']).optional(),
 });
 
 // Implementation
 async function listHosts(req: Request): Promise<PaginatedResponse<Host>> {
   const { page, pageSize, sortBy, sortOrder } = paginationSchema.parse(req.query);
-  
+
   const skip = (page - 1) * pageSize;
-  
+
   const [hosts, total] = await Promise.all([
     db.host.findMany({
       where: { userId: req.user.id },
       skip,
       take: pageSize,
-      orderBy: sortBy ? { [sortBy]: sortOrder || 'asc' } : undefined
+      orderBy: sortBy ? { [sortBy]: sortOrder || 'asc' } : undefined,
     }),
-    db.host.count({ where: { userId: req.user.id } })
+    db.host.count({ where: { userId: req.user.id } }),
   ]);
-  
+
   return {
     data: hosts,
     meta: {
       page,
       pageSize,
       total,
-      totalPages: Math.ceil(total / pageSize)
-    }
+      totalPages: Math.ceil(total / pageSize),
+    },
   };
 }
 ```
@@ -820,6 +832,7 @@ Three-tier storage model:
 ```
 
 **Key Distinction:**
+
 - Host filesystem: NOT cloud storage, lives on host only
 - Cloud storage: Aether-managed, synced, backed up
 - User can explicitly sync between host ↔ cloud
@@ -832,15 +845,15 @@ interface Workspace {
   userId: string;
   name: string;
   description?: string;
-  
+
   // Storage
   storageUsed: number; // bytes
   storageQuota: number; // bytes
-  
+
   // Settings
   autoSync: boolean;
   syncHosts: string[]; // host IDs to auto-sync with
-  
+
   // Metadata
   createdAt: string;
   updatedAt: string;
@@ -859,25 +872,25 @@ interface SyncJob {
   id: string;
   workspaceId: string;
   hostId: string;
-  
-  direction: "host-to-cloud" | "cloud-to-host" | "bidirectional";
-  
+
+  direction: 'host-to-cloud' | 'cloud-to-host' | 'bidirectional';
+
   // Source and destination
   sourcePath: string;
   destinationPath: string;
-  
+
   // Conflict resolution
-  conflictResolution: "skip" | "overwrite" | "rename" | "manual";
-  
+  conflictResolution: 'skip' | 'overwrite' | 'rename' | 'manual';
+
   // Status
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
-  
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
   // Progress
   totalFiles: number;
   processedFiles: number;
   totalBytes: number;
   processedBytes: number;
-  
+
   // Results
   succeededFiles: number;
   failedFiles: number;
@@ -886,12 +899,12 @@ interface SyncJob {
     reason: string;
     resolution?: string;
   }>;
-  
+
   // Lifecycle
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
-  
+
   error?: string;
 }
 
@@ -902,21 +915,20 @@ async function syncHostToCloud(
   hostPath: string,
   cloudPath: string
 ): Promise<SyncJob> {
-  
   // 1. List files on host
   const hostFiles = await hostAgent.fs.readdir(hostId, hostPath, { recursive: true });
-  
+
   // 2. List files in cloud workspace
   const cloudFiles = await db.cloudFile.findMany({
     where: {
       workspaceId,
-      path: { startsWith: cloudPath }
-    }
+      path: { startsWith: cloudPath },
+    },
   });
-  
+
   // 3. Build sync plan
   const syncPlan = buildSyncPlan(hostFiles, cloudFiles);
-  
+
   // 4. Execute sync
   for (const item of syncPlan) {
     if (item.action === 'upload') {
@@ -928,7 +940,7 @@ async function syncHostToCloud(
       handleConflict(item);
     }
   }
-  
+
   return syncJob;
 }
 ```
@@ -944,9 +956,9 @@ const s3 = new S3Client({
   region: process.env.S3_REGION,
   credentials: {
     accessKeyId: process.env.S3_ACCESS_KEY_ID,
-    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
   },
-  endpoint: process.env.S3_ENDPOINT // for MinIO/R2
+  endpoint: process.env.S3_ENDPOINT, // for MinIO/R2
 });
 
 const BUCKET_NAME = 'aether-cloud-storage';
@@ -961,27 +973,28 @@ async function uploadFile(
     checksum: string;
   }
 ): Promise<{ key: string; size: number }> {
-  
   const key = `workspaces/${workspaceId}/${relativePath}`;
-  
-  await s3.send(new PutObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: key,
-    Body: content,
-    ContentType: metadata.mimeType,
-    Metadata: {
-      checksum: metadata.checksum,
-      uploadedAt: new Date().toISOString()
-    }
-  }));
-  
+
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Body: content,
+      ContentType: metadata.mimeType,
+      Metadata: {
+        checksum: metadata.checksum,
+        uploadedAt: new Date().toISOString(),
+      },
+    })
+  );
+
   // Update database
   await db.cloudFile.upsert({
     where: {
       workspaceId_path: {
         workspaceId,
-        path: relativePath
-      }
+        path: relativePath,
+      },
     },
     create: {
       workspaceId,
@@ -992,7 +1005,7 @@ async function uploadFile(
       size: content.length,
       storageKey: key,
       checksum: metadata.checksum,
-      syncStatus: 'synced'
+      syncStatus: 'synced',
     },
     update: {
       size: content.length,
@@ -1000,18 +1013,18 @@ async function uploadFile(
       checksum: metadata.checksum,
       modifiedAt: new Date(),
       version: { increment: 1 },
-      syncStatus: 'synced'
-    }
+      syncStatus: 'synced',
+    },
   });
-  
+
   // Update workspace storage usage
   await db.workspace.update({
     where: { id: workspaceId },
     data: {
-      storageUsed: { increment: content.length }
-    }
+      storageUsed: { increment: content.length },
+    },
   });
-  
+
   return { key, size: content.length };
 }
 
@@ -1020,34 +1033,35 @@ async function downloadFile(
   workspaceId: string,
   relativePath: string
 ): Promise<{ content: Buffer; metadata: any }> {
-  
   const file = await db.cloudFile.findUnique({
     where: {
-      workspaceId_path: { workspaceId, path: relativePath }
-    }
+      workspaceId_path: { workspaceId, path: relativePath },
+    },
   });
-  
+
   if (!file || !file.storageKey) {
-    throw new Error("File not found");
+    throw new Error('File not found');
   }
-  
-  const response = await s3.send(new GetObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: file.storageKey
-  }));
-  
+
+  const response = await s3.send(
+    new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: file.storageKey,
+    })
+  );
+
   const chunks: Buffer[] = [];
   for await (const chunk of response.Body as any) {
     chunks.push(chunk);
   }
-  
+
   return {
     content: Buffer.concat(chunks),
     metadata: {
       mimeType: file.mimeType,
       size: file.size,
-      checksum: file.checksum
-    }
+      checksum: file.checksum,
+    },
   };
 }
 ```
@@ -1058,11 +1072,11 @@ When same file is modified on host and cloud:
 
 ```typescript
 enum ConflictResolution {
-  KEEP_HOST = "keep_host",       // Host version wins
-  KEEP_CLOUD = "keep_cloud",     // Cloud version wins
-  KEEP_BOTH = "keep_both",       // Rename and keep both
-  KEEP_NEWER = "keep_newer",     // Based on timestamp
-  MANUAL = "manual"              // User decides
+  KEEP_HOST = 'keep_host', // Host version wins
+  KEEP_CLOUD = 'keep_cloud', // Cloud version wins
+  KEEP_BOTH = 'keep_both', // Rename and keep both
+  KEEP_NEWER = 'keep_newer', // Based on timestamp
+  MANUAL = 'manual', // User decides
 }
 
 async function handleConflict(
@@ -1070,7 +1084,6 @@ async function handleConflict(
   cloudFile: CloudFile,
   resolution: ConflictResolution
 ): Promise<void> {
-  
   if (resolution === ConflictResolution.KEEP_NEWER) {
     if (hostFile.modified > cloudFile.modifiedAt) {
       resolution = ConflictResolution.KEEP_HOST;
@@ -1078,22 +1091,22 @@ async function handleConflict(
       resolution = ConflictResolution.KEEP_CLOUD;
     }
   }
-  
+
   switch (resolution) {
     case ConflictResolution.KEEP_HOST:
       await uploadFileToCloud(hostFile, cloudFile.workspaceId, cloudFile.path);
       break;
-      
+
     case ConflictResolution.KEEP_CLOUD:
       await downloadFileToHost(cloudFile, hostFile.hostId, hostFile.path);
       break;
-      
+
     case ConflictResolution.KEEP_BOTH:
       // Upload host file with renamed path
       const renamedPath = `${cloudFile.path}.conflict-${Date.now()}`;
       await uploadFileToCloud(hostFile, cloudFile.workspaceId, renamedPath);
       break;
-      
+
     case ConflictResolution.MANUAL:
       // Store conflict for user review
       await db.syncConflict.create({
@@ -1102,8 +1115,8 @@ async function handleConflict(
           path: cloudFile.path,
           hostVersion: hostFile,
           cloudVersion: cloudFile,
-          status: 'pending'
-        }
+          status: 'pending',
+        },
       });
       break;
   }

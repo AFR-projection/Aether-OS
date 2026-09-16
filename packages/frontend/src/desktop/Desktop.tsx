@@ -8,7 +8,6 @@ import { APP_REGISTRY } from '../apps/registry.js';
 import { useAuthStore, useCurrentUser } from '../stores/auth.store.js';
 import { useDesktopStore } from '../stores/desktop.store.js';
 
-
 /**
  * The desktop shell: icons, windows, launcher, and taskbar.
  *

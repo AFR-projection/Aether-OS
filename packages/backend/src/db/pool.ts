@@ -29,7 +29,7 @@ pool.on('error', (error) => {
 /** Runs a parameterised query. Never interpolate user input into `text`. */
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
-  params: readonly unknown[] = [],
+  params: readonly unknown[] = []
 ): Promise<pg.QueryResult<T>> {
   const startedAt = Date.now();
   try {
@@ -48,7 +48,7 @@ export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
 /** Convenience wrapper returning the first row, or `undefined`. */
 export async function queryOne<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
-  params: readonly unknown[] = [],
+  params: readonly unknown[] = []
 ): Promise<T | undefined> {
   const result = await query<T>(text, params);
   return result.rows[0];
@@ -63,7 +63,9 @@ export type TransactionClient = pg.PoolClient;
  * client to the pool. Errors are re-thrown unchanged so callers can map them to
  * HTTP responses.
  */
-export async function withTransaction<T>(fn: (client: TransactionClient) => Promise<T>): Promise<T> {
+export async function withTransaction<T>(
+  fn: (client: TransactionClient) => Promise<T>
+): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

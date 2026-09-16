@@ -26,7 +26,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR1.2** The installer MUST display progress for each stage  
 **FR1.3** The installer MUST save state after each stage  
 **FR1.4** The installer MUST allow resuming from the last successful stage  
-**FR1.5** The installer MUST complete within 15 minutes on typical hardware  
+**FR1.5** The installer MUST complete within 15 minutes on typical hardware
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -40,9 +40,10 @@ This document specifies functional and non-functional requirements for the insta
 **FR2.3** The installer MUST detect the CPU architecture  
 **FR2.4** The installer MUST detect the package manager  
 **FR2.5** The installer MUST detect the init system  
-**FR2.6** The installer MUST block installation on unsupported platforms  
+**FR2.6** The installer MUST block installation on unsupported platforms
 
 **Supported Platforms (MVP):**
+
 - Ubuntu 20.04 LTS (x86_64)
 - Ubuntu 22.04 LTS (x86_64)
 - Ubuntu 24.04 LTS (x86_64)
@@ -58,14 +59,16 @@ This document specifies functional and non-functional requirements for the insta
 **FR3.2** The installer MUST check RAM size  
 **FR3.3** The installer MUST check available disk space  
 **FR3.4** The installer MUST block if resources are below minimum  
-**FR3.5** The installer MUST warn if resources are below recommended  
+**FR3.5** The installer MUST warn if resources are below recommended
 
 **Minimum Requirements:**
+
 - CPU: 2 cores
 - RAM: 4 GB
 - Disk: 40 GB free
 
 **Recommended Requirements:**
+
 - CPU: 4 cores
 - RAM: 8 GB
 - Disk: 80 GB free
@@ -82,7 +85,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR4.3** The installer MUST detect public IP address  
 **FR4.4** The installer MUST check port 80 availability  
 **FR4.5** The installer MUST check port 443 availability  
-**FR4.6** The installer MUST block if internet is unavailable  
+**FR4.6** The installer MUST block if internet is unavailable
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -95,7 +98,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR5.2** The installer MUST verify sudo availability  
 **FR5.3** The installer MUST verify write permissions to install directory  
 **FR5.4** The installer MUST block if sudo is unavailable  
-**FR5.5** The installer MUST warn if running as root  
+**FR5.5** The installer MUST warn if running as root
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -108,7 +111,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR6.2** The installer MUST detect conflicting web servers  
 **FR6.3** The installer MUST detect conflicting reverse proxies  
 **FR6.4** The installer MUST detect port conflicts  
-**FR6.5** The installer MUST warn about conflicts and suggest resolution  
+**FR6.5** The installer MUST warn about conflicts and suggest resolution
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -121,13 +124,14 @@ This document specifies functional and non-functional requirements for the insta
 **FR7.2** The installer MUST install Docker if not present  
 **FR7.3** The installer MUST verify Docker Compose v2 availability  
 **FR7.4** The installer MUST install required system packages  
-**FR7.5** The installer MUST verify all dependencies before proceeding  
+**FR7.5** The installer MUST verify all dependencies before proceeding
 
 **Required Dependencies:**
+
 - Docker Engine (latest stable)
 - Docker Compose v2
 - curl
-- wget  
+- wget
 - git
 - openssl
 - ca-certificates
@@ -145,9 +149,10 @@ This document specifies functional and non-functional requirements for the insta
 **FR8.4** The installer MUST download release manifest  
 **FR8.5** The installer MUST download release artifact  
 **FR8.6** The installer MUST download checksums file  
-**FR8.7** The installer MUST retry failed downloads up to 3 times  
+**FR8.7** The installer MUST retry failed downloads up to 3 times
 
 **Release Channels:**
+
 - `stable` (default) - Production releases
 - `beta` - Pre-release testing
 - `development` - Latest builds (requires explicit opt-in)
@@ -163,7 +168,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR9.2** The installer MUST abort if checksum verification fails  
 **FR9.3** The installer MUST display security alert on verification failure  
 **FR9.4** The installer MUST delete unverified files  
-**FR9.5** The installer SHOULD support GPG signature verification (future)  
+**FR9.5** The installer SHOULD support GPG signature verification (future)
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -176,7 +181,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR10.2** The installer MUST create installation directory structure  
 **FR10.3** The installer MUST generate .env configuration file  
 **FR10.4** The installer MUST create instance metadata file  
-**FR10.5** The installer MUST set appropriate file permissions  
+**FR10.5** The installer MUST set appropriate file permissions
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -193,7 +198,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR11.6** The installer MUST generate session secret (≥64 bytes)  
 **FR11.7** The installer MUST store secrets with 600 permissions  
 **FR11.8** The installer MUST NOT display secrets in output or logs  
-**FR11.9** The installer MUST NOT use default or predictable secrets  
+**FR11.9** The installer MUST NOT use default or predictable secrets
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -207,7 +212,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR12.3** The installer MUST validate domain format  
 **FR12.4** The installer MUST verify DNS points to server IP  
 **FR12.5** The installer MUST configure Caddy for provided domain  
-**FR12.6** The installer MUST warn if DNS is not correctly configured  
+**FR12.6** The installer MUST warn if DNS is not correctly configured
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -223,7 +228,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR13.5** The installer MUST configure firewall to allow HTTPS (443)  
 **FR13.6** The installer MUST ensure internal services are not exposed  
 **FR13.7** The installer MUST ask confirmation before modifying firewall  
-**FR13.8** The installer MUST verify SSH remains accessible after changes  
+**FR13.8** The installer MUST verify SSH remains accessible after changes
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -239,7 +244,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR14.5** The installer MUST start frontend container  
 **FR14.6** The installer MUST start Caddy container  
 **FR14.7** The installer MUST wait for all containers to be healthy  
-**FR14.8** The installer MUST configure internal-only Docker network  
+**FR14.8** The installer MUST configure internal-only Docker network
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -252,7 +257,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR15.2** The installer MUST run database migrations  
 **FR15.3** The installer MUST create initial schema  
 **FR15.4** The installer MUST verify database connectivity  
-**FR15.5** The installer MUST abort if database initialization fails  
+**FR15.5** The installer MUST abort if database initialization fails
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -267,7 +272,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR16.4** The installer MUST verify Redis connectivity  
 **FR16.5** The installer MUST verify frontend is accessible  
 **FR16.6** The installer MUST abort if health checks fail  
-**FR16.7** The installer MUST display container logs on failure  
+**FR16.7** The installer MUST display container logs on failure
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -281,7 +286,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR17.3** The installer MUST verify HTTPS endpoint is accessible  
 **FR17.4** The installer MUST skip HTTPS if no domain provided  
 **FR17.5** The installer MUST warn if HTTPS setup fails  
-**FR17.6** The installer MAY continue with HTTP if HTTPS fails  
+**FR17.6** The installer MAY continue with HTTP if HTTPS fails
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -294,7 +299,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR18.2** The installer MUST store pairing token in database  
 **FR18.3** The installer MUST set token expiry (1 hour)  
 **FR18.4** The installer MUST display pairing token to user  
-**FR18.5** The installer MUST save pairing information to file  
+**FR18.5** The installer MUST save pairing information to file
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -308,7 +313,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR19.3** The installer MUST display pairing code  
 **FR19.4** The installer MUST display next steps  
 **FR19.5** The installer MUST provide links to documentation  
-**FR19.6** The installer MUST save installation report to file  
+**FR19.6** The installer MUST save installation report to file
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -322,7 +327,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR20.3** The installer MUST display clear error messages  
 **FR20.4** The installer MUST suggest remediation steps  
 **FR20.5** The installer MUST offer retry or rollback options  
-**FR20.6** The installer MUST log all errors with context  
+**FR20.6** The installer MUST log all errors with context
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -336,7 +341,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR21.3** The installer MUST save stage-specific data  
 **FR21.4** The installer MUST detect incomplete installations  
 **FR21.5** The installer MUST offer to resume incomplete installations  
-**FR21.6** The installer MUST preserve state across interruptions  
+**FR21.6** The installer MUST preserve state across interruptions
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -350,7 +355,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR22.3** The installer MUST offer to remove installation directory  
 **FR22.4** The installer MUST restore firewall rules if changed  
 **FR22.5** The installer MUST cleanup temporary files  
-**FR22.6** The installer MUST preserve logs during rollback  
+**FR22.6** The installer MUST preserve logs during rollback
 
 **Priority:** P1 (Should Have)  
 **Status:** Not Implemented
@@ -367,7 +372,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR23.6** The installer MUST support `--install-dir <path>` flag  
 **FR23.7** The installer MUST support `--channel <stable|beta|development>` flag  
 **FR23.8** The installer MUST support `--no-https` flag  
-**FR23.9** The installer MUST support `--resume` flag  
+**FR23.9** The installer MUST support `--resume` flag
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -385,7 +390,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR24.7** `aether backup` MUST backup configuration  
 **FR24.8** `aether restore` MUST restore from backup  
 **FR24.9** `aether repair` MUST repair broken installation  
-**FR24.10** `aether uninstall` MUST remove Aether  
+**FR24.10** `aether uninstall` MUST remove Aether
 
 **Priority:** P1 (Should Have)  
 **Status:** Not Implemented
@@ -400,7 +405,7 @@ This document specifies functional and non-functional requirements for the insta
 **FR25.4** The installer MUST log errors with stack traces  
 **FR25.5** The installer MUST NOT log secrets  
 **FR25.6** The installer MUST preserve logs on completion  
-**FR25.7** The installer MUST display log file location  
+**FR25.7** The installer MUST display log file location
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -415,7 +420,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR1.2** Installation SHOULD complete in ≤10 minutes on recommended hardware  
 **NFR1.3** Preflight checks MUST complete in ≤60 seconds  
 **NFR1.4** Download SHOULD utilize available bandwidth efficiently  
-**NFR1.5** Resource usage during installation SHOULD stay below 50% CPU/RAM  
+**NFR1.5** Resource usage during installation SHOULD stay below 50% CPU/RAM
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Measured
@@ -428,7 +433,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR2.2** The installer MUST handle network interruptions gracefully  
 **NFR2.3** The installer MUST recover from temporary failures  
 **NFR2.4** The installer MUST NOT corrupt existing data on failure  
-**NFR2.5** The installer MUST have ≥99% success rate on supported platforms  
+**NFR2.5** The installer MUST have ≥99% success rate on supported platforms
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Measured
@@ -446,7 +451,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR3.7** The installer MUST validate all user inputs  
 **NFR3.8** The installer MUST prevent command injection  
 **NFR3.9** The installer MUST prevent path traversal  
-**NFR3.10** The installer MUST use least privilege principle  
+**NFR3.10** The installer MUST use least privilege principle
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Verified
@@ -460,7 +465,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR4.3** The installer MUST suggest remediation for common errors  
 **NFR4.4** The installer MUST work for non-technical users  
 **NFR4.5** The installer MUST support non-interactive mode  
-**NFR4.6** The installer SHOULD complete with ≤2 user interactions  
+**NFR4.6** The installer SHOULD complete with ≤2 user interactions
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Evaluated
@@ -473,7 +478,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR5.2** The installer MUST be well-commented  
 **NFR5.3** The installer MUST follow consistent coding style  
 **NFR5.4** The installer MUST be modular (separate functions)  
-**NFR5.5** The installer SHOULD be ≤2000 lines of code  
+**NFR5.5** The installer SHOULD be ≤2000 lines of code
 
 **Priority:** P1 (Should Have)  
 **Status:** Not Implemented
@@ -487,7 +492,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR6.3** The installer MUST work with systemd-based systems  
 **NFR6.4** The installer SHOULD work behind corporate proxies  
 **NFR6.5** The installer SHOULD work on IPv4-only networks  
-**NFR6.6** The installer SHOULD work on IPv6-only networks  
+**NFR6.6** The installer SHOULD work on IPv6-only networks
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Tested
@@ -500,7 +505,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR7.2** The installer MUST provide installation ID for support  
 **NFR7.3** The installer MUST save detailed state information  
 **NFR7.4** The installer SHOULD support verbose mode  
-**NFR7.5** The installer SHOULD provide progress percentage  
+**NFR7.5** The installer SHOULD provide progress percentage
 
 **Priority:** P1 (Should Have)  
 **Status:** Not Implemented
@@ -512,7 +517,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR8.1** The installer MUST support resume after interruption  
 **NFR8.2** The installer MUST support rollback on failure  
 **NFR8.3** The installer MUST preserve user data during rollback  
-**NFR8.4** The installer MUST NOT require manual cleanup after failure  
+**NFR8.4** The installer MUST NOT require manual cleanup after failure
 
 **Priority:** P0 (Must Have)  
 **Status:** Not Implemented
@@ -524,7 +529,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR9.1** The installer MUST include inline help text  
 **NFR9.2** The installer MUST link to online documentation  
 **NFR9.3** The installer MUST provide troubleshooting guidance  
-**NFR9.4** Installation summary MUST include next steps  
+**NFR9.4** Installation summary MUST include next steps
 
 **Priority:** P0 (Must Have)  
 **Status:** Partially Complete
@@ -537,7 +542,7 @@ This document specifies functional and non-functional requirements for the insta
 **NFR10.2** Updates MUST preserve user data  
 **NFR10.3** Updates MUST be reversible (rollback)  
 **NFR10.4** Updates MUST verify integrity before applying  
-**NFR10.5** Updates SHOULD have zero downtime (future)  
+**NFR10.5** Updates SHOULD have zero downtime (future)
 
 **Priority:** P1 (Should Have)  
 **Status:** Not Implemented
@@ -552,7 +557,7 @@ This document specifies functional and non-functional requirements for the insta
 **C1.2** Requires systemd init system  
 **C1.3** Requires bash 4.0 or higher  
 **C1.4** Requires internet connectivity during installation  
-**C1.5** Requires sudo or root access  
+**C1.5** Requires sudo or root access
 
 ---
 
@@ -562,7 +567,7 @@ This document specifies functional and non-functional requirements for the insta
 **C2.2** Minimum 4 GB RAM required  
 **C2.3** Minimum 40 GB disk space required  
 **C2.4** Requires public IP for external access  
-**C2.5** Requires ports 80/443 available for HTTPS  
+**C2.5** Requires ports 80/443 available for HTTPS
 
 ---
 
@@ -571,7 +576,7 @@ This document specifies functional and non-functional requirements for the insta
 **C3.1** Requires outbound HTTPS (443) access  
 **C3.2** Requires DNS resolution  
 **C3.3** HTTPS setup requires domain pointing to server  
-**C3.4** Behind proxy requires HTTP_PROXY environment variable  
+**C3.4** Behind proxy requires HTTP_PROXY environment variable
 
 ---
 
@@ -580,7 +585,7 @@ This document specifies functional and non-functional requirements for the insta
 **C4.1** Downloads must be over HTTPS  
 **C4.2** Checksum verification is mandatory  
 **C4.3** Default credentials are not allowed  
-**C4.4** Internal services must not be exposed  
+**C4.4** Internal services must not be exposed
 
 ---
 
@@ -588,7 +593,7 @@ This document specifies functional and non-functional requirements for the insta
 
 **C5.1** MVP must be ready for testing within 2 weeks  
 **C5.2** Production release targeted for 4 weeks  
-**C5.3** Installation should complete in under 15 minutes  
+**C5.3** Installation should complete in under 15 minutes
 
 ---
 
@@ -692,6 +697,7 @@ Installation is accepted for production when:
 ## Future Enhancements
 
 ### Phase 2 (v1.1)
+
 - [ ] Multi-architecture support (ARM64)
 - [ ] Additional OS support (Debian, CentOS)
 - [ ] GPG signature verification
@@ -699,6 +705,7 @@ Installation is accepted for production when:
 - [ ] Offline installation mode
 
 ### Phase 3 (v1.2)
+
 - [ ] Custom Docker registry support
 - [ ] Air-gapped installation
 - [ ] High availability setup
@@ -706,6 +713,7 @@ Installation is accepted for production when:
 - [ ] Automated backups
 
 ### Phase 4 (v2.0)
+
 - [ ] Kubernetes deployment option
 - [ ] Cloud provider integrations
 - [ ] Infrastructure as Code (Terraform)
@@ -725,7 +733,7 @@ Installation is accepted for production when:
 **Checksum:** Cryptographic hash for integrity verification  
 **Rollback:** Reverting to previous version  
 **Idempotent:** Safe to run multiple times  
-**Preflight:** Pre-installation checks  
+**Preflight:** Pre-installation checks
 
 ---
 

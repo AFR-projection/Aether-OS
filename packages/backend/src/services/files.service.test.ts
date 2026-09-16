@@ -16,8 +16,12 @@ import {
   writeFile,
 } from './files.service.js';
 import { getWorkspaceRoot } from '../security/workspace.js';
-import { ConflictError, NotFoundError, PathRejectedError, PayloadTooLargeError } from '../utils/errors.js';
-
+import {
+  ConflictError,
+  NotFoundError,
+  PathRejectedError,
+  PayloadTooLargeError,
+} from '../utils/errors.js';
 
 /**
  * Filesystem service tests against the real filesystem.
@@ -50,7 +54,12 @@ describe('writeFile / readFile', () => {
   it('round-trips UTF-8 content', async () => {
     const target = `${sandboxRelative}/hello.txt`;
 
-    const written = await writeFile({ relative: target, content: 'hello world', encoding: 'utf8', createOnly: false });
+    const written = await writeFile({
+      relative: target,
+      content: 'hello world',
+      encoding: 'utf8',
+      createOnly: false,
+    });
     expect(written.type).toBe('file');
     expect(written.size).toBe(Buffer.byteLength('hello world'));
 
@@ -76,13 +85,13 @@ describe('writeFile / readFile', () => {
     await writeFile({ relative: target, content: 'first', encoding: 'utf8', createOnly: false });
 
     await expect(
-      writeFile({ relative: target, content: 'second', encoding: 'utf8', createOnly: true }),
+      writeFile({ relative: target, content: 'second', encoding: 'utf8', createOnly: true })
     ).rejects.toThrow(ConflictError);
   });
 
   it('rejects a traversal path', async () => {
     await expect(
-      writeFile({ relative: '../escape.txt', content: 'x', encoding: 'utf8', createOnly: false }),
+      writeFile({ relative: '../escape.txt', content: 'x', encoding: 'utf8', createOnly: false })
     ).rejects.toThrow(PathRejectedError);
   });
 
@@ -100,7 +109,9 @@ describe('createDirectory', () => {
 
   it('reports an existing path as a conflict', async () => {
     await createDirectory(`${sandboxRelative}/duplicate`, false);
-    await expect(createDirectory(`${sandboxRelative}/duplicate`, false)).rejects.toThrow(ConflictError);
+    await expect(createDirectory(`${sandboxRelative}/duplicate`, false)).rejects.toThrow(
+      ConflictError
+    );
   });
 
   it('creates intermediate directories when recursive', async () => {
@@ -113,8 +124,18 @@ describe('listDirectory', () => {
   it('lists directories before files, each alphabetically', async () => {
     const dir = await mkdtemp(path.join(await getWorkspaceRoot(), sandboxRelative, 'listing-'));
     await mkdirFs(path.join(dir, 'zebra-dir'));
-    await writeFile({ relative: await relative(path.join(dir, 'beta.txt')), content: 'b', encoding: 'utf8', createOnly: false });
-    await writeFile({ relative: await relative(path.join(dir, 'alpha.txt')), content: 'a', encoding: 'utf8', createOnly: false });
+    await writeFile({
+      relative: await relative(path.join(dir, 'beta.txt')),
+      content: 'b',
+      encoding: 'utf8',
+      createOnly: false,
+    });
+    await writeFile({
+      relative: await relative(path.join(dir, 'alpha.txt')),
+      content: 'a',
+      encoding: 'utf8',
+      createOnly: false,
+    });
 
     const listing = await listDirectory({ relative: await relative(dir), showHidden: true });
     const names = listing.entries.map((entry) => entry.name);
@@ -125,8 +146,18 @@ describe('listDirectory', () => {
 
   it('hides dotfiles when asked', async () => {
     const dir = await mkdtemp(path.join(await getWorkspaceRoot(), sandboxRelative, 'hidden-'));
-    await writeFile({ relative: await relative(path.join(dir, '.env')), content: 'x', encoding: 'utf8', createOnly: false });
-    await writeFile({ relative: await relative(path.join(dir, 'visible.txt')), content: 'x', encoding: 'utf8', createOnly: false });
+    await writeFile({
+      relative: await relative(path.join(dir, '.env')),
+      content: 'x',
+      encoding: 'utf8',
+      createOnly: false,
+    });
+    await writeFile({
+      relative: await relative(path.join(dir, 'visible.txt')),
+      content: 'x',
+      encoding: 'utf8',
+      createOnly: false,
+    });
 
     const withHidden = await listDirectory({ relative: await relative(dir), showHidden: true });
     const withoutHidden = await listDirectory({ relative: await relative(dir), showHidden: false });
@@ -146,18 +177,27 @@ describe('listDirectory', () => {
   it('rejects a file passed where a directory is expected', async () => {
     const target = `${sandboxRelative}/not-a-dir.txt`;
     await writeFile({ relative: target, content: 'x', encoding: 'utf8', createOnly: false });
-    await expect(listDirectory({ relative: target, showHidden: true })).rejects.toThrow(PathRejectedError);
+    await expect(listDirectory({ relative: target, showHidden: true })).rejects.toThrow(
+      PathRejectedError
+    );
   });
 
   it('rejects a traversal path', async () => {
-    await expect(listDirectory({ relative: '../../etc', showHidden: true })).rejects.toThrow(PathRejectedError);
+    await expect(listDirectory({ relative: '../../etc', showHidden: true })).rejects.toThrow(
+      PathRejectedError
+    );
   });
 });
 
 describe('statPath', () => {
   it('returns metadata for a file', async () => {
     const target = `${sandboxRelative}/stat-me.txt`;
-    await writeFile({ relative: target, content: 'twelve bytes', encoding: 'utf8', createOnly: false });
+    await writeFile({
+      relative: target,
+      content: 'twelve bytes',
+      encoding: 'utf8',
+      createOnly: false,
+    });
 
     const entry = await statPath(target);
     expect(entry.name).toBe('stat-me.txt');
@@ -201,7 +241,11 @@ describe('renamePath', () => {
   it('refuses to move a directory inside itself', async () => {
     await createDirectory(`${sandboxRelative}/self`, true);
     await expect(
-      renamePath({ from: `${sandboxRelative}/self`, to: `${sandboxRelative}/self/inner`, overwrite: false }),
+      renamePath({
+        from: `${sandboxRelative}/self`,
+        to: `${sandboxRelative}/self/inner`,
+        overwrite: false,
+      })
     ).rejects.toThrow(PathRejectedError);
   });
 });
@@ -218,7 +262,12 @@ describe('deletePath', () => {
   it('refuses to delete a non-empty directory without recursive', async () => {
     const dir = `${sandboxRelative}/not-empty`;
     await createDirectory(dir, true);
-    await writeFile({ relative: `${dir}/child.txt`, content: 'x', encoding: 'utf8', createOnly: false });
+    await writeFile({
+      relative: `${dir}/child.txt`,
+      content: 'x',
+      encoding: 'utf8',
+      createOnly: false,
+    });
 
     await expect(deletePath(dir, false)).rejects.toThrow(ConflictError);
   });
@@ -226,7 +275,12 @@ describe('deletePath', () => {
   it('deletes a non-empty directory when recursive', async () => {
     const dir = `${sandboxRelative}/tree-to-remove`;
     await createDirectory(`${dir}/deep`, true);
-    await writeFile({ relative: `${dir}/deep/child.txt`, content: 'x', encoding: 'utf8', createOnly: false });
+    await writeFile({
+      relative: `${dir}/deep/child.txt`,
+      content: 'x',
+      encoding: 'utf8',
+      createOnly: false,
+    });
 
     await deletePath(dir, true);
     await expect(statPath(dir)).rejects.toThrow(NotFoundError);
@@ -241,8 +295,18 @@ describe('searchEntries', () => {
   it('finds entries by case-insensitive name substring', async () => {
     const dir = `${sandboxRelative}/search-me`;
     await createDirectory(dir, true);
-    await writeFile({ relative: `${dir}/Report-Q3.txt`, content: 'x', encoding: 'utf8', createOnly: false });
-    await writeFile({ relative: `${dir}/notes.md`, content: 'x', encoding: 'utf8', createOnly: false });
+    await writeFile({
+      relative: `${dir}/Report-Q3.txt`,
+      content: 'x',
+      encoding: 'utf8',
+      createOnly: false,
+    });
+    await writeFile({
+      relative: `${dir}/notes.md`,
+      content: 'x',
+      encoding: 'utf8',
+      createOnly: false,
+    });
 
     const results = await searchEntries({ relative: dir, query: 'report', limit: 50 });
     expect(results.map((entry) => entry.name)).toEqual(['Report-Q3.txt']);
@@ -251,7 +315,12 @@ describe('searchEntries', () => {
   it('descends into subdirectories', async () => {
     const dir = `${sandboxRelative}/search-deep`;
     await createDirectory(`${dir}/a/b`, true);
-    await writeFile({ relative: `${dir}/a/b/deep-target.txt`, content: 'x', encoding: 'utf8', createOnly: false });
+    await writeFile({
+      relative: `${dir}/a/b/deep-target.txt`,
+      content: 'x',
+      encoding: 'utf8',
+      createOnly: false,
+    });
 
     const results = await searchEntries({ relative: dir, query: 'deep-target', limit: 50 });
     expect(results).toHaveLength(1);
@@ -261,7 +330,12 @@ describe('searchEntries', () => {
     const dir = `${sandboxRelative}/search-limit`;
     await createDirectory(dir, true);
     for (let index = 0; index < 10; index += 1) {
-      await writeFile({ relative: `${dir}/match-${index}.txt`, content: 'x', encoding: 'utf8', createOnly: false });
+      await writeFile({
+        relative: `${dir}/match-${index}.txt`,
+        content: 'x',
+        encoding: 'utf8',
+        createOnly: false,
+      });
     }
 
     const results = await searchEntries({ relative: dir, query: 'match', limit: 3 });
@@ -275,7 +349,7 @@ describe('streamToFile', () => {
       sandboxRelative,
       'streamed.txt',
       Readable.from(['chunk-one', 'chunk-two']),
-      1024,
+      1024
     );
 
     expect(entry.size).toBe(Buffer.byteLength('chunk-onechunk-two'));
@@ -284,7 +358,7 @@ describe('streamToFile', () => {
 
   it('aborts and removes the partial file when the limit is exceeded', async () => {
     await expect(
-      streamToFile(sandboxRelative, 'too-big.txt', Readable.from(['x'.repeat(5000)]), 100),
+      streamToFile(sandboxRelative, 'too-big.txt', Readable.from(['x'.repeat(5000)]), 100)
     ).rejects.toThrow(PayloadTooLargeError);
 
     // A rejected upload must not leave a truncated file behind.
@@ -292,6 +366,8 @@ describe('streamToFile', () => {
   });
 
   it('rejects a file name containing a path separator', async () => {
-    await expect(streamToFile(sandboxRelative, '../escape.txt', Readable.from(['x']), 1024)).rejects.toThrow();
+    await expect(
+      streamToFile(sandboxRelative, '../escape.txt', Readable.from(['x']), 1024)
+    ).rejects.toThrow();
   });
 });

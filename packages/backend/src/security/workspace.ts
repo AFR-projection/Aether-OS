@@ -136,7 +136,11 @@ export async function resolveExistingPath(relative: string): Promise<ResolvedPat
     throw new PathRejectedError('Path resolves outside the workspace');
   }
 
-  return { absolute: resolved, relative: normalizeRelativePath(path.relative(root, resolved)), exists: true };
+  return {
+    absolute: resolved,
+    relative: normalizeRelativePath(path.relative(root, resolved)),
+    exists: true,
+  };
 }
 
 export interface ResolveWriteOptions {
@@ -159,7 +163,7 @@ export interface ResolveWriteOptions {
  */
 export async function resolvePathForWrite(
   relative: string,
-  options: ResolveWriteOptions = {},
+  options: ResolveWriteOptions = {}
 ): Promise<ResolvedPath> {
   const root = await getWorkspaceRoot();
   const safeRelative = assertSafeRelativePath(relative);

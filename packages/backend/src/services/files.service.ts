@@ -13,12 +13,27 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-
-import { LIMITS, type DirectoryListing, type FileEntry, type FileEntryType, type ReadFileResponse } from '@aether/shared';
+import {
+  LIMITS,
+  type DirectoryListing,
+  type FileEntry,
+  type FileEntryType,
+  type ReadFileResponse,
+} from '@aether/shared';
 
 import { config } from '../config.js';
-import { getWorkspaceRoot, joinToRoot, resolveExistingPath, resolvePathForWrite } from '../security/workspace.js';
-import { ConflictError, NotFoundError, PathRejectedError, PayloadTooLargeError } from '../utils/errors.js';
+import {
+  getWorkspaceRoot,
+  joinToRoot,
+  resolveExistingPath,
+  resolvePathForWrite,
+} from '../security/workspace.js';
+import {
+  ConflictError,
+  NotFoundError,
+  PathRejectedError,
+  PayloadTooLargeError,
+} from '../utils/errors.js';
 
 import type { Readable } from 'node:stream';
 
@@ -77,8 +92,11 @@ const MIME_TYPES: Record<string, string> = {
 /** Extensions we are willing to return as UTF-8 text. */
 const TEXT_EXTENSIONS = new Set(
   Object.entries(MIME_TYPES)
-    .filter(([, mime]) => mime.startsWith('text/') || mime === 'application/json' || mime === 'application/xml')
-    .map(([extension]) => extension),
+    .filter(
+      ([, mime]) =>
+        mime.startsWith('text/') || mime === 'application/json' || mime === 'application/xml'
+    )
+    .map(([extension]) => extension)
 );
 
 export function getMimeType(filePath: string): string {
@@ -158,7 +176,9 @@ export async function listDirectory(options: ListDirectoryOptions): Promise<Dire
 
   const dirents = await readdir(resolved.absolute, { withFileTypes: true });
 
-  const visible = options.showHidden ? dirents : dirents.filter((entry) => !entry.name.startsWith('.'));
+  const visible = options.showHidden
+    ? dirents
+    : dirents.filter((entry) => !entry.name.startsWith('.'));
 
   const truncated = visible.length > LIMITS.MAX_DIRECTORY_ENTRIES;
   const selected = visible.slice(0, LIMITS.MAX_DIRECTORY_ENTRIES);
@@ -172,7 +192,7 @@ export async function listDirectory(options: ListDirectoryOptions): Promise<Dire
         // rotated, for example) is skipped rather than failing the whole listing.
         return null;
       }
-    }),
+    })
   );
 
   const filtered = entries.filter((entry): entry is FileEntry => entry !== null);
@@ -233,7 +253,10 @@ async function assertReadableFile(relative: string): Promise<{ absolute: string;
  * Files larger than `MAX_FILE_READ_BYTES` are truncated rather than rejected so
  * a large log file is still inspectable. Binary files are returned base64.
  */
-export async function readFile(relative: string, forceEncoding?: 'utf8' | 'base64'): Promise<ReadFileResponse> {
+export async function readFile(
+  relative: string,
+  forceEncoding?: 'utf8' | 'base64'
+): Promise<ReadFileResponse> {
   const { absolute, size } = await assertReadableFile(relative);
   const mimeType = getMimeType(absolute);
   const extension = path.extname(absolute).toLowerCase();
@@ -432,7 +455,9 @@ export async function searchEntries(options: SearchOptions): Promise<FileEntry[]
 }
 
 /** Opens a readable stream for the download endpoint. */
-export async function openReadStream(relative: string): Promise<{ stream: NodeJS.ReadableStream; size: number; name: string }> {
+export async function openReadStream(
+  relative: string
+): Promise<{ stream: NodeJS.ReadableStream; size: number; name: string }> {
   const { absolute, size } = await assertReadableFile(relative);
   return {
     stream: createReadStream(absolute),
@@ -462,7 +487,7 @@ export async function streamToFile(
   relativeDirectory: string,
   fileName: string,
   source: Readable,
-  maxBytes: number,
+  maxBytes: number
 ): Promise<FileEntry> {
   const relative = relativeDirectory === '' ? fileName : `${relativeDirectory}/${fileName}`;
   const target = await resolvePathForWrite(relative);
@@ -481,9 +506,11 @@ export async function streamToFile(
         written += chunk.length;
         if (written > maxBytes) {
           aborted = true;
-          source.destroy(new PayloadTooLargeError('Upload exceeds the maximum file size', {
-            limit: maxBytes,
-          }));
+          source.destroy(
+            new PayloadTooLargeError('Upload exceeds the maximum file size', {
+              limit: maxBytes,
+            })
+          );
         }
       });
 

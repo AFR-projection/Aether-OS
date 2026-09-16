@@ -44,14 +44,16 @@ const USER_COLUMNS = `id, username, email, password_hash, role, is_active, faile
                       locked_until, last_login_at, password_changed_at, created_at, updated_at`;
 
 export async function findUserById(id: string): Promise<UserRow | null> {
-  const row = await queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM aether.users WHERE id = $1`, [id]);
+  const row = await queryOne<UserRow>(`SELECT ${USER_COLUMNS} FROM aether.users WHERE id = $1`, [
+    id,
+  ]);
   return row ?? null;
 }
 
 export async function findUserByUsername(username: string): Promise<UserRow | null> {
   const row = await queryOne<UserRow>(
     `SELECT ${USER_COLUMNS} FROM aether.users WHERE lower(username) = lower($1)`,
-    [username],
+    [username]
   );
   return row ?? null;
 }
@@ -73,7 +75,7 @@ export async function createUser(input: CreateUserInput): Promise<UserRow> {
     `INSERT INTO aether.users (username, email, password_hash, role)
      VALUES ($1, $2, $3, $4)
      RETURNING ${USER_COLUMNS}`,
-    [input.username, input.email ?? null, input.passwordHash, input.role],
+    [input.username, input.email ?? null, input.passwordHash, input.role]
   );
 
   if (!row) throw new Error('INSERT INTO aether.users returned no row');
@@ -81,7 +83,9 @@ export async function createUser(input: CreateUserInput): Promise<UserRow> {
 }
 
 export async function listUsers(): Promise<UserRow[]> {
-  const result = await query<UserRow>(`SELECT ${USER_COLUMNS} FROM aether.users ORDER BY username ASC`);
+  const result = await query<UserRow>(
+    `SELECT ${USER_COLUMNS} FROM aether.users ORDER BY username ASC`
+  );
   return result.rows;
 }
 
@@ -118,7 +122,7 @@ export async function updateUser(id: string, changes: UpdateUserInput): Promise<
 
   const row = await queryOne<UserRow>(
     `UPDATE aether.users SET ${assignments.join(', ')} WHERE id = $${params.length} RETURNING ${USER_COLUMNS}`,
-    params,
+    params
   );
   return row ?? null;
 }
@@ -139,14 +143,14 @@ export async function recordLoginOutcome(
   userId: string,
   outcome: 'success' | 'failure',
   lockThreshold: number,
-  lockDurationMs: number,
+  lockDurationMs: number
 ): Promise<void> {
   if (outcome === 'success') {
     await query(
       `UPDATE aether.users
           SET failed_login_attempts = 0, locked_until = NULL, last_login_at = now(), updated_at = now()
         WHERE id = $1`,
-      [userId],
+      [userId]
     );
     return;
   }
@@ -160,6 +164,6 @@ export async function recordLoginOutcome(
             END,
             updated_at = now()
       WHERE id = $1`,
-    [userId, lockThreshold, `${Math.round(lockDurationMs / 1000)} seconds`],
+    [userId, lockThreshold, `${Math.round(lockDurationMs / 1000)} seconds`]
   );
 }

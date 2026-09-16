@@ -30,7 +30,10 @@ export type ResizeBody = z.infer<typeof resizeBodySchema>;
  * keystrokes. 64 KiB per call mirrors the WebSocket frame limit.
  */
 export const terminalInputBodySchema = z.object({
-  data: z.string().min(1).max(64 * 1024),
+  data: z
+    .string()
+    .min(1)
+    .max(64 * 1024),
 });
 export type TerminalInputBody = z.infer<typeof terminalInputBodySchema>;
 

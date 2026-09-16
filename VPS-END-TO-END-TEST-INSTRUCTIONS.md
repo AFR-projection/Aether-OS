@@ -1,8 +1,8 @@
 # Aether Cloud OS — VPS End-to-End Test Instructions
 
-This runbook requires a fresh Ubuntu 22.04/24.04 x86_64 VPS with systemd, at
-least 2 CPU cores, 4 GB RAM, 40 GB free disk, and ports 80/443 available.
-The local environment cannot validate Docker, Caddy ACME, or external DNS.
+This runbook requires a fresh Ubuntu 22.04/24.04 x86_64 VPS with systemd, at least 2 CPU cores, 4 GB
+RAM, 40 GB free disk, and ports 80/443 available. The local environment cannot validate Docker,
+Caddy ACME, or external DNS.
 
 ## 1. Prepare DNS and VPS
 
@@ -70,8 +70,8 @@ sudo ufw status verbose
 sudo docker compose config
 ```
 
-Expected permissions are `.env=600`, secret files `600`, and the secrets
-directory `700`. Confirm SSH remains allowed before enabling UFW.
+Expected permissions are `.env=600`, secret files `600`, and the secrets directory `700`. Confirm
+SSH remains allowed before enabling UFW.
 
 ## 5. Verify pairing, terminal, filesystem, and processes
 
@@ -102,12 +102,11 @@ sudo aether backup
 sudo aether restore /opt/aether/backups/<backup>.tar.gz
 ```
 
-Verify the default uninstall preserves data and `--purge` is required for
-permanent removal. Never run purge on a production instance without a backup.
+Verify the default uninstall preserves data and `--purge` is required for permanent removal. Never
+run purge on a production instance without a backup.
 
 ## 7. Report results
 
-Record Ubuntu version, provider, instance size, installer commit, DNS result,
-service status, HTTPS result, security checks, and any failed test step. This
-VPS validation is an external-environment prerequisite and cannot be marked
-passed from the Windows development machine alone.
+Record Ubuntu version, provider, instance size, installer commit, DNS result, service status, HTTPS
+result, security checks, and any failed test step. This VPS validation is an external-environment
+prerequisite and cannot be marked passed from the Windows development machine alone.

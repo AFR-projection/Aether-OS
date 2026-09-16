@@ -10,7 +10,6 @@ import { apiDownload, apiRequest, apiUpload } from '../../lib/api-client.js';
 
 import type { DirectoryListing, FileEntry, ReadFileResponse } from '@aether/shared';
 
-
 export function listDirectory(path: string, showHidden: boolean): Promise<DirectoryListing> {
   return apiRequest<DirectoryListing>('/api/files/list', {
     query: { path, showHidden },

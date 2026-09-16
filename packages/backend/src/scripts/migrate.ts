@@ -14,7 +14,7 @@ async function main(): Promise<void> {
     const result = await runMigrations();
     logger.info(
       { applied: result.applied, skipped: result.skipped },
-      result.applied.length > 0 ? 'migrations applied' : 'no pending migrations',
+      result.applied.length > 0 ? 'migrations applied' : 'no pending migrations'
     );
   } catch (error) {
     logger.fatal({ err: error }, 'migration run failed');

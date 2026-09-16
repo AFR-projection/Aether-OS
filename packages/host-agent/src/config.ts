@@ -7,18 +7,14 @@ import { z } from 'zod';
  * agent refuses to start if required values are missing.
  */
 
-const booleanFromEnv = z
-  .union([z.boolean(), z.string()])
-  .transform((value) => {
-    if (typeof value === 'boolean') return value;
-    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
-  });
+const booleanFromEnv = z.union([z.boolean(), z.string()]).transform((value) => {
+  if (typeof value === 'boolean') return value;
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+});
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  LOG_LEVEL: z
-    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-    .default('info'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   // --- Backend connection ---
   /** WebSocket URL of the Aether backend, e.g. wss://aether.example.com */
@@ -43,7 +39,7 @@ const envSchema = z.object({
       value
         .split(',')
         .map((shell) => shell.trim())
-        .filter((shell) => shell.length > 0),
+        .filter((shell) => shell.length > 0)
     ),
 
   // --- Process management ---

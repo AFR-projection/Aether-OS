@@ -11,9 +11,19 @@ const AGENT: AgentRecord = {
   createdAt: new Date().toISOString(),
 };
 
-function parseReply(raw: string | null): { replyTo: string; ok: boolean; result?: unknown; error?: { code: string; message: string } } {
+function parseReply(raw: string | null): {
+  replyTo: string;
+  ok: boolean;
+  result?: unknown;
+  error?: { code: string; message: string };
+} {
   expect(raw).not.toBeNull();
-  return JSON.parse(raw as string) as { replyTo: string; ok: boolean; result?: unknown; error?: { code: string; message: string } };
+  return JSON.parse(raw as string) as {
+    replyTo: string;
+    ok: boolean;
+    result?: unknown;
+    error?: { code: string; message: string };
+  };
 }
 
 /**
@@ -26,7 +36,10 @@ function parseReply(raw: string | null): { replyTo: string; ok: boolean; result?
  */
 describe('dispatchAgentMessage', () => {
   it('answers system.info without a database', async () => {
-    const raw = await dispatchAgentMessage(AGENT, JSON.stringify({ id: 'g1', type: 'system.info' }));
+    const raw = await dispatchAgentMessage(
+      AGENT,
+      JSON.stringify({ id: 'g1', type: 'system.info' })
+    );
     const reply = parseReply(raw);
     expect(reply.ok).toBe(true);
     expect((reply.result as { hostname: string }).hostname.length).toBeGreaterThan(0);
@@ -51,7 +64,10 @@ describe('dispatchAgentMessage', () => {
   });
 
   it('correlates replies with the request id', async () => {
-    const raw = await dispatchAgentMessage(AGENT, JSON.stringify({ id: 'corr-42', type: 'system.info' }));
+    const raw = await dispatchAgentMessage(
+      AGENT,
+      JSON.stringify({ id: 'corr-42', type: 'system.info' })
+    );
     const reply = parseReply(raw);
     expect(reply.replyTo).toBe('corr-42');
   }, 30_000);
@@ -62,7 +78,11 @@ describe('dispatchAgentMessage', () => {
     // "Internal error" instead.
     const raw = await dispatchAgentMessage(
       AGENT,
-      JSON.stringify({ id: 'g4', type: 'processes.signal', params: { pid: 1.5, signal: 'SIGTERM' } }),
+      JSON.stringify({
+        id: 'g4',
+        type: 'processes.signal',
+        params: { pid: 1.5, signal: 'SIGTERM' },
+      })
     );
     const reply = parseReply(raw);
     expect(reply.ok).toBe(false);

@@ -188,6 +188,7 @@ aether-cloud-os/
 **Choice:** PNPM Workspaces  
 **Status:** Proposed  
 **Rationale:**
+
 - Fast, efficient disk usage
 - Excellent monorepo support
 - Better than npm workspaces
@@ -195,6 +196,7 @@ aether-cloud-os/
 - Native workspace protocol support
 
 **Alternative Considered:** Turborepo + PNPM
+
 - Turborepo adds caching and task orchestration
 - Can be added later if build times become issue
 - Not needed for MVP
@@ -202,14 +204,15 @@ aether-cloud-os/
 ### Package Structure
 
 **Three main packages:**
+
 1. `frontend` - React application
 2. `backend` - Node.js API server
 3. `agent` - Host Agent
 
-**One shared package:**
-4. `shared` - Types, contracts, utilities
+**One shared package:** 4. `shared` - Types, contracts, utilities
 
 **Why this structure:**
+
 - Clear separation of concerns
 - Type sharing via `shared` package
 - Independent versioning possible
@@ -229,15 +232,16 @@ aether-cloud-os/
 ### Testing Strategy
 
 **Unit tests:** Co-located with source
+
 ```
 src/services/auth.service.ts
 src/services/auth.service.test.ts
 ```
 
-**Integration tests:** `tests/integration/`
-**E2E tests:** `tests/e2e/`
+**Integration tests:** `tests/integration/` **E2E tests:** `tests/e2e/`
 
 **Tools:**
+
 - Frontend: Vitest + React Testing Library
 - Backend: Jest + Supertest
 - E2E: Playwright
@@ -245,6 +249,7 @@ src/services/auth.service.test.ts
 ### Development Workflow
 
 **Local development:**
+
 ```bash
 pnpm install              # Install all dependencies
 pnpm dev                  # Start all services in dev mode
@@ -254,6 +259,7 @@ pnpm build                # Build all packages
 ```
 
 **Package-specific:**
+
 ```bash
 pnpm --filter frontend dev    # Start only frontend
 pnpm --filter backend dev     # Start only backend
@@ -265,6 +271,7 @@ pnpm --filter agent dev       # Start only agent
 ## 📦 Package Dependencies
 
 ### Frontend Dependencies (Proposed)
+
 ```json
 {
   "dependencies": {
@@ -295,6 +302,7 @@ pnpm --filter agent dev       # Start only agent
 ```
 
 ### Backend Dependencies (Proposed)
+
 ```json
 {
   "dependencies": {
@@ -327,6 +335,7 @@ pnpm --filter agent dev       # Start only agent
 ```
 
 ### Agent Dependencies (Proposed)
+
 ```json
 {
   "dependencies": {
@@ -348,6 +357,7 @@ pnpm --filter agent dev       # Start only agent
 ```
 
 ### Shared Dependencies (Proposed)
+
 ```json
 {
   "dependencies": {
@@ -365,6 +375,7 @@ pnpm --filter agent dev       # Start only agent
 ## 🔧 Configuration Files Needed
 
 ### Root Level
+
 - [x] `package.json` - Root workspace config
 - [x] `pnpm-workspace.yaml` - PNPM workspace definition
 - [x] `tsconfig.base.json` - Base TypeScript config
@@ -375,6 +386,7 @@ pnpm --filter agent dev       # Start only agent
 - [ ] `docker-compose.dev.yml` - Development environment
 
 ### Per Package
+
 - [ ] `package.json` - Package dependencies
 - [ ] `tsconfig.json` - TypeScript config (extends base)
 
@@ -383,21 +395,27 @@ pnpm --filter agent dev       # Start only agent
 ## ⚠️ Open Questions & Decisions Needed
 
 ### DECISION PENDING #1: Multi-tenancy
+
 **Impact on structure:**
+
 - If multi-user: Need organization/team tables in Prisma schema
 - If single-user: Simpler user model
 - **Recommendation:** Start with single-user, add multi-tenancy later
 - **Action:** Document assumption, make schema extensible
 
 ### DECISION PENDING #2: License
+
 **Impact on structure:**
+
 - Need LICENSE file in root
 - Need license headers in all source files
 - **Recommendation:** Apache 2.0
 - **Action:** Wait for stakeholder approval
 
 ### DECISION PENDING #3: Monorepo Tool
+
 **Options:**
+
 - PNPM Workspaces (simple, fast)
 - Turborepo + PNPM (adds caching)
 - Nx (powerful but complex)

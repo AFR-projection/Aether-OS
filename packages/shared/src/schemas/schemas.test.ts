@@ -64,9 +64,11 @@ describe('loginRequestSchema', () => {
 describe('bootstrapRequestSchema', () => {
   it('applies the full password policy to the account being created', () => {
     expect(
-      bootstrapRequestSchema.safeParse({ username: 'owner', password: 'strongpassword' }).success,
+      bootstrapRequestSchema.safeParse({ username: 'owner', password: 'strongpassword' }).success
     ).toBe(true);
-    expect(bootstrapRequestSchema.safeParse({ username: 'owner', password: 'weak' }).success).toBe(false);
+    expect(bootstrapRequestSchema.safeParse({ username: 'owner', password: 'weak' }).success).toBe(
+      false
+    );
   });
 });
 
@@ -172,18 +174,28 @@ describe('createTerminalBodySchema', () => {
 
 describe('terminalClientMessageSchema', () => {
   it('accepts each supported frame', () => {
-    expect(terminalClientMessageSchema.safeParse({ type: 'input', data: 'ls\n' }).success).toBe(true);
-    expect(terminalClientMessageSchema.safeParse({ type: 'resize', cols: 120, rows: 40 }).success).toBe(true);
-    expect(terminalClientMessageSchema.safeParse({ type: 'signal', signal: 'SIGINT' }).success).toBe(true);
+    expect(terminalClientMessageSchema.safeParse({ type: 'input', data: 'ls\n' }).success).toBe(
+      true
+    );
+    expect(
+      terminalClientMessageSchema.safeParse({ type: 'resize', cols: 120, rows: 40 }).success
+    ).toBe(true);
+    expect(
+      terminalClientMessageSchema.safeParse({ type: 'signal', signal: 'SIGINT' }).success
+    ).toBe(true);
     expect(terminalClientMessageSchema.safeParse({ type: 'ping' }).success).toBe(true);
   });
 
   it('rejects an unknown frame type', () => {
-    expect(terminalClientMessageSchema.safeParse({ type: 'exec', command: 'rm -rf /' }).success).toBe(false);
+    expect(
+      terminalClientMessageSchema.safeParse({ type: 'exec', command: 'rm -rf /' }).success
+    ).toBe(false);
   });
 
   it('rejects an unsupported signal', () => {
-    expect(terminalClientMessageSchema.safeParse({ type: 'signal', signal: 'SIGUSR1' }).success).toBe(false);
+    expect(
+      terminalClientMessageSchema.safeParse({ type: 'signal', signal: 'SIGUSR1' }).success
+    ).toBe(false);
   });
 
   it('rejects an oversized input frame', () => {

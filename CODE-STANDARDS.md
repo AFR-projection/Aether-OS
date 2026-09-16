@@ -34,6 +34,7 @@ All packages use TypeScript strict mode with additional checks:
 - Prefer interfaces for object shapes, types for unions/intersections
 
 **Good:**
+
 ```typescript
 export function processUser(user: User): Promise<ProcessedUser> {
   const data = transformData(user); // inferred type
@@ -42,8 +43,10 @@ export function processUser(user: User): Promise<ProcessedUser> {
 ```
 
 **Avoid:**
+
 ```typescript
-function processUser(user: any): any { // too loose
+function processUser(user: any): any {
+  // too loose
   // ...
 }
 ```
@@ -82,7 +85,7 @@ const name = user!.profile!.name; // risky
 
 ```typescript
 // Component files - PascalCase
-UserProfile.tsx
+UserProfile.tsx;
 
 // Component naming
 export function UserProfile({ userId }: UserProfileProps) {
@@ -155,7 +158,10 @@ Use proper error classes:
 ```typescript
 // Define custom errors
 export class ValidationError extends Error {
-  constructor(message: string, public field: string) {
+  constructor(
+    message: string,
+    public field: string
+  ) {
     super(message);
     this.name = 'ValidationError';
   }
@@ -200,10 +206,7 @@ try {
 
 ```typescript
 // Good - parallel execution
-const [users, posts] = await Promise.all([
-  fetchUsers(),
-  fetchPosts()
-]);
+const [users, posts] = await Promise.all([fetchUsers(), fetchPosts()]);
 
 // Avoid - sequential when parallel is possible
 const users = await fetchUsers();
@@ -222,21 +225,18 @@ const posts = await fetchPosts();
 ```typescript
 /**
  * Validates terminal command against security policies.
- * 
+ *
  * @param command - The command string to validate
  * @param context - User context with permissions
  * @returns true if command is allowed
  * @throws SecurityError if command is blocked
  */
-export async function validateCommand(
-  command: string,
-  context: UserContext
-): Promise<boolean> {
+export async function validateCommand(command: string, context: UserContext): Promise<boolean> {
   // Check against blocklist first (performance)
   if (BLOCKED_COMMANDS.has(command)) {
     throw new SecurityError('Command not allowed');
   }
-  
+
   // TODO: Add regex pattern matching for partial blocks
   return true;
 }
@@ -265,18 +265,18 @@ describe('UserService', () => {
       // Arrange
       const userId = '123';
       const mockUser = { id: userId, name: 'Test' };
-      
+
       // Act
       const result = await getUserById(userId);
-      
+
       // Assert
       expect(result).toEqual(mockUser);
     });
-    
+
     it('should throw NotFoundError when user does not exist', async () => {
       // Arrange
       const userId = 'nonexistent';
-      
+
       // Act & Assert
       await expect(getUserById(userId)).rejects.toThrow(NotFoundError);
     });
@@ -304,8 +304,8 @@ describe('UserService', () => {
 // Good - focused component
 export function UserAvatar({ user }: { user: User }) {
   return (
-    <img 
-      src={user.avatar} 
+    <img
+      src={user.avatar}
       alt={user.name}
       className="rounded-full w-10 h-10"
     />
@@ -316,11 +316,11 @@ export function UserAvatar({ user }: { user: User }) {
 function useUser(userId: string) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  
+
   useEffect(() => {
     fetchUser(userId).then(setUser).finally(() => setLoading(false));
   }, [userId]);
-  
+
   return { user, loading };
 }
 ```
@@ -339,13 +339,13 @@ const [count, setCount] = useState(0);
 // Server state with TanStack Query
 const { data: user, isLoading } = useQuery({
   queryKey: ['user', userId],
-  queryFn: () => fetchUser(userId)
+  queryFn: () => fetchUser(userId),
 });
 
 // Global client state with Zustand
 const useStore = create<Store>((set) => ({
   theme: 'dark',
-  setTheme: (theme) => set({ theme })
+  setTheme: (theme) => set({ theme }),
 }));
 ```
 
@@ -370,16 +370,10 @@ const useStore = create<Store>((set) => ({
 const Terminal = lazy(() => import('./Terminal'));
 
 // Memoization
-const sortedUsers = useMemo(
-  () => users.sort((a, b) => a.name.localeCompare(b.name)),
-  [users]
-);
+const sortedUsers = useMemo(() => users.sort((a, b) => a.name.localeCompare(b.name)), [users]);
 
 // Debouncing
-const debouncedSearch = useDebouncedCallback(
-  (value: string) => performSearch(value),
-  300
-);
+const debouncedSearch = useDebouncedCallback((value: string) => performSearch(value), 300);
 ```
 
 ## Security
@@ -392,9 +386,13 @@ Always validate and sanitize user input:
 import { z } from 'zod';
 
 const UserSchema = z.object({
-  username: z.string().min(3).max(50).regex(/^[a-zA-Z0-9_]+$/),
+  username: z
+    .string()
+    .min(3)
+    .max(50)
+    .regex(/^[a-zA-Z0-9_]+$/),
   email: z.string().email(),
-  age: z.number().int().min(13).max(120)
+  age: z.number().int().min(13).max(120),
 });
 
 // Validate before use
@@ -407,10 +405,7 @@ Use parameterized queries:
 
 ```typescript
 // Good - parameterized
-const result = await db.query(
-  'SELECT * FROM users WHERE id = $1',
-  [userId]
-);
+const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
 
 // NEVER - string concatenation
 const result = await db.query(
@@ -441,6 +436,7 @@ footer (optional)
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
 Examples:
+
 ```
 feat(terminal): add command history support
 fix(auth): prevent token refresh race condition
@@ -456,6 +452,7 @@ hotfix/critical-issue
 ```
 
 Examples:
+
 ```
 feature/websocket-reconnect
 bugfix/123-terminal-crash
@@ -487,4 +484,5 @@ hotfix/security-vulnerability
 
 ---
 
-**Remember:** These are guidelines, not rigid rules. Use good judgment and prioritize code that works, is maintainable, and serves users well.
+**Remember:** These are guidelines, not rigid rules. Use good judgment and prioritize code that
+works, is maintainable, and serves users well.

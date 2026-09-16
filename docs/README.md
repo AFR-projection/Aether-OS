@@ -8,7 +8,8 @@
 
 ## 📚 Documentation Overview
 
-This directory contains the complete technical documentation for Aether Cloud OS, a universal browser-based desktop environment for VPS and local hosts.
+This directory contains the complete technical documentation for Aether Cloud OS, a universal
+browser-based desktop environment for VPS and local hosts.
 
 ---
 
@@ -16,60 +17,68 @@ This directory contains the complete technical documentation for Aether Cloud OS
 
 ### Core Architecture
 
-| Document | Description | Status |
-|----------|-------------|--------|
-| [00-MASTER-ARCHITECTURE.md](architecture/00-MASTER-ARCHITECTURE.md) | System overview, technology stack, and high-level architecture | ✅ Complete |
-| [05-DESKTOP-WINDOW-MANAGER.md](architecture/05-DESKTOP-WINDOW-MANAGER.md) | Desktop shell, window management, and theming | ✅ Complete |
-| [06-APPLICATION-RUNTIME.md](architecture/06-APPLICATION-RUNTIME.md) | App lifecycle, permissions, and built-in applications | ✅ Complete |
-| [09-SECURITY-AUTH.md](architecture/09-SECURITY-AUTH.md) | Authentication, authorization, and security measures | ✅ Complete |
-| [12-DATABASE-API-STORAGE.md](architecture/12-DATABASE-API-STORAGE.md) | Database schema, API specs, and cloud storage | ✅ Complete |
-| [14-DEPLOYMENT-ROADMAP.md](architecture/14-DEPLOYMENT-ROADMAP.md) | Deployment guide, operations, and development roadmap | ✅ Complete |
-| [16-RISK-DECISIONS.md](architecture/16-RISK-DECISIONS.md) | Risk register, architecture decisions, and testing strategy | ✅ Complete |
+| Document                                                                  | Description                                                    | Status      |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------- |
+| [00-MASTER-ARCHITECTURE.md](architecture/00-MASTER-ARCHITECTURE.md)       | System overview, technology stack, and high-level architecture | ✅ Complete |
+| [05-DESKTOP-WINDOW-MANAGER.md](architecture/05-DESKTOP-WINDOW-MANAGER.md) | Desktop shell, window management, and theming                  | ✅ Complete |
+| [06-APPLICATION-RUNTIME.md](architecture/06-APPLICATION-RUNTIME.md)       | App lifecycle, permissions, and built-in applications          | ✅ Complete |
+| [09-SECURITY-AUTH.md](architecture/09-SECURITY-AUTH.md)                   | Authentication, authorization, and security measures           | ✅ Complete |
+| [12-DATABASE-API-STORAGE.md](architecture/12-DATABASE-API-STORAGE.md)     | Database schema, API specs, and cloud storage                  | ✅ Complete |
+| [14-DEPLOYMENT-ROADMAP.md](architecture/14-DEPLOYMENT-ROADMAP.md)         | Deployment guide, operations, and development roadmap          | ✅ Complete |
+| [16-RISK-DECISIONS.md](architecture/16-RISK-DECISIONS.md)                 | Risk register, architecture decisions, and testing strategy    | ✅ Complete |
 
 ### Additional Documents (Planned)
 
-| Document | Description | Status |
-|----------|-------------|--------|
-| `01-HOST-AGENT-SPEC.md` | Detailed Host Agent specification | 📝 Planned |
+| Document                    | Description                                    | Status     |
+| --------------------------- | ---------------------------------------------- | ---------- |
+| `01-HOST-AGENT-SPEC.md`     | Detailed Host Agent specification              | 📝 Planned |
 | `02-TERMINAL-FILESYSTEM.md` | Terminal and filesystem implementation details | 📝 Planned |
-| `03-UI-UX-DESIGN-SYSTEM.md` | Design system, components, and patterns | 📝 Planned |
-| `04-API-REFERENCE.md` | Complete API reference documentation | 📝 Planned |
-| `10-AI-AGENT-SPEC.md` | AI agent implementation and tool system | 📝 Planned |
-| `11-CLOUD-SYNC.md` | Cloud storage and sync architecture | 📝 Planned |
+| `03-UI-UX-DESIGN-SYSTEM.md` | Design system, components, and patterns        | 📝 Planned |
+| `04-API-REFERENCE.md`       | Complete API reference documentation           | 📝 Planned |
+| `10-AI-AGENT-SPEC.md`       | AI agent implementation and tool system        | 📝 Planned |
+| `11-CLOUD-SYNC.md`          | Cloud storage and sync architecture            | 📝 Planned |
 
 ---
 
 ## 🎯 Reading Guide
 
 ### For Project Stakeholders
+
 Start here to understand the vision and scope:
+
 1. [README.md](../README.md) - Project overview
-2. [00-MASTER-ARCHITECTURE.md](architecture/00-MASTER-ARCHITECTURE.md) - Section 1-2 (Overview & Tech Stack)
+2. [00-MASTER-ARCHITECTURE.md](architecture/00-MASTER-ARCHITECTURE.md) - Section 1-2 (Overview &
+   Tech Stack)
 3. [14-DEPLOYMENT-ROADMAP.md](architecture/14-DEPLOYMENT-ROADMAP.md) - Section 15 (Roadmap)
 
 ### For Developers (Backend)
+
 1. [00-MASTER-ARCHITECTURE.md](architecture/00-MASTER-ARCHITECTURE.md) - Complete read
 2. [09-SECURITY-AUTH.md](architecture/09-SECURITY-AUTH.md) - Authentication system
 3. [12-DATABASE-API-STORAGE.md](architecture/12-DATABASE-API-STORAGE.md) - Database and API
 4. [16-RISK-DECISIONS.md](architecture/16-RISK-DECISIONS.md) - Architecture decisions
 
 ### For Developers (Frontend)
+
 1. [00-MASTER-ARCHITECTURE.md](architecture/00-MASTER-ARCHITECTURE.md) - Section 1-2
 2. [05-DESKTOP-WINDOW-MANAGER.md](architecture/05-DESKTOP-WINDOW-MANAGER.md) - Desktop UI
 3. [06-APPLICATION-RUNTIME.md](architecture/06-APPLICATION-RUNTIME.md) - App system
 4. Design System (coming soon)
 
 ### For Developers (Host Agent)
+
 1. [00-MASTER-ARCHITECTURE.md](architecture/00-MASTER-ARCHITECTURE.md) - Section 3
 2. [09-SECURITY-AUTH.md](architecture/09-SECURITY-AUTH.md) - Security model
 3. Host Agent Spec (coming soon)
 
 ### For DevOps/SRE
+
 1. [14-DEPLOYMENT-ROADMAP.md](architecture/14-DEPLOYMENT-ROADMAP.md) - Section 14 (Deployment)
 2. [16-RISK-DECISIONS.md](architecture/16-RISK-DECISIONS.md) - Section 16 (Risks)
 3. [12-DATABASE-API-STORAGE.md](architecture/12-DATABASE-API-STORAGE.md) - Infrastructure
 
 ### For Security Reviewers
+
 1. [09-SECURITY-AUTH.md](architecture/09-SECURITY-AUTH.md) - Complete read
 2. [16-RISK-DECISIONS.md](architecture/16-RISK-DECISIONS.md) - Section 16 (Risk Register)
 3. [00-MASTER-ARCHITECTURE.md](architecture/00-MASTER-ARCHITECTURE.md) - Section 3 (Host Agent)
@@ -79,8 +88,10 @@ Start here to understand the vision and scope:
 ## 📖 Document Summaries
 
 ### 00-MASTER-ARCHITECTURE.md
+
 **Purpose:** Complete system architecture overview  
 **Contents:**
+
 - System architecture diagrams
 - Technology stack with rationale
 - Host Agent architecture
@@ -91,14 +102,17 @@ Start here to understand the vision and scope:
 - Deployment architectures
 
 **Key Sections:**
+
 - Section 1: System Architecture Overview
 - Section 2: Technology Stack (with decision rationale)
 - Section 3: Host Agent & Host Integration
 - Section 4: Terminal & Filesystem
 
 ### 05-DESKTOP-WINDOW-MANAGER.md
+
 **Purpose:** Desktop environment and window management  
 **Contents:**
+
 - Desktop shell components
 - Window Manager API and lifecycle
 - Window state management
@@ -108,6 +122,7 @@ Start here to understand the vision and scope:
 - Accessibility
 
 **Key Sections:**
+
 - Section 5.1: Desktop Shell Architecture
 - Section 5.2: Window Manager (complete API)
 - Section 5.3: Window Rendering
@@ -115,8 +130,10 @@ Start here to understand the vision and scope:
 - Section 5.6: Desktop State Persistence
 
 ### 06-APPLICATION-RUNTIME.md
+
 **Purpose:** Application system and built-in apps  
 **Contents:**
+
 - App manifest schema
 - App lifecycle management
 - Permission system
@@ -125,6 +142,7 @@ Start here to understand the vision and scope:
 - Built-in applications (Files, Terminal, Settings, etc.)
 
 **Key Sections:**
+
 - Section 6.1: Application Runtime Architecture
 - Section 6.2: App Manifest
 - Section 6.3: App Lifecycle
@@ -133,8 +151,10 @@ Start here to understand the vision and scope:
 - Section 7: Built-in Applications
 
 ### 09-SECURITY-AUTH.md
+
 **Purpose:** Security architecture and implementation  
 **Contents:**
+
 - Multi-layer security model
 - User authentication (JWT + 2FA)
 - Host Agent authentication
@@ -145,6 +165,7 @@ Start here to understand the vision and scope:
 - Secret management
 
 **Key Sections:**
+
 - Section 9.1: Security Architecture Overview
 - Section 9.2: Authentication (flows and implementation)
 - Section 9.3: Authorization (RBAC model)
@@ -154,8 +175,10 @@ Start here to understand the vision and scope:
 - Section 9.7: Secret Management
 
 ### 12-DATABASE-API-STORAGE.md
+
 **Purpose:** Data layer and API specifications  
 **Contents:**
+
 - PostgreSQL schema (Prisma)
 - Database migrations strategy
 - REST API structure
@@ -165,6 +188,7 @@ Start here to understand the vision and scope:
 - Conflict resolution
 
 **Key Sections:**
+
 - Section 12.1: Database Schema (complete Prisma schema)
 - Section 12.2: Database Migrations
 - Section 12.3: API Architecture (complete endpoint list)
@@ -172,8 +196,10 @@ Start here to understand the vision and scope:
 - Section 8: Cloud Storage & Sync
 
 ### 14-DEPLOYMENT-ROADMAP.md
+
 **Purpose:** Deployment guide and project roadmap  
 **Contents:**
+
 - Deployment architecture
 - System requirements
 - Installation scripts (Bash)
@@ -185,13 +211,16 @@ Start here to understand the vision and scope:
 - Complete phase-by-phase roadmap
 
 **Key Sections:**
+
 - Section 14.1-14.7: Deployment & Operations
 - Section 15: Roadmap & Milestones (10 phases)
 - Phase descriptions with deliverables and acceptance criteria
 
 ### 16-RISK-DECISIONS.md
+
 **Purpose:** Risk management and architecture decisions  
 **Contents:**
+
 - Risk register (Critical to Low risks)
 - Architecture Decision Records (ADR)
 - Open questions requiring decisions
@@ -199,6 +228,7 @@ Start here to understand the vision and scope:
 - Test pyramid and coverage targets
 
 **Key Sections:**
+
 - Section 16: Risk Register (13 identified risks with mitigations)
 - Section 17: Decision Log (10 ADRs documented)
 - Section 18: Open Questions (5 pending decisions)
@@ -210,48 +240,52 @@ Start here to understand the vision and scope:
 
 ### Key Architecture Decisions
 
-| Decision | Choice | Rationale | Document |
-|----------|--------|-----------|----------|
-| Backend Runtime | Node.js + TypeScript | node-pty maturity, type sharing | 00-MASTER-ARCHITECTURE.md |
-| Database | PostgreSQL 16 | ACID, JSON support, production-ready | 00-MASTER-ARCHITECTURE.md |
-| Frontend | React 18 + TypeScript | Mature ecosystem, TypeScript support | 00-MASTER-ARCHITECTURE.md |
-| Authentication | JWT + Refresh Tokens | Standard, revocable | 09-SECURITY-AUTH.md |
-| Password Hashing | Argon2id | PHC winner, GPU-resistant | 09-SECURITY-AUTH.md |
-| Storage | S3-compatible | Standard API, multiple providers | 12-DATABASE-API-STORAGE.md |
-| Platform Priority | Linux first | VPS primary use case | 16-RISK-DECISIONS.md |
-| Browser Approach | iframe MVP, remote later | Pragmatic, honest limitations | 16-RISK-DECISIONS.md |
+| Decision          | Choice                   | Rationale                            | Document                   |
+| ----------------- | ------------------------ | ------------------------------------ | -------------------------- |
+| Backend Runtime   | Node.js + TypeScript     | node-pty maturity, type sharing      | 00-MASTER-ARCHITECTURE.md  |
+| Database          | PostgreSQL 16            | ACID, JSON support, production-ready | 00-MASTER-ARCHITECTURE.md  |
+| Frontend          | React 18 + TypeScript    | Mature ecosystem, TypeScript support | 00-MASTER-ARCHITECTURE.md  |
+| Authentication    | JWT + Refresh Tokens     | Standard, revocable                  | 09-SECURITY-AUTH.md        |
+| Password Hashing  | Argon2id                 | PHC winner, GPU-resistant            | 09-SECURITY-AUTH.md        |
+| Storage           | S3-compatible            | Standard API, multiple providers     | 12-DATABASE-API-STORAGE.md |
+| Platform Priority | Linux first              | VPS primary use case                 | 16-RISK-DECISIONS.md       |
+| Browser Approach  | iframe MVP, remote later | Pragmatic, honest limitations        | 16-RISK-DECISIONS.md       |
 
 ### Key Risks
 
-| ID | Risk | Severity | Mitigation |
-|----|------|----------|------------|
-| RISK-001 | PTY Terminal Security | Critical | Non-root, permission checks, audit logs |
-| RISK-002 | Path Traversal | Critical | Path canonicalization, allowlists |
+| ID       | Risk                  | Severity | Mitigation                               |
+| -------- | --------------------- | -------- | ---------------------------------------- |
+| RISK-001 | PTY Terminal Security | Critical | Non-root, permission checks, audit logs  |
+| RISK-002 | Path Traversal        | Critical | Path canonicalization, allowlists        |
 | RISK-003 | Host Agent Compromise | Critical | Secure storage, TLS, minimal permissions |
-| RISK-004 | WebSocket Stability | High | Auto-reconnect, session persistence |
-| RISK-005 | Resource Exhaustion | High | Per-app limits, quotas, monitoring |
+| RISK-004 | WebSocket Stability   | High     | Auto-reconnect, session persistence      |
+| RISK-005 | Resource Exhaustion   | High     | Per-app limits, quotas, monitoring       |
 
 See [16-RISK-DECISIONS.md](architecture/16-RISK-DECISIONS.md) for complete risk register.
 
 ### Technology Stack Summary
 
 **Frontend:**
+
 - React 18, TypeScript 5, Vite 5
 - Tailwind CSS, Radix UI
 - xterm.js, Monaco Editor
 - React Query, Zustand
 
 **Backend:**
+
 - Node.js 20 LTS, Express 4, TypeScript 5
 - WebSocket (ws), node-pty
 - Passport.js, Argon2, JWT
 
 **Data:**
+
 - PostgreSQL 16, Redis 7
 - Prisma ORM, Zod validation
 - S3-compatible storage
 
 **Infrastructure:**
+
 - nginx, Let's Encrypt
 - systemd, PM2
 - Docker (development)
@@ -262,9 +296,9 @@ See [16-RISK-DECISIONS.md](architecture/16-RISK-DECISIONS.md) for complete risk 
 
 ### Version History
 
-| Version | Date | Changes | Author |
-|---------|------|---------|--------|
-| 1.0.0 | 2026-09-15 | Initial architecture documents | Architecture Team |
+| Version | Date       | Changes                        | Author            |
+| ------- | ---------- | ------------------------------ | ----------------- |
+| 1.0.0   | 2026-09-15 | Initial architecture documents | Architecture Team |
 
 ### Review Schedule
 
@@ -304,13 +338,15 @@ For questions about the architecture or documentation:
 - **Project Lead:** [TBD]
 - **Architecture Team:** [TBD]
 - **Email:** architecture@aether-os.io (coming soon)
-- **Discussion:** [GitHub Discussions](https://github.com/aether-os/aether-cloud-os/discussions) (coming soon)
+- **Discussion:** [GitHub Discussions](https://github.com/aether-os/aether-cloud-os/discussions)
+  (coming soon)
 
 ---
 
 ## 🔗 External Resources
 
 ### Technologies
+
 - [Node.js Documentation](https://nodejs.org/docs/latest-v20.x/api/)
 - [React Documentation](https://react.dev)
 - [PostgreSQL Documentation](https://www.postgresql.org/docs/16/)
@@ -319,11 +355,13 @@ For questions about the architecture or documentation:
 - [node-pty Documentation](https://github.com/microsoft/node-pty)
 
 ### Inspirations
+
 - [WebOS](https://en.wikipedia.org/wiki/WebOS) - Browser desktop concept
 - [VS Code](https://code.visualstudio.com/) - Web-based IDE
 - [JupyterLab](https://jupyterlab.readthedocs.io/) - Web-based workspace
 
 ### Standards
+
 - [OAuth 2.0](https://oauth.net/2/)
 - [JWT (RFC 7519)](https://datatracker.ietf.org/doc/html/rfc7519)
 - [WebSocket (RFC 6455)](https://datatracker.ietf.org/doc/html/rfc6455)

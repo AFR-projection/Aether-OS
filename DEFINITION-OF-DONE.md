@@ -11,6 +11,7 @@
 Every task, feature, or component is considered "done" ONLY when ALL of the following are true:
 
 ### 1. Code Quality
+
 - [ ] Code exists and compiles without errors
 - [ ] TypeScript: No `any` types without justification
 - [ ] All imports resolve correctly
@@ -21,6 +22,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] No console.log in production code (use proper logging)
 
 ### 2. Functionality
+
 - [ ] Feature works as specified
 - [ ] All acceptance criteria met
 - [ ] Edge cases handled
@@ -29,6 +31,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] No critical bugs
 
 ### 3. Testing
+
 - [ ] Unit tests written for business logic
 - [ ] Tests pass locally
 - [ ] Test coverage ≥ 70% for critical paths
@@ -37,6 +40,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Security edge cases tested
 
 ### 4. Security
+
 - [ ] Input validation implemented
 - [ ] Authorization checks in place
 - [ ] No secrets in code or logs
@@ -47,6 +51,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] XSS prevention (React handles most, verify edge cases)
 
 ### 5. Documentation
+
 - [ ] Public APIs documented (JSDoc/TSDoc)
 - [ ] Complex logic explained with comments
 - [ ] README updated (if public interface changed)
@@ -54,6 +59,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Known limitations documented
 
 ### 6. Git
+
 - [ ] Code committed with clear message
 - [ ] Commit follows conventional commit format
 - [ ] No merge conflicts
@@ -66,6 +72,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Backend API Endpoint
 
 **Definition of Done:**
+
 - [ ] Route registered in Fastify
 - [ ] Request validation (Zod schema)
 - [ ] Business logic implemented
@@ -81,6 +88,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Manual test with curl/Postman
 
 **NOT Done If:**
+
 - Returns 500 errors
 - Missing input validation
 - No error handling
@@ -92,6 +100,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Frontend Component
 
 **Definition of Done:**
+
 - [ ] Component renders without errors
 - [ ] Props properly typed (TypeScript)
 - [ ] Handles loading state
@@ -104,6 +113,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Manual testing in browser
 
 **NOT Done If:**
+
 - Console errors
 - TypeScript errors
 - No error handling
@@ -115,6 +125,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Database Migration
 
 **Definition of Done:**
+
 - [ ] Migration file created with timestamp
 - [ ] Up migration (schema change)
 - [ ] Down migration (rollback)
@@ -126,6 +137,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Migration documented in CHANGELOG
 
 **NOT Done If:**
+
 - Cannot rollback
 - Data loss not documented
 - Not tested
@@ -136,6 +148,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Installer Script Module
 
 **Definition of Done:**
+
 - [ ] Shell script follows best practices
 - [ ] Uses `set -euo pipefail` (or equivalent)
 - [ ] All variables quoted properly
@@ -149,6 +162,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Tested on Ubuntu 22.04 (if possible)
 
 **NOT Done If:**
+
 - Shellcheck errors
 - Not idempotent
 - Poor error messages
@@ -160,6 +174,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Docker Configuration
 
 **Definition of Done:**
+
 - [ ] Dockerfile builds successfully
 - [ ] Multi-stage build (if applicable)
 - [ ] Non-root user
@@ -174,6 +189,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Volume mounts correct
 
 **NOT Done If:**
+
 - Build fails
 - Runs as root
 - No health check
@@ -187,6 +203,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Authentication System
 
 **Definition of Done:**
+
 - [ ] User can register (if applicable)
 - [ ] User can login
 - [ ] User can logout
@@ -204,6 +221,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Security review passed
 
 **NOT Done If:**
+
 - Can bypass authentication
 - Tokens don't expire
 - No rate limiting
@@ -215,6 +233,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Terminal Feature
 
 **Definition of Done:**
+
 - [ ] Can create terminal session
 - [ ] Can send input
 - [ ] Receives output in real-time
@@ -233,6 +252,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Manual testing with complex commands
 
 **NOT Done If:**
+
 - Output not real-time
 - Memory leaks
 - Security bypasses
@@ -244,6 +264,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### File Manager Feature
 
 **Definition of Done:**
+
 - [ ] Can list directory
 - [ ] Can navigate directories
 - [ ] Can view file contents
@@ -261,6 +282,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Security review passed
 
 **NOT Done If:**
+
 - Path traversal possible
 - No permission checks
 - Crashes on large files
@@ -273,6 +295,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Installer Preflight Complete
 
 **Definition of Done:**
+
 - [ ] Detects OS and architecture
 - [ ] Detects unsupported platforms
 - [ ] Checks CPU, RAM, disk
@@ -289,6 +312,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Shellcheck passes
 
 **NOT Done If:**
+
 - False positives on checks
 - Doesn't block unsupported
 - No confirmation step
@@ -299,6 +323,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Installer Full Pipeline
 
 **Definition of Done:**
+
 - [ ] All 23 stages implemented
 - [ ] State saved after each stage
 - [ ] Can resume after interruption
@@ -321,6 +346,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Tested with/without domain
 
 **NOT Done If:**
+
 - Cannot resume
 - Rollback doesn't work
 - Services don't start
@@ -335,6 +361,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Unit Test Suite
 
 **Definition of Done:**
+
 - [ ] Tests for all business logic
 - [ ] Tests for all validation functions
 - [ ] Tests for edge cases
@@ -347,6 +374,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Arrange-Act-Assert pattern
 
 **NOT Done If:**
+
 - Tests fail
 - Coverage < 70%
 - Flaky tests
@@ -357,6 +385,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Integration Test Suite
 
 **Definition of Done:**
+
 - [ ] Tests for API endpoints
 - [ ] Tests for database operations
 - [ ] Tests for authentication flow
@@ -368,6 +397,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Can run locally
 
 **NOT Done If:**
+
 - Tests fail
 - Tests interfere with each other
 - Uses production database
@@ -378,6 +408,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Security Test Suite
 
 **Definition of Done:**
+
 - [ ] Tests for input validation
 - [ ] Tests for authentication bypass attempts
 - [ ] Tests for authorization bypass attempts
@@ -390,6 +421,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Documented security boundaries
 
 **NOT Done If:**
+
 - Tests fail
 - Security vulnerabilities found
 - Bypasses possible
@@ -401,6 +433,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Development Deployment
 
 **Definition of Done:**
+
 - [ ] docker-compose up succeeds
 - [ ] All containers start
 - [ ] Health checks pass
@@ -412,6 +445,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Can develop locally
 
 **NOT Done If:**
+
 - Services don't start
 - Health checks fail
 - Cannot access UI
@@ -422,6 +456,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### Production Deployment (VPS)
 
 **Definition of Done:**
+
 - [ ] Installer runs successfully
 - [ ] All services start
 - [ ] Health checks pass
@@ -438,6 +473,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Backup strategy documented
 
 **NOT Done If:**
+
 - Installer fails
 - Services fail
 - HTTPS doesn't work
@@ -452,6 +488,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### API Documentation
 
 **Definition of Done:**
+
 - [ ] All endpoints documented
 - [ ] Request format documented
 - [ ] Response format documented
@@ -461,6 +498,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Up-to-date with code
 
 **NOT Done If:**
+
 - Missing endpoints
 - Out of date
 - No examples
@@ -470,6 +508,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### User Documentation
 
 **Definition of Done:**
+
 - [ ] Installation guide
 - [ ] Quick start guide
 - [ ] Feature documentation
@@ -479,6 +518,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Up-to-date
 
 **NOT Done If:**
+
 - Missing sections
 - Outdated
 - Confusing
@@ -490,6 +530,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 ### MVP Release
 
 **Definition of Done:**
+
 - [ ] All P0 features complete
 - [ ] All tests pass
 - [ ] Security review completed
@@ -502,6 +543,7 @@ Every task, feature, or component is considered "done" ONLY when ALL of the foll
 - [ ] Version tagged in git
 
 **NOT Done If:**
+
 - P0 features missing
 - Tests fail
 - Security issues
@@ -555,6 +597,7 @@ Use these labels accurately:
 ## Example: Honest Status Reporting
 
 **GOOD:**
+
 ```
 ✅ User login endpoint
   - API endpoint implemented
@@ -576,6 +619,7 @@ Use these labels accurately:
 ```
 
 **BAD:**
+
 ```
 ✅ Everything works perfectly!
   (No evidence, no tests, not deployed)
@@ -586,6 +630,7 @@ Use these labels accurately:
 ## Commitment
 
 I commit to:
+
 - ✅ Use this Definition of Done for all work
 - ✅ Mark items honestly based on criteria
 - ✅ Not claim "done" without evidence
@@ -593,6 +638,7 @@ I commit to:
 - ✅ Test before marking complete
 
 I will NOT:
+
 - ❌ Mark items done without testing
 - ❌ Skip security checks
 - ❌ Hide issues or limitations

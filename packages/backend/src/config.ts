@@ -11,12 +11,10 @@ import { z } from 'zod';
  * - `describeConfig()` returns a redacted summary that is safe to log.
  */
 
-const booleanFromEnv = z
-  .union([z.boolean(), z.string()])
-  .transform((value) => {
-    if (typeof value === 'boolean') return value;
-    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
-  });
+const booleanFromEnv = z.union([z.boolean(), z.string()]).transform((value) => {
+  if (typeof value === 'boolean') return value;
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+});
 
 const envSchema = z.object({
   // --- Runtime -------------------------------------------------------------
@@ -33,7 +31,7 @@ const envSchema = z.object({
       value
         .split(',')
         .map((origin) => origin.trim())
-        .filter((origin) => origin.length > 0),
+        .filter((origin) => origin.length > 0)
     ),
 
   // --- Database ------------------------------------------------------------
@@ -83,7 +81,7 @@ const envSchema = z.object({
       value
         .split(',')
         .map((shell) => shell.trim())
-        .filter((shell) => shell.length > 0),
+        .filter((shell) => shell.length > 0)
     ),
 
   // --- First-run bootstrap -------------------------------------------------
@@ -142,7 +140,9 @@ function loadConfig(): AppConfig {
   const config = parsed.data;
 
   if (config.NODE_ENV === 'production' && !config.ENCRYPTION_KEY) {
-    throw new Error('Invalid environment configuration:\n  - ENCRYPTION_KEY: required in production');
+    throw new Error(
+      'Invalid environment configuration:\n  - ENCRYPTION_KEY: required in production'
+    );
   }
 
   if (
@@ -151,7 +151,7 @@ function loadConfig(): AppConfig {
   ) {
     // Verbose logging in production leaks request payloads into log storage.
     throw new Error(
-      'Invalid environment configuration:\n  - LOG_LEVEL/LOG_FORMAT: debug, trace, and pretty output are not allowed in production',
+      'Invalid environment configuration:\n  - LOG_LEVEL/LOG_FORMAT: debug, trace, and pretty output are not allowed in production'
     );
   }
 

@@ -75,7 +75,10 @@ async function main(): Promise<void> {
 
   try {
     const migrations = await runMigrations();
-    logger.info({ applied: migrations.applied, skipped: migrations.skipped.length }, 'database schema ready');
+    logger.info(
+      { applied: migrations.applied, skipped: migrations.skipped.length },
+      'database schema ready'
+    );
   } catch (error) {
     logger.fatal({ err: error }, 'database migration failed; refusing to start');
     process.exit(1);
@@ -94,13 +97,16 @@ async function main(): Promise<void> {
   try {
     await app.listen({ host: config.HOST, port: config.PORT });
   } catch (error) {
-    logger.fatal({ err: error, host: config.HOST, port: config.PORT }, 'failed to bind HTTP listener');
+    logger.fatal(
+      { err: error, host: config.HOST, port: config.PORT },
+      'failed to bind HTTP listener'
+    );
     process.exit(1);
   }
 
   logger.info(
     { host: config.HOST, port: config.PORT, env: config.NODE_ENV, url: config.BASE_URL },
-    'aether backend listening',
+    'aether backend listening'
   );
 }
 

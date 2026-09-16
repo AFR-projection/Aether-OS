@@ -35,7 +35,10 @@ function keyFor(ticket: string): string {
 }
 
 /** Issues a new ticket bound to a session and user. */
-export async function issueTicket(sessionId: string, userId: string): Promise<{ ticket: string; expiresIn: number }> {
+export async function issueTicket(
+  sessionId: string,
+  userId: string
+): Promise<{ ticket: string; expiresIn: number }> {
   const ticket = randomBytes(32).toString('base64url');
   await cache.set<TicketRecord>(keyFor(ticket), { sessionId, userId }, TICKET_TTL_MS);
   return { ticket, expiresIn: Math.floor(TICKET_TTL_MS / 1000) };
@@ -47,7 +50,7 @@ export async function issueTicket(sessionId: string, userId: string): Promise<{ 
  */
 export async function redeemTicket(
   ticket: string,
-  expectedSessionId: string,
+  expectedSessionId: string
 ): Promise<{ userId: string }> {
   const record = await cache.get<TicketRecord>(keyFor(ticket));
   await cache.delete(keyFor(ticket));
@@ -57,7 +60,10 @@ export async function redeemTicket(
   }
 
   if (record.sessionId !== expectedSessionId) {
-    throw new UnauthenticatedError('WebSocket ticket was issued for a different session', 'TOKEN_INVALID');
+    throw new UnauthenticatedError(
+      'WebSocket ticket was issued for a different session',
+      'TOKEN_INVALID'
+    );
   }
 
   return { userId: record.userId };

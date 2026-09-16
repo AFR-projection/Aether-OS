@@ -11,18 +11,21 @@
 ### 16.1 Critical Risks
 
 #### RISK-001: PTY Terminal Security
+
 **Category:** Security  
 **Severity:** Critical  
 **Probability:** High
 
-**Description:**
-Terminal with direct shell access is the highest security risk. Improper implementation could allow:
+**Description:** Terminal with direct shell access is the highest security risk. Improper
+implementation could allow:
+
 - Command injection
 - Privilege escalation
 - Access to forbidden paths
 - Exposure of secrets in environment variables
 
 **Mitigation:**
+
 1. Agent runs as non-root user by default
 2. Implement strict permission checks before PTY creation
 3. Environment variable filtering (strip sensitive vars)
@@ -38,14 +41,16 @@ Terminal with direct shell access is the highest security risk. Improper impleme
 ---
 
 #### RISK-002: Path Traversal Attacks
+
 **Category:** Security  
 **Severity:** Critical  
 **Probability:** Medium
 
-**Description:**
-File operations could allow access to forbidden files via path traversal (e.g., `../../etc/shadow`).
+**Description:** File operations could allow access to forbidden files via path traversal (e.g.,
+`../../etc/shadow`).
 
 **Mitigation:**
+
 1. Path canonicalization on every request
 2. Allowlist of accessible directories
 3. Forbidden path patterns (e.g., `/etc/shadow`, private keys)
@@ -59,14 +64,15 @@ File operations could allow access to forbidden files via path traversal (e.g., 
 ---
 
 #### RISK-003: Host Agent Compromise
+
 **Category:** Security  
 **Severity:** Critical  
 **Probability:** Low
 
-**Description:**
-If Host Agent is compromised, attacker has access to host OS.
+**Description:** If Host Agent is compromised, attacker has access to host OS.
 
 **Mitigation:**
+
 1. Agent API key stored securely (keyring)
 2. TLS for all communications
 3. Regular security updates
@@ -81,14 +87,15 @@ If Host Agent is compromised, attacker has access to host OS.
 ---
 
 #### RISK-004: WebSocket Connection Stability
+
 **Category:** Reliability  
 **Severity:** High  
 **Probability:** Medium
 
-**Description:**
-WebSocket disconnections could disrupt terminal sessions and real-time features.
+**Description:** WebSocket disconnections could disrupt terminal sessions and real-time features.
 
 **Mitigation:**
+
 1. Automatic reconnection with exponential backoff
 2. PTY session persistence on agent
 3. Session resumption after reconnect
@@ -102,14 +109,15 @@ WebSocket disconnections could disrupt terminal sessions and real-time features.
 ---
 
 #### RISK-005: Resource Exhaustion on VPS
+
 **Category:** Performance  
 **Severity:** High  
 **Probability:** Medium
 
-**Description:**
-Multiple users or apps could exhaust VPS resources (CPU, RAM, disk).
+**Description:** Multiple users or apps could exhaust VPS resources (CPU, RAM, disk).
 
 **Mitigation:**
+
 1. Resource limits per app
 2. Resource limits per user
 3. Process monitoring and alerts
@@ -126,14 +134,15 @@ Multiple users or apps could exhaust VPS resources (CPU, RAM, disk).
 ### 16.2 High Risks
 
 #### RISK-006: Database Migration Failures
+
 **Category:** Operations  
 **Severity:** High  
 **Probability:** Low
 
-**Description:**
-Failed database migration could corrupt data or prevent application startup.
+**Description:** Failed database migration could corrupt data or prevent application startup.
 
 **Mitigation:**
+
 1. Automated database backups before migrations
 2. Test migrations on staging
 3. Migration rollback procedures
@@ -147,14 +156,15 @@ Failed database migration could corrupt data or prevent application startup.
 ---
 
 #### RISK-007: Third-Party App Security
+
 **Category:** Security  
 **Severity:** High  
 **Probability:** Medium
 
-**Description:**
-Malicious third-party apps could abuse permissions or exploit vulnerabilities.
+**Description:** Malicious third-party apps could abuse permissions or exploit vulnerabilities.
 
 **Mitigation:**
+
 1. App sandboxing with limited API access
 2. Permission review before installation
 3. App signing and verification (future)
@@ -169,14 +179,16 @@ Malicious third-party apps could abuse permissions or exploit vulnerabilities.
 ---
 
 #### RISK-008: AI Agent Abuse
+
 **Category:** Security  
 **Severity:** High  
 **Probability:** Medium
 
-**Description:**
-AI agent could be tricked into executing destructive operations or exposing sensitive data.
+**Description:** AI agent could be tricked into executing destructive operations or exposing
+sensitive data.
 
 **Mitigation:**
+
 1. Tool permission system
 2. Approval required for sensitive operations
 3. No direct root access
@@ -193,14 +205,15 @@ AI agent could be tricked into executing destructive operations or exposing sens
 ### 16.3 Medium Risks
 
 #### RISK-009: Browser Compatibility
+
 **Category:** Compatibility  
 **Severity:** Medium  
 **Probability:** Medium
 
-**Description:**
-Desktop may not work correctly on older browsers.
+**Description:** Desktop may not work correctly on older browsers.
 
 **Mitigation:**
+
 1. Target modern browsers (Chrome 90+, Firefox 88+, Safari 14+)
 2. Polyfills for missing features
 3. Browser detection with warning
@@ -213,14 +226,15 @@ Desktop may not work correctly on older browsers.
 ---
 
 #### RISK-010: Cloud Storage Costs
+
 **Category:** Financial  
 **Severity:** Medium  
 **Probability:** High
 
-**Description:**
-S3 storage costs could become prohibitive with many users.
+**Description:** S3 storage costs could become prohibitive with many users.
 
 **Mitigation:**
+
 1. Storage quotas per user
 2. Lifecycle policies (auto-delete old files)
 3. Compression for text files
@@ -234,14 +248,16 @@ S3 storage costs could become prohibitive with many users.
 ---
 
 #### RISK-011: Multi-device Sync Conflicts
+
 **Category:** Data Integrity  
 **Severity:** Medium  
 **Probability:** High
 
-**Description:**
-Same file modified on multiple devices could cause data loss if conflicts not handled properly.
+**Description:** Same file modified on multiple devices could cause data loss if conflicts not
+handled properly.
 
 **Mitigation:**
+
 1. Conflict detection based on timestamps and checksums
 2. Conflict resolution UI
 3. Keep both versions option
@@ -257,14 +273,15 @@ Same file modified on multiple devices could cause data loss if conflicts not ha
 ### 16.4 Low Risks
 
 #### RISK-012: Agent Update Failures
+
 **Category:** Operations  
 **Severity:** Medium  
 **Probability:** Low
 
-**Description:**
-Failed agent update could leave agent in broken state.
+**Description:** Failed agent update could leave agent in broken state.
 
 **Mitigation:**
+
 1. Atomic update process
 2. Automatic rollback on failure
 3. Version compatibility checks
@@ -277,14 +294,15 @@ Failed agent update could leave agent in broken state.
 ---
 
 #### RISK-013: Email Delivery Failures
+
 **Category:** Operations  
 **Severity:** Low  
 **Probability:** Medium
 
-**Description:**
-Verification emails or notifications might not be delivered.
+**Description:** Verification emails or notifications might not be delivered.
 
 **Mitigation:**
+
 1. Retry logic for failed sends
 2. Multiple SMTP providers (fallback)
 3. SPF/DKIM/DMARC configuration
@@ -301,15 +319,15 @@ Verification emails or notifications might not be delivered.
 ### Architecture Decision Records (ADR)
 
 #### ADR-001: Use Node.js for Backend and Initial Agent
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to choose backend runtime and Host Agent runtime.
+**Context:** Need to choose backend runtime and Host Agent runtime.
 
-**Decision:**
-Use Node.js + TypeScript for both backend and initial Host Agent implementation.
+**Decision:** Use Node.js + TypeScript for both backend and initial Host Agent implementation.
 
 **Rationale:**
+
 1. Single language across stack (TypeScript)
 2. Type sharing between frontend and backend
 3. node-pty is most mature PTY library
@@ -317,26 +335,28 @@ Use Node.js + TypeScript for both backend and initial Host Agent implementation.
 5. Large ecosystem
 
 **Consequences:**
+
 - Higher memory usage than Go
 - Plan to rewrite agent in Go after protocol stabilizes
 - Good enough for MVP, optimize later
 
 **Alternatives Considered:**
+
 - Go: Better performance but slower development, less mature PTY
 - Python: Not suitable for real-time WebSocket performance
 
 ---
 
 #### ADR-002: Use PostgreSQL as Primary Database
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to choose primary database for structured data.
+**Context:** Need to choose primary database for structured data.
 
-**Decision:**
-PostgreSQL 16+ with Prisma ORM.
+**Decision:** PostgreSQL 16+ with Prisma ORM.
 
 **Rationale:**
+
 1. ACID compliance for critical data
 2. JSON support for flexible schemas (capabilities)
 3. Row-level security
@@ -345,11 +365,13 @@ PostgreSQL 16+ with Prisma ORM.
 6. Free and open source
 
 **Consequences:**
+
 - Slightly higher resource usage than SQLite
 - More complex administration
 - Requires separate service (not embedded)
 
 **Alternatives Considered:**
+
 - SQLite: Not suitable for concurrent multi-user access
 - MySQL: PostgreSQL has better JSON support and features
 - MongoDB: Overkill, relational data fits better
@@ -357,15 +379,15 @@ PostgreSQL 16+ with Prisma ORM.
 ---
 
 #### ADR-003: Use React for Frontend
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to choose frontend framework for complex desktop UI.
+**Context:** Need to choose frontend framework for complex desktop UI.
 
-**Decision:**
-React 18+ with TypeScript, Vite, Tailwind CSS.
+**Decision:** React 18+ with TypeScript, Vite, Tailwind CSS.
 
 **Rationale:**
+
 1. Mature ecosystem with many UI libraries
 2. Excellent TypeScript support
 3. Virtual DOM suitable for complex UI
@@ -374,11 +396,13 @@ React 18+ with TypeScript, Vite, Tailwind CSS.
 6. Available UI component libraries (Radix, Headless UI)
 
 **Consequences:**
+
 - Larger bundle size than Svelte
 - Requires build tooling
 - Learning curve for state management
 
 **Alternatives Considered:**
+
 - Svelte: Smaller but less mature ecosystem
 - Vue: Less TypeScript-focused
 - Vanilla JS: Too complex for this scale
@@ -386,27 +410,29 @@ React 18+ with TypeScript, Vite, Tailwind CSS.
 ---
 
 #### ADR-004: Simple iframe Browser for MVP, Remote Browser Later
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to decide browser implementation approach.
+**Context:** Need to decide browser implementation approach.
 
-**Decision:**
-MVP: Simple iframe wrapper for external sites
-Future: Remote browser with headless Chromium
+**Decision:** MVP: Simple iframe wrapper for external sites Future: Remote browser with headless
+Chromium
 
 **Rationale:**
+
 1. iframe is simple and works today
 2. Remote browser is complex and resource-intensive
 3. Remote browser should be Phase 7+ enhancement
 4. Honest about limitations (same-origin restrictions)
 
 **Consequences:**
+
 - Limited browser capabilities in MVP
 - Some sites won't work in iframe (X-Frame-Options)
 - Full browser requires significant additional work
 
 **Alternatives Considered:**
+
 - Remote browser in MVP: Too complex, delays MVP
 - No browser: Users need web access
 - Browser extension: Different security model
@@ -414,26 +440,30 @@ Future: Remote browser with headless Chromium
 ---
 
 #### ADR-005: WebSocket for Realtime, REST for Request/Response
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to choose communication protocols.
+**Context:** Need to choose communication protocols.
 
 **Decision:**
+
 - REST API for request/response operations
 - WebSocket for realtime (terminal, monitoring, events)
 
 **Rationale:**
+
 1. REST is simple and cacheable
 2. WebSocket necessary for terminal I/O and live updates
 3. HTTP/2 not needed for MVP
 4. Clear separation of concerns
 
 **Consequences:**
+
 - Need to maintain both protocols
 - WebSocket connection management complexity
 
 **Alternatives Considered:**
+
 - GraphQL: Overkill for this use case
 - gRPC: Complexity not justified
 - Server-Sent Events: Less flexible than WebSocket
@@ -442,52 +472,55 @@ Need to choose communication protocols.
 ---
 
 #### ADR-006: Linux-First, Other Platforms Later
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to prioritize platform support.
+**Context:** Need to prioritize platform support.
 
-**Decision:**
-Linux (Ubuntu LTS) is primary target for MVP.
-Windows and macOS support in Phase 9.
+**Decision:** Linux (Ubuntu LTS) is primary target for MVP. Windows and macOS support in Phase 9.
 
 **Rationale:**
+
 1. VPS typically run Linux
 2. Linux has best PTY support
 3. Focus ensures quality on primary platform
 4. Can expand after Linux is solid
 
 **Consequences:**
+
 - MVP limited to Linux
 - Windows/macOS users must wait
 - Platform adapter architecture allows expansion
 
 **Alternatives Considered:**
+
 - Cross-platform from day one: Delays MVP, dilutes quality
 - Windows-first: Not typical VPS OS
 
 ---
 
 #### ADR-007: Argon2id for Password Hashing
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to choose password hashing algorithm.
+**Context:** Need to choose password hashing algorithm.
 
-**Decision:**
-Argon2id with parameters: memoryCost=65536, timeCost=3, parallelism=4
+**Decision:** Argon2id with parameters: memoryCost=65536, timeCost=3, parallelism=4
 
 **Rationale:**
+
 1. Winner of Password Hashing Competition
 2. Resistant to GPU/ASIC attacks
 3. Configurable parameters
 4. Widely adopted
 
 **Consequences:**
+
 - Slightly slower than bcrypt
 - Higher memory usage (intentional)
 
 **Alternatives Considered:**
+
 - bcrypt: Older, less resistant to hardware attacks
 - scrypt: Good but Argon2 is newer standard
 - PBKDF2: Not recommended for passwords anymore
@@ -495,26 +528,30 @@ Argon2id with parameters: memoryCost=65536, timeCost=3, parallelism=4
 ---
 
 #### ADR-008: JWT for Access Tokens, Database for Refresh Tokens
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to choose authentication token strategy.
+**Context:** Need to choose authentication token strategy.
 
 **Decision:**
+
 - Short-lived JWT for access tokens (15 min)
 - Long-lived refresh tokens in database (30 days)
 
 **Rationale:**
+
 1. JWT doesn't require database lookup (fast)
 2. Short expiry limits exposure
 3. Refresh tokens in DB allow revocation
 4. Standard pattern
 
 **Consequences:**
+
 - Token refresh logic needed
 - Database queries for refresh
 
 **Alternatives Considered:**
+
 - JWT only: Can't revoke
 - Sessions only: Database query on every request
 - OAuth: Overkill for self-hosted
@@ -522,45 +559,48 @@ Need to choose authentication token strategy.
 ---
 
 #### ADR-009: Monorepo Structure
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to organize codebase structure.
+**Context:** Need to organize codebase structure.
 
-**Decision:**
-Monorepo with packages:
+**Decision:** Monorepo with packages:
+
 - `packages/frontend` - React app
 - `packages/backend` - Node.js backend
 - `packages/agent` - Host Agent
 - `packages/shared` - Shared types and utilities
 
 **Rationale:**
+
 1. Easy code sharing (types, constants)
 2. Coordinated versioning
 3. Single CI/CD pipeline
 4. Atomic cross-package changes
 
 **Consequences:**
+
 - All code in one repo
 - Need monorepo tooling (npm workspaces or pnpm)
 - Slightly more complex build
 
 **Alternatives Considered:**
+
 - Separate repos: Harder to share code and coordinate
 - Single package: Too monolithic
 
 ---
 
 #### ADR-010: S3-Compatible Object Storage
+
 **Date:** 2026-09-15  
 **Status:** Accepted  
-**Context:**
-Need to choose cloud storage backend.
+**Context:** Need to choose cloud storage backend.
 
-**Decision:**
-S3-compatible storage (AWS S3, MinIO, Cloudflare R2).
+**Decision:** S3-compatible storage (AWS S3, MinIO, Cloudflare R2).
 
 **Rationale:**
+
 1. S3 API is de facto standard
 2. Multiple provider options
 3. Scalable and reliable
@@ -568,11 +608,13 @@ S3-compatible storage (AWS S3, MinIO, Cloudflare R2).
 5. Can self-host with MinIO
 
 **Consequences:**
+
 - S3 API dependency
 - Storage costs for hosted version
 - Need lifecycle policies for cost management
 
 **Alternatives Considered:**
+
 - Database BLOB storage: Not scalable for large files
 - Local filesystem: Not scalable, no redundancy
 - Custom storage API: Reinventing wheel
@@ -582,18 +624,20 @@ S3-compatible storage (AWS S3, MinIO, Cloudflare R2).
 ## 18. OPEN QUESTIONS
 
 ### QUESTION-001: AI Model Selection
+
 **Category:** AI Agent  
 **Priority:** Medium  
-**Context:**
-Which AI model to use for AI assistant?
+**Context:** Which AI model to use for AI assistant?
 
 **Options:**
+
 1. Claude 3.5 Sonnet (Anthropic API)
 2. GPT-4 (OpenAI API)
 3. Self-hosted Llama 3
 4. Multiple model support
 
 **Considerations:**
+
 - Cost per request
 - Tool calling capability
 - Context window size
@@ -606,18 +650,20 @@ Which AI model to use for AI assistant?
 ---
 
 ### QUESTION-002: Email Service Provider
+
 **Category:** Infrastructure  
 **Priority:** Low  
-**Context:**
-Which email service for transactional emails?
+**Context:** Which email service for transactional emails?
 
 **Options:**
+
 1. SendGrid
 2. AWS SES
 3. Postmark
 4. Self-hosted SMTP (Postfix)
 
 **Considerations:**
+
 - Deliverability
 - Cost
 - Setup complexity
@@ -629,18 +675,20 @@ Which email service for transactional emails?
 ---
 
 ### QUESTION-003: Monitoring Solution
+
 **Category:** Operations  
 **Priority:** Medium  
-**Context:**
-What monitoring stack to use for production?
+**Context:** What monitoring stack to use for production?
 
 **Options:**
+
 1. Prometheus + Grafana (self-hosted)
 2. Datadog (SaaS)
 3. New Relic (SaaS)
 4. CloudWatch (AWS only)
 
 **Considerations:**
+
 - Self-hosted vs SaaS
 - Cost
 - Features (metrics, logs, traces)
@@ -652,17 +700,19 @@ What monitoring stack to use for production?
 ---
 
 ### QUESTION-004: Multi-tenancy Model
+
 **Category:** Architecture  
 **Priority:** Medium  
-**Context:**
-Should Aether support organizations/teams, or only individual users?
+**Context:** Should Aether support organizations/teams, or only individual users?
 
 **Options:**
+
 1. Individual users only (MVP)
 2. Organizations with teams (later)
 3. Organizations from day one
 
 **Considerations:**
+
 - MVP scope
 - Database schema changes later
 - Permission model complexity
@@ -674,17 +724,19 @@ Should Aether support organizations/teams, or only individual users?
 ---
 
 ### QUESTION-005: Internationalization (i18n)
+
 **Category:** Features  
 **Priority:** Low  
-**Context:**
-Should Aether support multiple languages?
+**Context:** Should Aether support multiple languages?
 
 **Options:**
+
 1. English only (MVP)
 2. i18n from day one
 3. i18n in Phase 9+
 
 **Considerations:**
+
 - Development complexity
 - Target market
 - Translation costs
@@ -713,6 +765,7 @@ Should Aether support multiple languages?
 ```
 
 **Target Coverage:**
+
 - Unit tests: 80%+ coverage
 - Integration tests: Critical paths
 - E2E tests: User journeys
@@ -720,11 +773,13 @@ Should Aether support multiple languages?
 ### 19.2 Unit Testing
 
 **Tools:**
+
 - Frontend: Vitest + React Testing Library
 - Backend: Jest + Supertest
 - Agent: Jest
 
 **Scope:**
+
 - Pure functions
 - Component logic
 - Business logic
@@ -734,22 +789,17 @@ Should Aether support multiple languages?
 - Error handling
 
 **Example:**
+
 ```typescript
 describe('validateFilesystemPath', () => {
   it('should reject path traversal attempts', () => {
-    const result = validateFilesystemPath(
-      '../../../etc/shadow',
-      ['/home/user']
-    );
+    const result = validateFilesystemPath('../../../etc/shadow', ['/home/user']);
     expect(result.valid).toBe(false);
     expect(result.reason).toContain('outside allowed');
   });
-  
+
   it('should accept valid path', () => {
-    const result = validateFilesystemPath(
-      '/home/user/documents/file.txt',
-      ['/home/user']
-    );
+    const result = validateFilesystemPath('/home/user/documents/file.txt', ['/home/user']);
     expect(result.valid).toBe(true);
     expect(result.canonicalPath).toBeDefined();
   });
@@ -759,6 +809,7 @@ describe('validateFilesystemPath', () => {
 ### 19.3 Integration Testing
 
 **Scope:**
+
 - API endpoints with database
 - WebSocket communication
 - Host Agent <-> Backend
@@ -767,6 +818,7 @@ describe('validateFilesystemPath', () => {
 - Terminal sessions
 
 **Example:**
+
 ```typescript
 describe('Terminal API', () => {
   it('should create PTY session', async () => {
@@ -777,9 +829,9 @@ describe('Terminal API', () => {
         shell: '/bin/bash',
         cwd: '/home/user',
         rows: 24,
-        cols: 80
+        cols: 80,
       });
-    
+
     expect(res.status).toBe(200);
     expect(res.body.data.sessionId).toBeDefined();
     expect(res.body.data.pid).toBeGreaterThan(0);
@@ -792,6 +844,7 @@ describe('Terminal API', () => {
 **Tools:** Playwright
 
 **Scope:**
+
 - User registration and login
 - Host pairing
 - Desktop loading
@@ -801,6 +854,7 @@ describe('Terminal API', () => {
 - Multi-window management
 
 **Example:**
+
 ```typescript
 test('user can create file in terminal and see it in file manager', async ({ page }) => {
   // Login
@@ -808,22 +862,22 @@ test('user can create file in terminal and see it in file manager', async ({ pag
   await page.fill('[name=email]', 'test@example.com');
   await page.fill('[name=password]', 'password123');
   await page.click('button[type=submit]');
-  
+
   // Wait for desktop
   await page.waitForSelector('[data-testid=desktop]');
-  
+
   // Open terminal
   await page.click('[data-app=terminal]');
   await page.waitForSelector('[data-testid=terminal]');
-  
+
   // Create file
   await page.keyboard.type('echo "Hello Aether" > test.txt\n');
   await page.waitForTimeout(1000);
-  
+
   // Open file manager
   await page.click('[data-app=files]');
   await page.waitForSelector('[data-testid=file-manager]');
-  
+
   // Verify file exists
   const file = await page.locator('[data-file=test.txt]');
   await expect(file).toBeVisible();
@@ -833,6 +887,7 @@ test('user can create file in terminal and see it in file manager', async ({ pag
 ### 19.5 Security Testing
 
 **Manual Testing:**
+
 - Path traversal attempts
 - Command injection attempts
 - XSS attempts
@@ -841,6 +896,7 @@ test('user can create file in terminal and see it in file manager', async ({ pag
 - Permission bypass attempts
 
 **Automated (future):**
+
 - OWASP ZAP scanning
 - Dependency vulnerability scanning (npm audit)
 - Static analysis (ESLint security plugins)
@@ -850,6 +906,7 @@ test('user can create file in terminal and see it in file manager', async ({ pag
 **Tools:** k6 or Artillery
 
 **Scope:**
+
 - API endpoint response times
 - WebSocket connection limits
 - Concurrent user load
@@ -857,15 +914,16 @@ test('user can create file in terminal and see it in file manager', async ({ pag
 - File upload/download throughput
 
 **Example:**
+
 ```javascript
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
 export let options = {
   stages: [
-    { duration: '2m', target: 10 },  // Ramp up
-    { duration: '5m', target: 50 },  // Stay at 50 users
-    { duration: '2m', target: 0 },   // Ramp down
+    { duration: '2m', target: 10 }, // Ramp up
+    { duration: '5m', target: 50 }, // Stay at 50 users
+    { duration: '2m', target: 0 }, // Ramp down
   ],
 };
 
@@ -883,7 +941,8 @@ export default function () {
 
 ## 20. CONCLUSION
 
-This comprehensive architecture document provides the foundation for building Aether Cloud OS as a production-ready, reliable, and secure browser-based desktop environment for VPS and local hosts.
+This comprehensive architecture document provides the foundation for building Aether Cloud OS as a
+production-ready, reliable, and secure browser-based desktop environment for VPS and local hosts.
 
 **Key Takeaways:**
 
@@ -910,6 +969,7 @@ This comprehensive architecture document provides the foundation for building Ae
 **Success Criteria:**
 
 Aether Cloud OS will be considered successful when users can:
+
 - Deploy it on their Ubuntu VPS in under 30 minutes
 - Access a stable desktop through their browser
 - Use a real terminal that executes commands on the host
@@ -917,7 +977,8 @@ Aether Cloud OS will be considered successful when users can:
 - Run multiple applications reliably
 - Trust that their data is secure
 
-This is not just a UI that looks like an OS—this is a real, functional desktop environment that brings the power of VPS to anyone with a browser.
+This is not just a UI that looks like an OS—this is a real, functional desktop environment that
+brings the power of VPS to anyone with a browser.
 
 ---
 

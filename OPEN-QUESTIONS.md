@@ -18,34 +18,36 @@
 ## 🔴 CRITICAL QUESTIONS (Blocking Phase 1)
 
 ### Q-001: Multi-tenancy Scope
+
 **Priority:** 🔴 Critical  
 **Category:** Architecture  
 **Deadline:** 2026-09-20
 
-**Question:**
-Should Aether MVP support multiple users per instance, or single-user only?
+**Question:** Should Aether MVP support multiple users per instance, or single-user only?
 
 **Context:**
+
 - Affects database schema fundamentally
 - Changes authentication complexity
 - Impacts permission model
 - Influences deployment model
 
 **Options:**
+
 1. **Single-user per instance** (recommended)
    - Each Aether instance = one user
    - Simpler schema, faster MVP
    - Most self-hosted use case
-   
+
 2. **Multi-user from day one**
    - Users, roles, organizations
    - More complex, slower MVP
    - Better for SaaS offering
 
-**Current Blocker:**
-Cannot finalize Prisma schema without this decision
+**Current Blocker:** Cannot finalize Prisma schema without this decision
 
 **Impact if Delayed:**
+
 - Phase 1 cannot start
 - Database design stalled
 - Authentication system uncertain
@@ -59,30 +61,34 @@ Cannot finalize Prisma schema without this decision
 ---
 
 ### Q-002: License Selection
+
 **Priority:** 🔴 Critical  
 **Category:** Legal  
 **Deadline:** 2026-09-20
 
-**Question:**
-Which open-source license should we use?
+**Question:** Which open-source license should we use?
 
 **Context:**
+
 - Affects all source code headers
 - Influences commercial strategy
 - Impacts community contributions
 - Cannot start repository without license
 
 **Options:**
+
 1. **MIT** - Most permissive, simple
 2. **Apache 2.0** - Patent grant, enterprise-friendly (recommended)
 3. **AGPL 3.0** - Copyleft, forces source disclosure
 
 **Current Blocker:**
+
 - Cannot create public repository
 - Cannot accept contributions
 - Unclear commercial rights
 
 **Impact if Delayed:**
+
 - Phase 1 blocked
 - Cannot push code to Git
 - Contribution guidelines incomplete
@@ -98,20 +104,23 @@ Which open-source license should we use?
 ## 🟡 HIGH PRIORITY QUESTIONS
 
 ### Q-003: Database Schema Extension Strategy
+
 **Priority:** 🟡 High  
 **Category:** Architecture  
 **Deadline:** 2026-09-23
 
-**Question:**
-If we start with single-user, how do we design schema to be extensible for multi-user later?
+**Question:** If we start with single-user, how do we design schema to be extensible for multi-user
+later?
 
 **Context:**
+
 - Want to avoid major schema rewrite
 - Need migration path
 - Should use `userId` even if always same?
 - What tables need organization/team support later?
 
 **Proposed Approach:**
+
 ```sql
 -- Use userId in all tables even if single-user
 CREATE TABLE hosts (
@@ -125,6 +134,7 @@ CREATE TABLE hosts (
 ```
 
 **Open Questions:**
+
 - Should we add `organizationId` columns now (NULL)?
 - Or add them in migration later?
 - What's the upgrade path for existing single-user instances?
@@ -136,30 +146,33 @@ CREATE TABLE hosts (
 ---
 
 ### Q-004: WebSocket Message Format
+
 **Priority:** 🟡 High  
 **Category:** Protocol Design  
 **Deadline:** 2026-09-25
 
-**Question:**
-What should be the exact WebSocket message format?
+**Question:** What should be the exact WebSocket message format?
 
 **Context:**
+
 - Need consistent protocol for all real-time communication
 - Terminal, monitoring, notifications all use WebSocket
 - Must support request/response and events
 - Need error handling
 
 **Proposed Format:**
+
 ```typescript
 interface WSMessage {
-  id: string;           // correlation ID
-  type: "request" | "response" | "event" | "error";
-  timestamp: string;    // ISO 8601
+  id: string; // correlation ID
+  type: 'request' | 'response' | 'event' | 'error';
+  timestamp: string; // ISO 8601
   payload: any;
 }
 ```
 
 **Open Questions:**
+
 - Should we use JSON or MessagePack?
 - How to handle binary data (terminal output)?
 - Compression strategy?
@@ -173,34 +186,38 @@ interface WSMessage {
 ---
 
 ### Q-005: Agent Installation Method
+
 **Priority:** 🟡 High  
 **Category:** Deployment  
 **Deadline:** 2026-09-30
 
-**Question:**
-How should users install the Host Agent?
+**Question:** How should users install the Host Agent?
 
 **Context:**
+
 - Need easy installation on Ubuntu VPS
 - Should work without Docker
 - systemd service setup
 - Security considerations
 
 **Options:**
+
 1. **Bash installer script** (recommended)
+
    ```bash
    curl -fsSL install.aether-os.io/agent.sh | sudo bash
    ```
-   
+
 2. **Package manager (apt/yum)**
    - More official, but slower to setup
    - Need to maintain packages
-   
+
 3. **Docker container**
    - Isolated, but adds complexity
    - Harder to access host PTY
 
 **Open Questions:**
+
 - Should installer run as root?
 - How to handle existing installations?
 - Update mechanism?
@@ -216,14 +233,15 @@ How should users install the Host Agent?
 ## 🟢 MEDIUM PRIORITY QUESTIONS
 
 ### Q-006: API Versioning Strategy
+
 **Priority:** 🟢 Medium  
 **Category:** API Design  
 **Deadline:** 2026-10-05
 
-**Question:**
-Should we version the API from day one?
+**Question:** Should we version the API from day one?
 
 **Options:**
+
 1. **URL versioning** - `/api/v1/hosts`
 2. **Header versioning** - `Accept: application/vnd.aether.v1+json`
 3. **No versioning initially** - Add when needed
@@ -236,14 +254,15 @@ Should we version the API from day one?
 ---
 
 ### Q-007: Error Code Standard
+
 **Priority:** 🟢 Medium  
 **Category:** Standards  
 **Deadline:** 2026-10-05
 
-**Question:**
-What error code format should we use?
+**Question:** What error code format should we use?
 
 **Proposed:**
+
 ```typescript
 enum ErrorCode {
   // Format: CATEGORY_SPECIFIC_ERROR
@@ -256,6 +275,7 @@ enum ErrorCode {
 ```
 
 **Open Questions:**
+
 - Numeric codes or string codes?
 - Hierarchy (general → specific)?
 - HTTP status code mapping?
@@ -266,20 +286,22 @@ enum ErrorCode {
 ---
 
 ### Q-008: File Upload Size Limits
+
 **Priority:** 🟢 Medium  
 **Category:** Configuration  
 **Deadline:** 2026-10-10
 
-**Question:**
-What should be the maximum file upload size?
+**Question:** What should be the maximum file upload size?
 
 **Considerations:**
+
 - VPS bandwidth limits
 - nginx configuration
 - Browser memory limits
 - User experience
 
 **Proposed:**
+
 - Default: 100 MB
 - Configurable per installation
 - Large files: Use resumable uploads (future)
@@ -290,19 +312,21 @@ What should be the maximum file upload size?
 ---
 
 ### Q-009: Terminal Session Limits
+
 **Priority:** 🟢 Medium  
 **Category:** Resource Management  
 **Deadline:** 2026-10-15
 
-**Question:**
-How many terminal sessions should one user be allowed?
+**Question:** How many terminal sessions should one user be allowed?
 
 **Considerations:**
+
 - Resource usage (each PTY = process)
 - Security (prevent abuse)
 - User experience
 
 **Proposed:**
+
 - Default: 10 sessions per user
 - Configurable
 - Idle timeout: 30 minutes
@@ -316,12 +340,12 @@ How many terminal sessions should one user be allowed?
 ## ⚪ LOW PRIORITY QUESTIONS
 
 ### Q-010: Internationalization (i18n)
+
 **Priority:** ⚪ Low  
 **Category:** Features  
 **Deadline:** 2026-11-15
 
-**Question:**
-Should we support multiple languages in MVP?
+**Question:** Should we support multiple languages in MVP?
 
 **Recommendation:** English only for MVP, add i18n later
 
@@ -331,14 +355,15 @@ Should we support multiple languages in MVP?
 ---
 
 ### Q-011: Theme Customization
+
 **Priority:** ⚪ Low  
 **Category:** Features  
 **Deadline:** 2026-12-01
 
-**Question:**
-Should users be able to customize themes beyond the 3 built-in options?
+**Question:** Should users be able to customize themes beyond the 3 built-in options?
 
 **Options:**
+
 1. Fixed themes only (MVP)
 2. Color customization
 3. Full CSS customization
@@ -351,12 +376,12 @@ Should users be able to customize themes beyond the 3 built-in options?
 ---
 
 ### Q-012: Desktop Icon Management
+
 **Priority:** ⚪ Low  
 **Category:** Features  
 **Deadline:** 2026-12-01
 
-**Question:**
-Should users be able to place files/shortcuts on desktop?
+**Question:** Should users be able to place files/shortcuts on desktop?
 
 **Recommendation:** Defer to post-MVP, start with taskbar only
 
@@ -368,19 +393,21 @@ Should users be able to place files/shortcuts on desktop?
 ## 📊 TECHNICAL QUESTIONS
 
 ### Q-013: PTY Buffer Size
+
 **Priority:** 🟡 High  
 **Category:** Terminal  
 **Deadline:** 2026-10-20
 
-**Question:**
-What should be the terminal scrollback buffer size?
+**Question:** What should be the terminal scrollback buffer size?
 
 **Considerations:**
+
 - Memory usage
 - User experience
 - Network transfer
 
 **Proposed:**
+
 - Scrollback: 10,000 lines (default xterm.js)
 - Configurable per session
 - Clear buffer option
@@ -393,14 +420,15 @@ What should be the terminal scrollback buffer size?
 ---
 
 ### Q-014: WebSocket Ping/Pong Interval
+
 **Priority:** 🟡 High  
 **Category:** Network  
 **Deadline:** 2026-10-20
 
-**Question:**
-How often should we send heartbeat/keepalive?
+**Question:** How often should we send heartbeat/keepalive?
 
 **Proposed:**
+
 - Ping every: 30 seconds
 - Timeout if no pong: 60 seconds
 - Max reconnect attempts: 5
@@ -414,19 +442,21 @@ How often should we send heartbeat/keepalive?
 ---
 
 ### Q-015: Database Connection Pooling
+
 **Priority:** 🟢 Medium  
 **Category:** Performance  
 **Deadline:** 2026-10-25
 
-**Question:**
-What should be the PostgreSQL connection pool size?
+**Question:** What should be the PostgreSQL connection pool size?
 
 **Considerations:**
+
 - VPS resource limits
 - Concurrent users
 - Prisma defaults
 
 **Proposed:**
+
 - Min connections: 2
 - Max connections: 10
 - Timeout: 10 seconds
@@ -441,20 +471,22 @@ What should be the PostgreSQL connection pool size?
 ## 🔍 SECURITY QUESTIONS
 
 ### Q-016: Password Requirements
+
 **Priority:** 🟡 High  
 **Category:** Security  
 **Deadline:** 2026-09-30
 
-**Question:**
-What password requirements should we enforce?
+**Question:** What password requirements should we enforce?
 
 **Proposed:**
+
 - Minimum length: 12 characters
 - Require: uppercase, lowercase, number, symbol
 - No common passwords (check against list)
 - No user info in password
 
 **Open Questions:**
+
 - Maximum length?
 - Password history (prevent reuse)?
 - Password expiry? (not recommended by NIST)
@@ -465,19 +497,21 @@ What password requirements should we enforce?
 ---
 
 ### Q-017: Session Duration
+
 **Priority:** 🟡 High  
 **Category:** Security  
 **Deadline:** 2026-09-30
 
-**Question:**
-How long should sessions last?
+**Question:** How long should sessions last?
 
 **Proposed (from Phase 0):**
+
 - Access token: 15 minutes
 - Refresh token: 30 days
 - Idle timeout: ?
 
 **Open Questions:**
+
 - Idle timeout vs absolute timeout?
 - Remember me option?
 - Different timeout for different roles?
@@ -488,14 +522,15 @@ How long should sessions last?
 ---
 
 ### Q-018: Rate Limiting Thresholds
+
 **Priority:** 🟡 High  
 **Category:** Security  
 **Deadline:** 2026-10-05
 
-**Question:**
-What should be the rate limits for different endpoints?
+**Question:** What should be the rate limits for different endpoints?
 
 **Proposed:**
+
 - Login: 5 attempts per 15 minutes
 - API: 100 requests per minute per user
 - File upload: 10 per 15 minutes

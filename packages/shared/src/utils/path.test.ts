@@ -93,7 +93,9 @@ describe('isSafeRelativePath', () => {
 
 describe('joinWorkspacePath', () => {
   it('joins a relative path onto the root', () => {
-    expect(joinWorkspacePath('/srv/aether/workspace', 'foo/bar')).toBe('/srv/aether/workspace/foo/bar');
+    expect(joinWorkspacePath('/srv/aether/workspace', 'foo/bar')).toBe(
+      '/srv/aether/workspace/foo/bar'
+    );
   });
 
   it('returns the root for an empty relative path', () => {

@@ -34,6 +34,7 @@ echo "SESSION_SECRET=$(openssl rand -base64 64)" >> .env
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
 Add-Content .env "JWT_SECRET=$(([System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(64))))"
 Add-Content .env "ENCRYPTION_KEY=$((1..32 | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) -join '')"
@@ -70,18 +71,21 @@ pnpm --filter @aether/frontend dev
 ## Verify Installation
 
 ### Check Backend
+
 ```bash
 curl http://localhost:3000/health
 # Expected: {"status":"ok"}
 ```
 
 ### Check Database
+
 ```bash
 docker exec -it aether-postgres psql -U aether -d aether_dev -c "SELECT username FROM aether.users;"
 # Expected: dev user listed
 ```
 
 ### Check Redis
+
 ```bash
 docker exec -it aether-redis redis-cli ping
 # Expected: PONG
@@ -90,22 +94,26 @@ docker exec -it aether-redis redis-cli ping
 ## Development Workflow
 
 ### Run Tests
+
 ```bash
 pnpm test
 ```
 
 ### Lint Code
+
 ```bash
 pnpm lint
 pnpm lint:fix
 ```
 
 ### Type Check
+
 ```bash
 pnpm typecheck
 ```
 
 ### Build for Production
+
 ```bash
 pnpm build
 ```
@@ -132,6 +140,7 @@ docker-compose down -v
 ## Troubleshooting
 
 ### Port Already in Use
+
 ```bash
 # Find process using port 3000
 lsof -i :3000  # macOS/Linux
@@ -142,6 +151,7 @@ PORT=3001
 ```
 
 ### Docker Not Starting
+
 ```bash
 # Restart Docker daemon
 # macOS: Restart Docker Desktop
@@ -153,6 +163,7 @@ docker ps
 ```
 
 ### Database Connection Failed
+
 ```bash
 # Restart PostgreSQL
 docker-compose restart postgres
@@ -164,16 +175,19 @@ docker-compose restart postgres
 ### node-pty Build Error
 
 **Windows:**
+
 ```bash
 npm install --global windows-build-tools
 ```
 
 **macOS:**
+
 ```bash
 xcode-select --install
 ```
 
 **Linux:**
+
 ```bash
 sudo apt-get install build-essential python3
 ```

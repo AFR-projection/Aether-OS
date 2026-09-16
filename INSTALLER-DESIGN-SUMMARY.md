@@ -10,7 +10,8 @@
 
 ### ✅ Complete Installer Design (5 Documents)
 
-In response to the requirement for a **one-command installer**, we have created a comprehensive design covering all aspects:
+In response to the requirement for a **one-command installer**, we have created a comprehensive
+design covering all aspects:
 
 1. **INSTALLER-ARCHITECTURE.md** (16,000+ words)
    - Complete system architecture
@@ -71,6 +72,7 @@ In response to the requirement for a **one-command installer**, we have created 
 **Decision:** 19-stage sequential pipeline with state persistence
 
 **Rationale:**
+
 - Clear progress indication
 - Resume capability after interruption
 - Rollback on failure
@@ -78,11 +80,12 @@ In response to the requirement for a **one-command installer**, we have created 
 - Easy to debug issues
 
 **Stages:**
+
 ```
-START → INITIALIZE → PREFLIGHT → OS_DETECT → RESOURCE_CHK → 
-NETWORK_CHK → PERMISSION → CONFLICT_CHK → DEP_DETECT → 
-DEP_INSTALL → DOCKER_SETUP → DOWNLOAD → VERIFY → EXTRACT → 
-CONFIGURE → SECRETS → DOMAIN → FIREWALL → DEPLOY → DB_INIT → 
+START → INITIALIZE → PREFLIGHT → OS_DETECT → RESOURCE_CHK →
+NETWORK_CHK → PERMISSION → CONFLICT_CHK → DEP_DETECT →
+DEP_INSTALL → DOCKER_SETUP → DOWNLOAD → VERIFY → EXTRACT →
+CONFIGURE → SECRETS → DOMAIN → FIREWALL → DEPLOY → DB_INIT →
 HEALTH_CHECK → HTTPS_SETUP → PAIRING → COMPLETE → SUCCESS
 ```
 
@@ -93,6 +96,7 @@ HEALTH_CHECK → HTTPS_SETUP → PAIRING → COMPLETE → SUCCESS
 **Decision:** Multi-layered security with mandatory checksum verification
 
 **Key Controls:**
+
 - ✅ HTTPS-only downloads
 - ✅ SHA256 checksum verification (mandatory)
 - ✅ GPG signature verification (future)
@@ -104,6 +108,7 @@ HEALTH_CHECK → HTTPS_SETUP → PAIRING → COMPLETE → SUCCESS
 - ✅ Audit logging of all operations
 
 **Threat Coverage:**
+
 - Man-in-the-middle attacks
 - Compromised releases
 - Command injection
@@ -120,17 +125,20 @@ HEALTH_CHECK → HTTPS_SETUP → PAIRING → COMPLETE → SUCCESS
 **Decision:** Start with Ubuntu x86_64, expand later
 
 **MVP Support:**
+
 - Ubuntu 20.04 LTS (x86_64)
 - Ubuntu 22.04 LTS (x86_64)
 - Ubuntu 24.04 LTS (x86_64)
 
 **Future Support:**
+
 - Debian 11/12
 - Rocky Linux / CentOS Stream
 - ARM64 architecture
 - Additional distributions
 
 **Rationale:**
+
 - Ubuntu has largest VPS market share
 - Simplifies testing and support
 - Proven Docker compatibility
@@ -143,16 +151,19 @@ HEALTH_CHECK → HTTPS_SETUP → PAIRING → COMPLETE → SUCCESS
 **Decision:** Realistic minimum, higher recommended
 
 **Minimum (will install but warn):**
+
 - 2 vCPU
 - 4 GB RAM
 - 40 GB disk
 
 **Recommended (optimal performance):**
+
 - 4 vCPU
 - 8 GB RAM
 - 80 GB disk
 
 **Rationale:**
+
 - Based on Docker + PostgreSQL + Redis requirements
 - Allows for growth
 - Reasonable VPS costs ($10-20/month)
@@ -165,6 +176,7 @@ HEALTH_CHECK → HTTPS_SETUP → PAIRING → COMPLETE → SUCCESS
 **Decision:** Internal Docker network with Caddy reverse proxy
 
 **Architecture:**
+
 ```
 Internet
     │
@@ -176,6 +188,7 @@ Internet
 ```
 
 **Benefits:**
+
 - Internal services never exposed
 - Single point of ingress
 - Automatic HTTPS via Caddy
@@ -189,6 +202,7 @@ Internet
 **Decision:** JSON state file with stage-by-stage persistence
 
 **State File:**
+
 ```json
 {
   "status": "IN_PROGRESS",
@@ -200,6 +214,7 @@ Internet
 ```
 
 **Benefits:**
+
 - Resume after interruption
 - Rollback capability
 - Debugging information
@@ -213,6 +228,7 @@ Internet
 **Decision:** Generate all secrets, never use defaults
 
 **Generated Secrets:**
+
 - Database password (32 chars, alphanumeric)
 - Redis password (32 chars, alphanumeric)
 - JWT secret (512 bits, base64)
@@ -220,6 +236,7 @@ Internet
 - Session secret (512 bits, base64)
 
 **Storage:**
+
 - Individual files in `secrets/` directory
 - 600 permissions (owner read/write only)
 - Never logged or displayed
@@ -234,18 +251,22 @@ Internet
 **Two Modes:**
 
 **1. With Domain:**
+
 ```bash
 --domain cloud.example.com
 ```
+
 - DNS verification
 - Automatic SSL certificate via Let's Encrypt
 - HTTPS enforced
 - HTTP → HTTPS redirect
 
 **2. Without Domain:**
+
 ```bash
 # No domain argument
 ```
+
 - IP-only access
 - HTTP only
 - No SSL certificate
@@ -258,6 +279,7 @@ Internet
 **Decision:** Configure but don't assume, always protect SSH
 
 **Approach:**
+
 1. Backup existing rules
 2. Show proposed changes
 3. Ask for confirmation
@@ -267,6 +289,7 @@ Internet
 7. Verify SSH still works after
 
 **Safety First:**
+
 - Never lock out SSH
 - Backup rules before changes
 - Test connectivity after
@@ -279,6 +302,7 @@ Internet
 **Decision:** Fail gracefully with recovery options
 
 **For Every Error:**
+
 1. Log detailed information
 2. Save current state
 3. Display clear error message
@@ -287,6 +311,7 @@ Internet
 6. Preserve logs for support
 
 **Recovery Options:**
+
 - Retry current stage
 - Rollback entire installation
 - Exit and save state for later
@@ -301,6 +326,7 @@ Internet
 **Goal:** Working installer for Ubuntu 22.04
 
 **Tasks:**
+
 - [ ] Implement install.sh main script
 - [ ] Implement all 19 stages
 - [ ] Add state management
@@ -317,6 +343,7 @@ Internet
 **Goal:** Production-ready security
 
 **Tasks:**
+
 - [ ] Implement checksum verification
 - [ ] Implement input validation
 - [ ] Implement secret generation
@@ -334,6 +361,7 @@ Internet
 **Goal:** Comprehensive testing
 
 **Tasks:**
+
 - [ ] Test on Ubuntu 20.04, 22.04, 24.04
 - [ ] Test on 4+ VPS providers
 - [ ] Run all security tests
@@ -350,6 +378,7 @@ Internet
 **Goal:** Public release
 
 **Tasks:**
+
 - [ ] Create release artifacts
 - [ ] Set up release hosting
 - [ ] Generate checksums
@@ -367,6 +396,7 @@ Internet
 ### 1. Installer Script (`install.sh`)
 
 **Core Components:**
+
 ```bash
 install.sh (main script)
   ├── Core functions
@@ -401,6 +431,7 @@ install.sh (main script)
 ### 2. Release Artifacts
 
 **Structure:**
+
 ```
 release/
 ├── manifest.json              # Version, checksums, metadata
@@ -420,6 +451,7 @@ release/
 ### 3. Management CLI (`aether` command)
 
 **Commands:**
+
 ```bash
 aether status          # Show service status
 aether logs [service]  # View logs
@@ -437,6 +469,7 @@ aether uninstall       # Remove Aether
 ### 4. Docker Compose Production Template
 
 **Services:**
+
 - Caddy (reverse proxy + HTTPS)
 - Frontend (React app)
 - Backend (API server)
@@ -445,10 +478,12 @@ aether uninstall       # Remove Aether
 - MinIO (optional, object storage)
 
 **Networks:**
+
 - `public` - External facing
 - `internal` - Internal only
 
 **Secrets:**
+
 - Managed via Docker secrets or files
 - Never in environment variables
 
@@ -457,6 +492,7 @@ aether uninstall       # Remove Aether
 ### 5. Release Pipeline
 
 **CI/CD Steps:**
+
 1. Build all packages
 2. Run tests
 3. Create release archive
@@ -471,6 +507,7 @@ aether uninstall       # Remove Aether
 ### 6. Documentation
 
 **User-Facing:**
+
 - Installation guide
 - Troubleshooting guide
 - FAQ
@@ -478,6 +515,7 @@ aether uninstall       # Remove Aether
 - Security best practices
 
 **Developer-Facing:**
+
 - Installer architecture
 - Contributing guide
 - Release process
@@ -508,8 +546,10 @@ aether uninstall       # Remove Aether
 ## Open Questions
 
 ### Q1: Release Hosting
+
 **Question:** Where to host release artifacts?  
 **Options:**
+
 - GitHub Releases
 - Cloudflare R2/CDN
 - Self-hosted CDN
@@ -520,6 +560,7 @@ aether uninstall       # Remove Aether
 ---
 
 ### Q2: Signature Verification
+
 **Question:** Implement GPG signatures in MVP or later?  
 **Impact:** Security vs complexity  
 **Recommendation:** Checksum for MVP, GPG in v1.1
@@ -529,8 +570,10 @@ aether uninstall       # Remove Aether
 ---
 
 ### Q3: Telemetry
+
 **Question:** Collect installation metrics?  
 **Options:**
+
 - No telemetry (privacy-first)
 - Opt-in telemetry
 - Anonymous success/failure reporting
@@ -540,8 +583,10 @@ aether uninstall       # Remove Aether
 ---
 
 ### Q4: Support Model
+
 **Question:** How to provide support?  
 **Options:**
+
 - Community forum
 - GitHub issues
 - Email support
@@ -552,8 +597,10 @@ aether uninstall       # Remove Aether
 ---
 
 ### Q5: Update Frequency
+
 **Question:** How often to release updates?  
 **Options:**
+
 - Continuous (weekly)
 - Regular (monthly)
 - LTS (quarterly)
@@ -565,26 +612,31 @@ aether uninstall       # Remove Aether
 ## Success Metrics
 
 ### Installation Success
+
 - **Target:** ≥99% success rate on supported platforms
 - **Measure:** Installation completes without errors
 - **Track:** By OS version, VPS provider, network conditions
 
 ### Time to Install
+
 - **Target:** ≤15 minutes on typical hardware
 - **Measure:** Time from start to success
 - **Track:** P50, P90, P99 percentiles
 
 ### Security
+
 - **Target:** Zero security incidents
 - **Measure:** Verified downloads, no exposed services
 - **Track:** Failed checksum verifications, port scans
 
 ### User Experience
+
 - **Target:** ≤2 user interactions required
 - **Measure:** Number of prompts/confirmations
 - **Track:** Average interactions per install
 
 ### Reliability
+
 - **Target:** ≥95% resume success after interruption
 - **Measure:** Successful resume / total interruptions
 - **Track:** Resume attempts and outcomes
@@ -594,16 +646,19 @@ aether uninstall       # Remove Aether
 ## Risk Summary
 
 ### High Risks
+
 1. **Checksum verification bypass** - Mitigated by mandatory checks
 2. **Firewall lockout** - Mitigated by SSH-first approach
 3. **Resource exhaustion** - Mitigated by preflight checks
 
 ### Medium Risks
+
 1. **Docker installation failures** - Detailed error messages
 2. **Network interruptions** - Retry and resume logic
 3. **Port conflicts** - Detection and alternatives
 
 ### Low Risks
+
 1. **Unsupported OS** - Early detection and blocking
 2. **Insufficient disk space** - Preflight validation
 3. **DNS issues** - Verification before HTTPS setup
@@ -613,6 +668,7 @@ aether uninstall       # Remove Aether
 ## Next Steps
 
 ### Immediate (This Week)
+
 1. Review and approve design documents
 2. Make decisions on open questions
 3. Set up development environment
@@ -620,6 +676,7 @@ aether uninstall       # Remove Aether
 5. Create release artifact structure
 
 ### Short Term (Next 2 Weeks)
+
 1. Complete installer implementation
 2. Create test environment
 3. First successful end-to-end test
@@ -627,6 +684,7 @@ aether uninstall       # Remove Aether
 5. Begin multi-platform testing
 
 ### Medium Term (Next 4 Weeks)
+
 1. Complete testing matrix
 2. Documentation finalization
 3. Beta program launch
@@ -646,12 +704,14 @@ The Aether installer design is **complete and ready for implementation**. We hav
 ✅ **Requirements** - Functional and non-functional requirements documented
 
 **What's Next:**
+
 - **Implementation** - Build the installer based on these designs
 - **Testing** - Execute the test matrix
 - **Validation** - Verify on real VPS environments
 - **Launch** - Public release
 
 **Estimated Timeline:**
+
 - MVP: 2 weeks
 - Beta: 3 weeks
 - Production: 4 weeks

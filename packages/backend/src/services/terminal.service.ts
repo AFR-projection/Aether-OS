@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-
 import {
   LIMITS,
   type TerminalServerMessage,
@@ -59,7 +58,7 @@ async function loadPty(): Promise<typeof import('node-pty')> {
     log.error({ err: ptyLoadError }, 'node-pty native module could not be loaded');
     throw new ServiceUnavailableError(
       'Terminal support is unavailable: the node-pty native module failed to load on this host.',
-      { reason: ptyLoadError.message },
+      { reason: ptyLoadError.message }
     );
   }
 }
@@ -208,7 +207,10 @@ export async function createSession(options: CreateSessionOptions): Promise<Term
   sessions.set(id, runtime);
   resetIdleTimer(runtime);
 
-  log.info({ sessionId: id, pid: child.pid, shell, ownerUserId: options.ownerUserId }, 'terminal session created');
+  log.info(
+    { sessionId: id, pid: child.pid, shell, ownerUserId: options.ownerUserId },
+    'terminal session created'
+  );
 
   return { ...runtime.session };
 }
@@ -319,7 +321,11 @@ export function resizeSession(sessionId: string, userId: string, cols: number, r
   runtime.session.rows = rows;
 }
 
-export function sendSignal(sessionId: string, userId: string, signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'): void {
+export function sendSignal(
+  sessionId: string,
+  userId: string,
+  signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'
+): void {
   const runtime = requireSession(sessionId);
   if (runtime.ownerUserId !== userId) {
     throw new NotFoundError('Terminal session does not exist', { sessionId });
@@ -366,7 +372,11 @@ export interface AttachResult {
   unsubscribe: () => void;
 }
 
-export function attach(sessionId: string, userId: string, subscriber: TerminalSubscriber): AttachResult {
+export function attach(
+  sessionId: string,
+  userId: string,
+  subscriber: TerminalSubscriber
+): AttachResult {
   const runtime = requireSession(sessionId);
   if (runtime.ownerUserId !== userId) {
     throw new NotFoundError('Terminal session does not exist', { sessionId });

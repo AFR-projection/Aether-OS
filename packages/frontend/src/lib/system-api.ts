@@ -17,7 +17,6 @@ import type {
   SystemInfo,
 } from '@aether/shared';
 
-
 export type ProcessSort = 'memory' | 'pid' | 'name';
 
 export function fetchProcesses(params: {

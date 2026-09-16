@@ -2,8 +2,20 @@ import { Buffer } from 'node:buffer';
 import { readFile, writeFile, readdir, stat, mkdir, unlink, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 
-import { ALLOWED_PROCESS_SIGNALS, getSystemInfo, listProcesses, signalProcess } from './system.service.js';
-import { createSession, writeInput, resizeSession, sendSignal, killSession, listSessionsForUser } from './terminal.service.js';
+import {
+  ALLOWED_PROCESS_SIGNALS,
+  getSystemInfo,
+  listProcesses,
+  signalProcess,
+} from './system.service.js';
+import {
+  createSession,
+  writeInput,
+  resizeSession,
+  sendSignal,
+  killSession,
+  listSessionsForUser,
+} from './terminal.service.js';
 import { resolveExistingPath, resolvePathForWrite } from '../security/workspace.js';
 import { subsystemLogger } from '../utils/logger.js';
 
@@ -42,7 +54,7 @@ function errorCode(error: unknown): string {
 
 export async function dispatchAgentMessage(
   record: AgentRecord,
-  rawFrame: string,
+  rawFrame: string
 ): Promise<string | null> {
   let parsed: unknown;
   try {
@@ -74,9 +86,11 @@ export async function dispatchAgentMessage(
 async function handleRequest(
   record: AgentRecord,
   type: string,
-  frame: Record<string, unknown>,
+  frame: Record<string, unknown>
 ): Promise<unknown> {
-  const params = (typeof frame.params === 'object' && frame.params !== null ? frame.params : {}) as Record<string, unknown>;
+  const params = (
+    typeof frame.params === 'object' && frame.params !== null ? frame.params : {}
+  ) as Record<string, unknown>;
   const ownerUserId = record.ownerUserId;
 
   switch (type) {
@@ -94,10 +108,13 @@ async function handleRequest(
       const pid = Number(params.pid);
       const signal = params.signal;
       if (!Number.isInteger(pid) || pid < 1) throw new Error('Invalid pid');
-      if (typeof signal !== 'string' || !ALLOWED_PROCESS_SIGNALS.includes(signal as typeof ALLOWED_PROCESS_SIGNALS[number])) {
+      if (
+        typeof signal !== 'string' ||
+        !ALLOWED_PROCESS_SIGNALS.includes(signal as (typeof ALLOWED_PROCESS_SIGNALS)[number])
+      ) {
         throw new Error('Invalid signal');
       }
-      await signalProcess(pid, signal as typeof ALLOWED_PROCESS_SIGNALS[number]);
+      await signalProcess(pid, signal as (typeof ALLOWED_PROCESS_SIGNALS)[number]);
       return { signalled: true, pid, signal };
     }
 
@@ -122,11 +139,13 @@ async function handleRequest(
         });
       }
       return {
-        entries: result.sort((a: { name: string; type: string }, b: { name: string; type: string }) => {
-          if (a.type === 'directory' && b.type !== 'directory') return -1;
-          if (a.type !== 'directory' && b.type === 'directory') return 1;
-          return a.name.localeCompare(b.name);
-        }),
+        entries: result.sort(
+          (a: { name: string; type: string }, b: { name: string; type: string }) => {
+            if (a.type === 'directory' && b.type !== 'directory') return -1;
+            if (a.type !== 'directory' && b.type === 'directory') return 1;
+            return a.name.localeCompare(b.name);
+          }
+        ),
       };
     }
 

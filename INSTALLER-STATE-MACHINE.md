@@ -8,7 +8,9 @@
 
 ## Overview
 
-The Aether installer operates as a **deterministic state machine** with well-defined stages, transitions, and error handling. This design enables:
+The Aether installer operates as a **deterministic state machine** with well-defined stages,
+transitions, and error handling. This design enables:
+
 - Resume from interruption
 - Rollback on failure
 - Clear progress tracking
@@ -194,13 +196,16 @@ The Aether installer operates as a **deterministic state machine** with well-def
 ## State Definitions
 
 ### 1. START
+
 **Entry:** User executes installer  
 **Actions:**
+
 - Parse command-line arguments
 - Display welcome banner
 - Check for existing installation
 
 **Transitions:**
+
 - → `INITIALIZE` (always)
 
 **Exit Criteria:** Command parsed
@@ -208,8 +213,10 @@ The Aether installer operates as a **deterministic state machine** with well-def
 ---
 
 ### 2. INITIALIZE
+
 **Entry:** From START or RESUME  
 **Actions:**
+
 - Create installation ID
 - Create lock file
 - Initialize log file
@@ -218,6 +225,7 @@ The Aether installer operates as a **deterministic state machine** with well-def
 - Create temp directory
 
 **Transitions:**
+
 - → `PREFLIGHT` (if new install)
 - → `<LAST_STAGE>` (if resuming)
 - → `ERROR` (if lock exists)
@@ -225,6 +233,7 @@ The Aether installer operates as a **deterministic state machine** with well-def
 **Exit Criteria:** System initialized
 
 **Persistence:**
+
 ```json
 {
   "stage": "INITIALIZE",
@@ -237,13 +246,16 @@ The Aether installer operates as a **deterministic state machine** with well-def
 ---
 
 ### 3. PREFLIGHT
+
 **Entry:** From INITIALIZE  
 **Actions:**
+
 - Aggregate all preflight checks
 - Display summary
 - Ask for confirmation (if interactive)
 
 **Sub-stages:**
+
 - OS_DETECT
 - RESOURCE_CHK
 - NETWORK_CHK
@@ -251,6 +263,7 @@ The Aether installer operates as a **deterministic state machine** with well-def
 - CONFLICT_CHK
 
 **Transitions:**
+
 - → `OS_DETECT` (if confirmed)
 - → `FAILED` (if user declines)
 - → `ERROR` (if critical failure)
@@ -260,8 +273,10 @@ The Aether installer operates as a **deterministic state machine** with well-def
 ---
 
 ### 4. OS_DETECT
+
 **Entry:** From PREFLIGHT  
 **Actions:**
+
 - Read `/etc/os-release`
 - Execute `uname -s -m -r`
 - Detect distribution
@@ -270,6 +285,7 @@ The Aether installer operates as a **deterministic state machine** with well-def
 - Determine architecture
 
 **Checks:**
+
 ```bash
 OS=$(uname -s)
 if [[ "$OS" != "Linux" ]]; then
@@ -297,12 +313,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `RESOURCE_CHK` (if supported)
 - → `ERROR` (if unsupported)
 
 **Exit Criteria:** OS and arch validated
 
 **Persistence:**
+
 ```json
 {
   "stage": "OS_DETECT",
@@ -319,14 +337,17 @@ fi
 ---
 
 ### 5. RESOURCE_CHK
+
 **Entry:** From OS_DETECT  
 **Actions:**
+
 - Count CPU cores
 - Check RAM size
 - Check disk space
 - Check I/O performance (optional)
 
 **Checks:**
+
 ```bash
 # CPU
 CPU_CORES=$(nproc)
@@ -370,12 +391,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `NETWORK_CHK` (if meets minimum)
 - → `ERROR` (if below minimum)
 
 **Exit Criteria:** Resources validated
 
 **Persistence:**
+
 ```json
 {
   "stage": "RESOURCE_CHK",
@@ -390,8 +413,10 @@ fi
 ---
 
 ### 6. NETWORK_CHK
+
 **Entry:** From RESOURCE_CHK  
 **Actions:**
+
 - Test internet connectivity
 - Test DNS resolution
 - Detect public IP
@@ -399,6 +424,7 @@ fi
 - Test download speed (optional)
 
 **Checks:**
+
 ```bash
 # Internet connectivity
 if curl -fsSL --connect-timeout 5 https://www.google.com > /dev/null 2>&1; then
@@ -433,12 +459,14 @@ done
 ```
 
 **Transitions:**
+
 - → `PERMISSION` (if network OK)
 - → `ERROR` (if critical failure)
 
 **Exit Criteria:** Network validated
 
 **Persistence:**
+
 ```json
 {
   "stage": "NETWORK_CHK",
@@ -453,14 +481,17 @@ done
 ---
 
 ### 7. PERMISSION
+
 **Entry:** From NETWORK_CHK  
 **Actions:**
+
 - Check current user
 - Check sudo availability
 - Check file system permissions
 - Check Docker socket (if exists)
 
 **Checks:**
+
 ```bash
 # Current user
 CURRENT_USER=$(whoami)
@@ -469,7 +500,7 @@ if [[ "$CURRENT_USER" == "root" ]]; then
   SUDO=""
 else
   success "Current user: $CURRENT_USER"
-  
+
   # Check sudo
   if sudo -n true 2>/dev/null; then
     success "Sudo: available (passwordless)"
@@ -493,12 +524,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `CONFLICT_CHK` (if permissions OK)
 - → `ERROR` (if insufficient permissions)
 
 **Exit Criteria:** Permissions validated
 
 **Persistence:**
+
 ```json
 {
   "stage": "PERMISSION",
@@ -512,20 +545,23 @@ fi
 ---
 
 ### 8. CONFLICT_CHK
+
 **Entry:** From PERMISSION  
 **Actions:**
+
 - Check for existing Aether installation
 - Check for Docker conflicts
 - Check for web server conflicts
 - Check for reverse proxy conflicts
 
 **Checks:**
+
 ```bash
 # Existing installation
 if [[ -f /opt/aether/install.state ]]; then
   STATE=$(cat /opt/aether/install.state)
   STATUS=$(echo "$STATE" | jq -r '.status')
-  
+
   if [[ "$STATUS" == "SUCCESS" ]]; then
     warning "Aether is already installed"
     echo "Use 'aether update' to upgrade or 'aether uninstall' to remove"
@@ -560,12 +596,14 @@ done
 ```
 
 **Transitions:**
+
 - → `DEP_DETECT` (if no blocking conflicts)
 - → `ERROR` (if blocking conflicts found)
 
 **Exit Criteria:** No blocking conflicts
 
 **Persistence:**
+
 ```json
 {
   "stage": "CONFLICT_CHK",
@@ -579,8 +617,10 @@ done
 ---
 
 ### 9. DEP_DETECT
+
 **Entry:** From CONFLICT_CHK  
 **Actions:**
+
 - Check for curl, wget, git
 - Check for Docker
 - Check for Docker Compose
@@ -588,6 +628,7 @@ done
 - Determine what needs installation
 
 **Checks:**
+
 ```bash
 declare -A DEPS
 DEPS=(
@@ -616,12 +657,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `DEP_INSTALL` (if missing deps)
 - → `DOCKER_SETUP` (if all present)
 
 **Exit Criteria:** Dependencies cataloged
 
 **Persistence:**
+
 ```json
 {
   "stage": "DEP_DETECT",
@@ -636,28 +679,31 @@ fi
 ---
 
 ### 10. DEP_INSTALL
+
 **Entry:** From DEP_DETECT  
 **Actions:**
+
 - Update package index
 - Install missing system packages
 - Install Docker (if needed)
 - Verify installations
 
 **Installation:**
+
 ```bash
 # System packages
 if [[ ${#MISSING[@]} -gt 0 ]]; then
   info "Installing system packages..."
-  
+
   $SUDO apt-get update -qq
-  
+
   for dep in "${MISSING[@]}"; do
     if [[ "$dep" == "docker" ]]; then
       continue # Handle separately
     fi
-    
+
     $SUDO apt-get install -y $dep
-    
+
     if command -v $dep > /dev/null; then
       success "$dep installed"
     else
@@ -669,27 +715,27 @@ fi
 # Docker
 if [[ -z "$(command -v docker)" ]]; then
   info "Installing Docker..."
-  
+
   # Use official Docker installation script
   curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-  
+
   # Verify script (basic check)
   if [[ ! -f /tmp/get-docker.sh ]]; then
     error "Failed to download Docker installer"
   fi
-  
+
   $SUDO sh /tmp/get-docker.sh
-  
+
   # Add user to docker group
   $SUDO usermod -aG docker $USER
-  
+
   # Verify
   if docker --version > /dev/null 2>&1; then
     success "Docker installed"
   else
     error "Docker installation failed"
   fi
-  
+
   rm /tmp/get-docker.sh
 fi
 
@@ -700,12 +746,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `DOCKER_SETUP` (if all installed)
 - → `ERROR` (if installation failed)
 
 **Exit Criteria:** All dependencies installed
 
 **Persistence:**
+
 ```json
 {
   "stage": "DEP_INSTALL",
@@ -717,8 +765,10 @@ fi
 ---
 
 ### 11. DOCKER_SETUP
+
 **Entry:** From DEP_INSTALL  
 **Actions:**
+
 - Start Docker daemon
 - Enable Docker service
 - Configure Docker daemon (if needed)
@@ -726,6 +776,7 @@ fi
 - Verify Docker Compose
 
 **Setup:**
+
 ```bash
 # Enable Docker service
 if ! systemctl is-enabled docker > /dev/null 2>&1; then
@@ -764,12 +815,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `DOWNLOAD` (if Docker ready)
 - → `ERROR` (if Docker not working)
 
 **Exit Criteria:** Docker operational
 
 **Persistence:**
+
 ```json
 {
   "stage": "DOCKER_SETUP",
@@ -783,14 +836,17 @@ fi
 ---
 
 ### 12. DOWNLOAD
+
 **Entry:** From DOCKER_SETUP  
 **Actions:**
+
 - Determine target version/channel
 - Download release artifact
 - Download checksums
 - Store in temp directory
 
 **Download:**
+
 ```bash
 # Determine version
 VERSION=${AETHER_VERSION:-stable}
@@ -824,12 +880,14 @@ success "Download complete"
 ```
 
 **Transitions:**
+
 - → `VERIFY` (if downloaded)
 - → `ERROR` (if download failed)
 
 **Exit Criteria:** Files downloaded
 
 **Persistence:**
+
 ```json
 {
   "stage": "DOWNLOAD",
@@ -843,13 +901,16 @@ success "Download complete"
 ---
 
 ### 13. VERIFY
+
 **Entry:** From DOWNLOAD  
 **Actions:**
+
 - Verify SHA256 checksum
 - Verify GPG signature (future)
 - Validate manifest
 
 **Verification:**
+
 ```bash
 info "Verifying download integrity..."
 
@@ -876,12 +937,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `EXTRACT` (if verified)
 - → `ERROR` (if verification failed - CRITICAL)
 
 **Exit Criteria:** Integrity confirmed
 
 **Persistence:**
+
 ```json
 {
   "stage": "VERIFY",
@@ -894,14 +957,17 @@ fi
 ---
 
 ### 14. EXTRACT
+
 **Entry:** From VERIFY  
 **Actions:**
+
 - Create installation directory
 - Extract release archive
 - Set permissions
 - Validate extracted contents
 
 **Extraction:**
+
 ```bash
 INSTALL_DIR="${AETHER_INSTALL_DIR:-/opt/aether}"
 
@@ -929,12 +995,14 @@ success "Files extracted to $INSTALL_DIR"
 ```
 
 **Transitions:**
+
 - → `CONFIGURE` (if extracted)
 - → `ERROR` (if extraction failed)
 
 **Exit Criteria:** Files extracted and validated
 
 **Persistence:**
+
 ```json
 {
   "stage": "EXTRACT",
@@ -947,14 +1015,17 @@ success "Files extracted to $INSTALL_DIR"
 ---
 
 ### 15. CONFIGURE
+
 **Entry:** From EXTRACT  
 **Actions:**
+
 - Generate instance ID
 - Create directory structure
 - Generate .env file
 - Set up logging
 
 **Configuration:**
+
 ```bash
 cd "$INSTALL_DIR"
 
@@ -983,11 +1054,13 @@ success "Instance configured"
 ```
 
 **Transitions:**
+
 - → `SECRETS` (always)
 
 **Exit Criteria:** Basic config created
 
 **Persistence:**
+
 ```json
 {
   "stage": "CONFIGURE",
@@ -1000,8 +1073,10 @@ success "Instance configured"
 ---
 
 ### 16. SECRETS
+
 **Entry:** From CONFIGURE  
 **Actions:**
+
 - Generate database password
 - Generate Redis password
 - Generate JWT secret
@@ -1010,6 +1085,7 @@ success "Instance configured"
 - Create .env file
 
 **Secret Generation:**
+
 ```bash
 info "Generating secure secrets..."
 
@@ -1077,11 +1153,13 @@ success "Secrets generated and stored securely"
 ```
 
 **Transitions:**
+
 - → `DOMAIN` (always)
 
 **Exit Criteria:** Secrets created and secured
 
 **Persistence:**
+
 ```json
 {
   "stage": "SECRETS",
@@ -1093,23 +1171,26 @@ success "Secrets generated and stored securely"
 ---
 
 ### 17. DOMAIN
+
 **Entry:** From SECRETS  
 **Actions:**
+
 - Prompt for domain (if interactive)
 - Verify DNS (if domain provided)
 - Configure Caddy
 - Update .env with domain
 
 **Domain Configuration:**
+
 ```bash
 if [[ -n "$AETHER_DOMAIN" ]]; then
   DOMAIN="$AETHER_DOMAIN"
   info "Using domain: $DOMAIN"
-  
+
   # Verify DNS
   info "Verifying DNS..."
   DOMAIN_IP=$(dig +short "$DOMAIN" | tail -n1)
-  
+
   if [[ "$DOMAIN_IP" == "$PUBLIC_IP" ]]; then
     success "DNS verified: $DOMAIN → $PUBLIC_IP"
     HTTPS_ENABLED=true
@@ -1122,35 +1203,35 @@ if [[ -n "$AETHER_DOMAIN" ]]; then
     warning "You can update DNS and run: aether reconfigure-https"
     HTTPS_ENABLED=false
   fi
-  
+
   # Update .env
   sed -i "s|BASE_URL=.*|BASE_URL=https://${DOMAIN}|" .env
-  
+
   # Configure Caddy
   cat > caddy/Caddyfile << EOF
 $DOMAIN {
   reverse_proxy frontend:5173
-  
+
   handle /api/* {
     reverse_proxy backend:3000
   }
-  
+
   log {
     output file /var/log/caddy/access.log
   }
 }
 EOF
-  
+
 else
   info "No domain specified - using IP-based access"
   warning "HTTPS will not be available without a domain"
   HTTPS_ENABLED=false
-  
+
   # Configure Caddy for HTTP only
   cat > caddy/Caddyfile << EOF
 :80 {
   reverse_proxy frontend:5173
-  
+
   handle /api/* {
     reverse_proxy backend:3000
   }
@@ -1160,11 +1241,13 @@ fi
 ```
 
 **Transitions:**
+
 - → `FIREWALL` (always)
 
 **Exit Criteria:** Domain configured or skipped
 
 **Persistence:**
+
 ```json
 {
   "stage": "DOMAIN",
@@ -1178,21 +1261,24 @@ fi
 ---
 
 ### 18. FIREWALL
+
 **Entry:** From DOMAIN  
 **Actions:**
+
 - Detect firewall (UFW, firewalld, etc.)
 - Backup current rules
 - Configure firewall
 - Ask confirmation before applying
 
 **Firewall Configuration:**
+
 ```bash
 if command -v ufw > /dev/null; then
   info "Configuring UFW firewall..."
-  
+
   # Backup
   $SUDO ufw status numbered > backups/ufw-backup-$(date +%Y%m%d-%H%M%S).txt
-  
+
   # Display proposed changes
   echo ""
   echo "Firewall changes to be applied:"
@@ -1200,7 +1286,7 @@ if command -v ufw > /dev/null; then
   echo "  ✓ Allow HTTP (80/tcp)"
   echo "  ✓ Allow HTTPS (443/tcp)"
   echo ""
-  
+
   if [[ "$INTERACTIVE" == "true" ]]; then
     read -p "Apply firewall rules? [Y/n] " -n 1 -r
     echo
@@ -1209,17 +1295,17 @@ if command -v ufw > /dev/null; then
       return
     fi
   fi
-  
+
   # Apply rules
   $SUDO ufw --force allow ssh
   $SUDO ufw --force allow 80/tcp
   $SUDO ufw --force allow 443/tcp
-  
+
   # Enable firewall
   $SUDO ufw --force enable
-  
+
   success "Firewall configured"
-  
+
 elif command -v firewall-cmd > /dev/null; then
   info "Detected firewalld - manual configuration required"
   warning "Please ensure ports 22, 80, and 443 are open"
@@ -1230,11 +1316,13 @@ fi
 ```
 
 **Transitions:**
+
 - → `DEPLOY` (always)
 
 **Exit Criteria:** Firewall configured or skipped
 
 **Persistence:**
+
 ```json
 {
   "stage": "FIREWALL",
@@ -1248,14 +1336,17 @@ fi
 ---
 
 ### 19. DEPLOY
+
 **Entry:** From FIREWALL  
 **Actions:**
+
 - Update docker-compose.yml with config
 - Pull Docker images
 - Start containers
 - Wait for startup
 
 **Deployment:**
+
 ```bash
 cd "$INSTALL_DIR"
 
@@ -1280,12 +1371,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `DB_INIT` (if services started)
 - → `ERROR` (if startup failed)
 
 **Exit Criteria:** All containers running
 
 **Persistence:**
+
 ```json
 {
   "stage": "DEPLOY",
@@ -1297,13 +1390,16 @@ fi
 ---
 
 ### 20. DB_INIT
+
 **Entry:** From DEPLOY  
 **Actions:**
+
 - Wait for PostgreSQL
 - Run database migrations
 - Seed initial data (if any)
 
 **Initialization:**
+
 ```bash
 info "Initializing database..."
 
@@ -1335,12 +1431,14 @@ fi
 ```
 
 **Transitions:**
+
 - → `HEALTH_CHECK` (if DB initialized)
 - → `ERROR` (if initialization failed)
 
 **Exit Criteria:** Database ready
 
 **Persistence:**
+
 ```json
 {
   "stage": "DB_INIT",
@@ -1352,14 +1450,17 @@ fi
 ---
 
 ### 21. HEALTH_CHECK
+
 **Entry:** From DB_INIT  
 **Actions:**
+
 - Check all container health
 - Test API endpoints
 - Test database connectivity
 - Test Redis connectivity
 
 **Health Checks:**
+
 ```bash
 info "Running health checks..."
 
@@ -1407,12 +1508,14 @@ success "All health checks passed"
 ```
 
 **Transitions:**
+
 - → `HTTPS_SETUP` (if healthy)
 - → `ERROR` (if health checks failed)
 
 **Exit Criteria:** All services healthy
 
 **Persistence:**
+
 ```json
 {
   "stage": "HEALTH_CHECK",
@@ -1424,21 +1527,24 @@ success "All health checks passed"
 ---
 
 ### 22. HTTPS_SETUP
+
 **Entry:** From HEALTH_CHECK  
 **Actions:**
+
 - Wait for Caddy to obtain certificate
 - Verify HTTPS endpoint
 - Update final URL
 
 **HTTPS Setup:**
+
 ```bash
 if [[ "$HTTPS_ENABLED" == "true" ]]; then
   info "Waiting for HTTPS certificate..."
   info "This may take up to 2 minutes..."
-  
+
   # Caddy obtains certificate automatically
   sleep 30
-  
+
   # Test HTTPS
   MAX_RETRIES=6
   RETRY=0
@@ -1453,7 +1559,7 @@ if [[ "$HTTPS_ENABLED" == "true" ]]; then
     echo "Waiting for HTTPS... ($RETRY/$MAX_RETRIES)"
     sleep 20
   done
-  
+
   if curl -fsSL https://$DOMAIN/health > /dev/null 2>&1; then
     success "HTTPS is working: https://$DOMAIN"
     FINAL_URL="https://$DOMAIN"
@@ -1469,11 +1575,13 @@ fi
 ```
 
 **Transitions:**
+
 - → `PAIRING` (always)
 
 **Exit Criteria:** HTTPS configured or skipped
 
 **Persistence:**
+
 ```json
 {
   "stage": "HTTPS_SETUP",
@@ -1486,13 +1594,16 @@ fi
 ---
 
 ### 23. PAIRING
+
 **Entry:** From HTTPS_SETUP  
 **Actions:**
+
 - Generate pairing token
 - Store in database
 - Display to user
 
 **Pairing Setup:**
+
 ```bash
 info "Generating pairing code..."
 
@@ -1519,11 +1630,13 @@ success "Pairing code generated"
 ```
 
 **Transitions:**
+
 - → `COMPLETE` (always)
 
 **Exit Criteria:** Pairing ready
 
 **Persistence:**
+
 ```json
 {
   "stage": "PAIRING",
@@ -1535,13 +1648,16 @@ success "Pairing code generated"
 ---
 
 ### 24. COMPLETE
+
 **Entry:** From PAIRING  
 **Actions:**
+
 - Save final state
 - Display installation summary
 - Provide next steps
 
 **Completion:**
+
 ```bash
 # Update state to SUCCESS
 cat > install.state << EOF
@@ -1560,6 +1676,7 @@ display_summary
 ```
 
 **Transitions:**
+
 - → `SUCCESS` (always)
 
 **Exit Criteria:** Installation complete
@@ -1567,10 +1684,12 @@ display_summary
 ---
 
 ### 25. SUCCESS
+
 **Final State**  
 Installation completed successfully.
 
 **Actions:**
+
 - Remove lock file
 - Close log file
 - Exit with code 0
@@ -1578,21 +1697,24 @@ Installation completed successfully.
 ---
 
 ### 26. ERROR
+
 **Entry:** From any stage on error  
 **Actions:**
+
 - Log error details
 - Display error message
 - Ask for retry or rollback
 
 **Error Handling:**
+
 ```bash
 handle_error() {
   local stage=$1
   local error_message=$2
-  
+
   error "Installation failed at stage: $stage"
   error "Error: $error_message"
-  
+
   # Save error state
   cat > install.state << EOF
 {
@@ -1603,7 +1725,7 @@ handle_error() {
   "timestamp": "$(date -Iseconds)"
 }
 EOF
-  
+
   if [[ "$INTERACTIVE" == "true" ]]; then
     echo ""
     echo "What would you like to do?"
@@ -1611,7 +1733,7 @@ EOF
     echo "  2) Rollback changes"
     echo "  3) Exit (save state for later)"
     read -p "Choice [1-3]: " choice
-    
+
     case $choice in
       1) return 0 ;;  # Retry
       2) rollback ;;
@@ -1624,6 +1746,7 @@ EOF
 ```
 
 **Transitions:**
+
 - → Previous stage (if retry)
 - → `ROLLBACK` (if rollback chosen)
 - → `FAILED` (if exit)
@@ -1631,26 +1754,29 @@ EOF
 ---
 
 ### 27. ROLLBACK
+
 **Entry:** From ERROR  
 **Actions:**
+
 - Stop containers
 - Remove installation directory (optional)
 - Restore firewall rules
 - Clean up
 
 **Rollback:**
+
 ```bash
 rollback() {
   warning "Rolling back installation..."
-  
+
   cd "$INSTALL_DIR" 2>/dev/null || true
-  
+
   # Stop containers
   if [[ -f docker-compose.yml ]]; then
     info "Stopping containers..."
     docker compose down
   fi
-  
+
   # Ask about data
   if [[ "$INTERACTIVE" == "true" ]]; then
     read -p "Remove installation directory? [y/N] " -n 1 -r
@@ -1664,38 +1790,42 @@ rollback() {
       info "Installation directory preserved"
     fi
   fi
-  
+
   # Restore firewall
   if [[ -f backups/ufw-backup-*.txt ]]; then
     warning "Firewall rules were modified"
     info "To restore: sudo ufw reset"
   fi
-  
+
   success "Rollback complete"
 }
 ```
 
 **Transitions:**
+
 - → `CLEANUP` (always)
 
 ---
 
 ### 28. CLEANUP
+
 **Entry:** From ROLLBACK or EXIT  
 **Actions:**
+
 - Remove lock file
 - Remove temp files
 - Close log
 
 **Cleanup:**
+
 ```bash
 cleanup() {
   # Remove lock
   rm -f /tmp/aether-install.lock
-  
+
   # Remove temp files
   rm -f /tmp/aether-*
-  
+
   # Preserve log
   if [[ -f /tmp/aether-install.log ]]; then
     mv /tmp/aether-install.log "$INSTALL_DIR/logs/install.log" 2>/dev/null || true
@@ -1706,11 +1836,13 @@ trap cleanup EXIT
 ```
 
 **Transitions:**
+
 - → `FAILED` (exit code 1)
 
 ---
 
 ### 29. FAILED
+
 **Final State**  
 Installation failed and rolled back.
 
@@ -1723,6 +1855,7 @@ Installation failed and rolled back.
 **State File Location:** `/opt/aether/install.state`
 
 **State File Format:**
+
 ```json
 {
   "status": "IN_PROGRESS",
@@ -1774,11 +1907,11 @@ resume_installation() {
     STATE=$(cat "$INSTALL_DIR/install.state")
     STATUS=$(echo "$STATE" | jq -r '.status')
     CURRENT_STAGE=$(echo "$STATE" | jq -r '.current_stage')
-    
+
     if [[ "$STATUS" == "IN_PROGRESS" || "$STATUS" == "FAILED" ]]; then
       info "Found incomplete installation"
       info "Last stage: $CURRENT_STAGE"
-      
+
       if [[ "$INTERACTIVE" == "true" ]]; then
         read -p "Resume from last stage? [Y/n] " -n 1 -r
         echo
@@ -1790,7 +1923,7 @@ resume_installation() {
       fi
     fi
   fi
-  
+
   # Start fresh installation
   run_stage "INITIALIZE"
 }
@@ -1801,17 +1934,20 @@ resume_installation() {
 ## Transition Rules
 
 ### Automatic Transitions
+
 - Success → Next stage
 - Critical error → ERROR
 - User cancellation → CLEANUP
 
 ### Conditional Transitions
+
 - Dependencies missing → DEP_INSTALL
 - Dependencies present → DOCKER_SETUP
 - Domain provided → DNS verification
 - No domain → Skip HTTPS
 
 ### Error Transitions
+
 - Retryable error → Retry same stage
 - Non-retryable error → ROLLBACK
 - User abort → CLEANUP
@@ -1864,7 +2000,7 @@ acquire_lock() {
       rm -f /tmp/aether-install.lock
     fi
   fi
-  
+
   echo $$ > /tmp/aether-install.lock
 }
 
@@ -1884,9 +2020,9 @@ display_progress() {
   local current_stage=$1
   local total_stages=24
   local completed_stages=${#STAGES_COMPLETED[@]}
-  
+
   local percentage=$((completed_stages * 100 / total_stages))
-  
+
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "  Aether Cloud OS Installation"

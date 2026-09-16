@@ -12,15 +12,18 @@ Complete guide to set up Aether Cloud OS for local development.
 ### Platform-Specific Requirements
 
 #### Windows
+
 - Windows 10/11
 - WSL2 (recommended for better Docker performance)
 - Visual Studio Build Tools (for node-pty)
 
 #### macOS
+
 - macOS 10.15 or higher
 - Xcode Command Line Tools
 
 #### Linux
+
 - Ubuntu 20.04+ / Debian 11+ / Fedora 35+
 - build-essential package
 
@@ -180,16 +183,19 @@ docker-compose restart
 ### node-pty Build Failures
 
 **Windows:**
+
 ```bash
 npm install --global windows-build-tools
 ```
 
 **macOS:**
+
 ```bash
 xcode-select --install
 ```
 
 **Linux:**
+
 ```bash
 sudo apt-get install build-essential python3
 ```
@@ -254,6 +260,7 @@ pnpm --filter @aether/backend build
 ### VS Code (Recommended)
 
 Recommended extensions:
+
 - ESLint
 - Prettier
 - TypeScript Vue Plugin (Volar)
@@ -264,6 +271,7 @@ Settings are pre-configured in `.vscode/settings.json`
 ### Other IDEs
 
 Configuration files are available for:
+
 - WebStorm/IntelliJ IDEA (.idea/)
 - Vim/Neovim (via LSP)
 
@@ -295,6 +303,7 @@ docker-compose up -d
 VS Code launch configuration is available in `.vscode/launch.json`
 
 Or use:
+
 ```bash
 node --inspect packages/backend/dist/index.js
 ```

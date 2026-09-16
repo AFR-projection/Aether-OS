@@ -10,7 +10,6 @@ import { parseDurationMs } from '../utils/duration.js';
 import { UnauthenticatedError } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
 
-
 const log = subsystemLogger('auth');
 
 /** bcrypt cost. 12 keeps a single hash in the ~250 ms range on server hardware. */
@@ -67,7 +66,7 @@ export function signAccessToken(claims: AccessTokenClaims): { token: string; exp
     config.JWT_SECRET,
     // A numeric lifetime avoids parsing the configured string a second time
     // and keeps the token's `exp` exactly in step with `parseDurationMs`.
-    { algorithm: 'HS256', expiresIn: expiresInSeconds, issuer: 'aether' },
+    { algorithm: 'HS256', expiresIn: expiresInSeconds, issuer: 'aether' }
   );
 
   return { token, expiresIn: expiresInSeconds };
@@ -144,7 +143,7 @@ export async function createSession(params: {
     `INSERT INTO aether.sessions (user_id, refresh_token_hash, user_agent, ip_address, expires_at)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id`,
-    [params.userId, hashRefreshToken(refreshToken), params.userAgent, params.ipAddress, expiresAt],
+    [params.userId, hashRefreshToken(refreshToken), params.userAgent, params.ipAddress, expiresAt]
   );
 
   if (!row) throw new Error('INSERT INTO aether.sessions returned no row');
@@ -169,7 +168,7 @@ export async function findSessionById(sessionId: string): Promise<SessionRow | n
     `SELECT id, user_id, refresh_token_hash, user_agent, ip_address,
             created_at, last_seen_at, expires_at, revoked_at
        FROM aether.sessions WHERE id = $1`,
-    [sessionId],
+    [sessionId]
   );
   return row ?? null;
 }
@@ -180,7 +179,7 @@ export async function findSessionByRefreshToken(refreshToken: string): Promise<S
     `SELECT id, user_id, refresh_token_hash, user_agent, ip_address,
             created_at, last_seen_at, expires_at, revoked_at
        FROM aether.sessions WHERE refresh_token_hash = $1`,
-    [hashRefreshToken(refreshToken)],
+    [hashRefreshToken(refreshToken)]
   );
   return row ?? null;
 }
@@ -205,7 +204,7 @@ export async function revokeSession(sessionId: string, reason: string): Promise<
   await query(
     `UPDATE aether.sessions SET revoked_at = now(), revoked_reason = $2
       WHERE id = $1 AND revoked_at IS NULL`,
-    [sessionId, reason],
+    [sessionId, reason]
   );
 }
 
@@ -213,7 +212,7 @@ export async function revokeAllSessionsForUser(userId: string, reason: string): 
   const result = await query(
     `UPDATE aether.sessions SET revoked_at = now(), revoked_reason = $2
       WHERE user_id = $1 AND revoked_at IS NULL`,
-    [userId, reason],
+    [userId, reason]
   );
   return result.rowCount ?? 0;
 }
@@ -225,7 +224,7 @@ export async function listSessionsForUser(userId: string): Promise<SessionRow[]>
        FROM aether.sessions
       WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
       ORDER BY last_seen_at DESC`,
-    [userId],
+    [userId]
   );
   return result.rows;
 }
@@ -240,7 +239,7 @@ export async function listSessionsForUser(userId: string): Promise<SessionRow[]>
  */
 export async function rotateSession(
   session: SessionRow,
-  presentedToken: string,
+  presentedToken: string
 ): Promise<IssuedSession> {
   const nextToken = generateRefreshToken();
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
@@ -250,7 +249,7 @@ export async function rotateSession(
         SET refresh_token_hash = $2, expires_at = $3, last_seen_at = now()
       WHERE id = $1 AND revoked_at IS NULL AND refresh_token_hash = $4
       RETURNING id`,
-    [session.id, hashRefreshToken(nextToken), expiresAt, hashRefreshToken(presentedToken)],
+    [session.id, hashRefreshToken(nextToken), expiresAt, hashRefreshToken(presentedToken)]
   );
 
   if (!row) {
@@ -262,7 +261,10 @@ export async function rotateSession(
   return { sessionId: session.id, refreshToken: nextToken, expiresAt };
 }
 
-export function buildLoginResponse(user: UserRow, session: IssuedSession): {
+export function buildLoginResponse(
+  user: UserRow,
+  session: IssuedSession
+): {
   user: ReturnType<typeof toPublicUser>;
   accessToken: string;
   refreshToken: string;

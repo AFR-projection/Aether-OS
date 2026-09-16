@@ -69,7 +69,9 @@ async function loadMigrationFiles(): Promise<MigrationFile[]> {
 }
 
 async function loadAppliedMigrations(): Promise<Map<string, AppliedMigration>> {
-  const result = await pool.query<AppliedMigration>('SELECT id, checksum FROM aether.schema_migrations');
+  const result = await pool.query<AppliedMigration>(
+    'SELECT id, checksum FROM aether.schema_migrations'
+  );
   return new Map(result.rows.map((row) => [row.id, row]));
 }
 
@@ -100,7 +102,7 @@ export async function runMigrations(): Promise<MigrationResult> {
         throw new Error(
           `Migration ${file.id} has been modified after it was applied ` +
             `(recorded ${existing.checksum.slice(0, 12)}, found ${file.checksum.slice(0, 12)}). ` +
-            'Create a new migration instead of editing an applied one.',
+            'Create a new migration instead of editing an applied one.'
         );
       }
       result.skipped.push(file.id);
@@ -114,7 +116,7 @@ export async function runMigrations(): Promise<MigrationResult> {
       await client.query(file.sql);
       await client.query(
         'INSERT INTO aether.schema_migrations (id, checksum, duration_ms) VALUES ($1, $2, $3)',
-        [file.id, file.checksum, Date.now() - startedAt],
+        [file.id, file.checksum, Date.now() - startedAt]
       );
       await client.query('COMMIT');
       result.applied.push(file.id);

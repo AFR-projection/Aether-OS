@@ -55,6 +55,7 @@ pnpm lint
 ## Adding New Shared Code
 
 When adding new shared code:
+
 1. Ensure it's truly needed by multiple packages
 2. Keep it framework-agnostic
 3. Export from `src/index.ts`

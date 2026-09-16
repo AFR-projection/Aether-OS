@@ -8,24 +8,30 @@
 
 ## Overview
 
-This document outlines the phased implementation plan for the Aether one-command installer, from initial skeleton to production-ready deployment tool.
+This document outlines the phased implementation plan for the Aether one-command installer, from
+initial skeleton to production-ready deployment tool.
 
-**Goal:** Build a secure, reliable, auditable installer that can deploy Aether Cloud OS on Ubuntu VPS with a single command.
+**Goal:** Build a secure, reliable, auditable installer that can deploy Aether Cloud OS on Ubuntu
+VPS with a single command.
 
 ---
 
 ## Implementation Phases
 
 ### Phase 1: Foundation (Week 1)
+
 **Goal:** Basic installer structure and preflight checks
 
 ### Phase 2: Core Installation (Week 2)
+
 **Goal:** Complete installation pipeline
 
 ### Phase 3: Security & Robustness (Week 3)
+
 **Goal:** Production-ready security
 
 ### Phase 4: Testing & Validation (Week 4)
+
 **Goal:** Comprehensive testing
 
 ---
@@ -35,6 +41,7 @@ This document outlines the phased implementation plan for the Aether one-command
 ### Milestone 1.1: Project Structure (Day 1)
 
 **Deliverables:**
+
 - [ ] Create modular directory structure
 - [ ] Create entry point `install.sh`
 - [ ] Create library modules in `lib/`
@@ -42,6 +49,7 @@ This document outlines the phased implementation plan for the Aether one-command
 - [ ] Implement `--help` and `--version`
 
 **Directory Structure:**
+
 ```
 installer/
 ├── install.sh                    # Main entry point
@@ -75,6 +83,7 @@ installer/
 ```
 
 **Acceptance Criteria:**
+
 - Directory structure created
 - `install.sh --help` shows usage
 - `install.sh --version` shows version
@@ -85,6 +94,7 @@ installer/
 ### Milestone 1.2: Core Functions (Day 2)
 
 **Deliverables:**
+
 - [ ] Implement logging functions (info, success, warning, error)
 - [ ] Implement state management (save/load state)
 - [ ] Implement lock file management
@@ -92,6 +102,7 @@ installer/
 - [ ] Implement dry-run mode
 
 **Core Functions:**
+
 ```bash
 # lib/core.sh
 
@@ -123,6 +134,7 @@ display_progress() # Show progress
 ```
 
 **Acceptance Criteria:**
+
 - Logging to file works correctly
 - State saved and loaded properly
 - Lock prevents concurrent runs
@@ -134,6 +146,7 @@ display_progress() # Show progress
 ### Milestone 1.3: Platform Detection (Day 3)
 
 **Deliverables:**
+
 - [ ] Implement OS detection
 - [ ] Implement architecture detection
 - [ ] Implement init system detection
@@ -141,6 +154,7 @@ display_progress() # Show progress
 - [ ] Block unsupported platforms
 
 **Platform Detection:**
+
 ```bash
 # lib/platform.sh
 
@@ -152,6 +166,7 @@ is_platform_supported()  # Check if platform is supported
 ```
 
 **Acceptance Criteria:**
+
 - Correctly detects Ubuntu 20.04, 22.04, 24.04
 - Correctly detects x86_64 architecture
 - Blocks non-Ubuntu systems
@@ -163,6 +178,7 @@ is_platform_supported()  # Check if platform is supported
 ### Milestone 1.4: Resource Checking (Day 4)
 
 **Deliverables:**
+
 - [ ] Implement CPU detection
 - [ ] Implement RAM detection
 - [ ] Implement disk space detection
@@ -170,6 +186,7 @@ is_platform_supported()  # Check if platform is supported
 - [ ] Display resource status
 
 **Resource Functions:**
+
 ```bash
 # lib/resources.sh
 
@@ -181,6 +198,7 @@ validate_resources() # Validate against requirements
 ```
 
 **Acceptance Criteria:**
+
 - Correctly detects CPU cores
 - Correctly detects RAM size
 - Correctly detects disk space
@@ -192,6 +210,7 @@ validate_resources() # Validate against requirements
 ### Milestone 1.5: Network & Permissions (Day 5)
 
 **Deliverables:**
+
 - [ ] Implement network connectivity check
 - [ ] Implement DNS resolution check
 - [ ] Implement port availability check
@@ -199,6 +218,7 @@ validate_resources() # Validate against requirements
 - [ ] Implement write permission check
 
 **Network & Permission Functions:**
+
 ```bash
 # lib/network.sh
 
@@ -215,6 +235,7 @@ is_root()              # Check if running as root
 ```
 
 **Acceptance Criteria:**
+
 - Detects internet connectivity
 - Detects DNS resolution
 - Detects public IP
@@ -227,6 +248,7 @@ is_root()              # Check if running as root
 ### Milestone 1.6: Input Validation (Day 6)
 
 **Deliverables:**
+
 - [ ] Implement domain validation
 - [ ] Implement path validation
 - [ ] Implement version validation
@@ -234,6 +256,7 @@ is_root()              # Check if running as root
 - [ ] Prevent path traversal
 
 **Validation Functions:**
+
 ```bash
 # lib/validation.sh
 
@@ -245,6 +268,7 @@ sanitize_input()        # Sanitize user input
 ```
 
 **Acceptance Criteria:**
+
 - Rejects invalid domains
 - Rejects unsafe paths
 - Rejects invalid versions
@@ -256,6 +280,7 @@ sanitize_input()        # Sanitize user input
 ### Milestone 1.7: Preflight Complete (Day 7)
 
 **Deliverables:**
+
 - [ ] Integrate all preflight checks
 - [ ] Display preflight summary
 - [ ] Ask for confirmation
@@ -263,6 +288,7 @@ sanitize_input()        # Sanitize user input
 - [ ] Test on Ubuntu 22.04
 
 **Phase 1 Completion Criteria:**
+
 - Installer can run preflight checks
 - Detects supported/unsupported platforms
 - Validates resources
@@ -280,6 +306,7 @@ sanitize_input()        # Sanitize user input
 ### Milestone 2.1: Dependency Management (Day 8)
 
 **Deliverables:**
+
 - [ ] Detect existing Docker
 - [ ] Install Docker if missing
 - [ ] Install Docker Compose v2
@@ -287,6 +314,7 @@ sanitize_input()        # Sanitize user input
 - [ ] Verify installations
 
 **Dependency Functions:**
+
 ```bash
 # lib/dependencies.sh
 
@@ -298,6 +326,7 @@ install_packages()       # Install missing packages
 ```
 
 **Acceptance Criteria:**
+
 - Detects existing Docker
 - Installs Docker on fresh system
 - Verifies Docker Compose v2
@@ -309,6 +338,7 @@ install_packages()       # Install missing packages
 ### Milestone 2.2: Docker Setup (Day 9)
 
 **Deliverables:**
+
 - [ ] Configure Docker daemon
 - [ ] Start Docker service
 - [ ] Add user to docker group
@@ -316,6 +346,7 @@ install_packages()       # Install missing packages
 - [ ] Handle docker group membership
 
 **Docker Functions:**
+
 ```bash
 # lib/docker.sh
 
@@ -327,6 +358,7 @@ verify_docker_access()   # Verify Docker socket access
 ```
 
 **Acceptance Criteria:**
+
 - Docker service running
 - User added to docker group
 - Docker commands work (with sudo if needed)
@@ -337,6 +369,7 @@ verify_docker_access()   # Verify Docker socket access
 ### Milestone 2.3: Release Download (Day 10)
 
 **Deliverables:**
+
 - [ ] Download release manifest
 - [ ] Download checksums
 - [ ] Download release archive
@@ -344,6 +377,7 @@ verify_docker_access()   # Verify Docker socket access
 - [ ] Handle network failures
 
 **Release Functions:**
+
 ```bash
 # lib/release.sh
 
@@ -355,6 +389,7 @@ retry_download()         # Retry failed download
 ```
 
 **Acceptance Criteria:**
+
 - Downloads from official server
 - Retries on failure (3 times)
 - Handles network interruptions
@@ -365,6 +400,7 @@ retry_download()         # Retry failed download
 ### Milestone 2.4: Verification & Extraction (Day 11)
 
 **Deliverables:**
+
 - [ ] Verify checksums
 - [ ] Display security alert on failure
 - [ ] Extract release archive
@@ -372,6 +408,7 @@ retry_download()         # Retry failed download
 - [ ] Set file permissions
 
 **Verification Functions:**
+
 ```bash
 # lib/release.sh
 
@@ -383,6 +420,7 @@ set_permissions()            # Set file permissions
 ```
 
 **Acceptance Criteria:**
+
 - Checksum verification works
 - Blocks on verification failure
 - Displays security alert
@@ -394,6 +432,7 @@ set_permissions()            # Set file permissions
 ### Milestone 2.5: Configuration Generation (Day 12)
 
 **Deliverables:**
+
 - [ ] Generate installation ID
 - [ ] Create directory structure
 - [ ] Generate .env file
@@ -401,6 +440,7 @@ set_permissions()            # Set file permissions
 - [ ] Generate secrets
 
 **Configuration Functions:**
+
 ```bash
 # lib/config.sh
 
@@ -418,6 +458,7 @@ store_secret()           # Store secret to file
 ```
 
 **Acceptance Criteria:**
+
 - Unique installation ID generated
 - Directory structure created
 - .env file generated with random secrets
@@ -430,6 +471,7 @@ store_secret()           # Store secret to file
 ### Milestone 2.6: Service Deployment (Day 13)
 
 **Deliverables:**
+
 - [ ] Generate docker-compose.yml
 - [ ] Configure domain (if provided)
 - [ ] Configure Caddy
@@ -437,6 +479,7 @@ store_secret()           # Store secret to file
 - [ ] Start containers
 
 **Deployment Functions:**
+
 ```bash
 # lib/deploy.sh
 
@@ -449,6 +492,7 @@ wait_for_startup()       # Wait for services
 ```
 
 **Acceptance Criteria:**
+
 - docker-compose.yml generated
 - Domain configured (if provided)
 - Caddy configured correctly
@@ -460,6 +504,7 @@ wait_for_startup()       # Wait for services
 ### Milestone 2.7: Health Checks & Completion (Day 14)
 
 **Deliverables:**
+
 - [ ] Implement database health check
 - [ ] Implement API health check
 - [ ] Implement Redis health check
@@ -468,6 +513,7 @@ wait_for_startup()       # Wait for services
 - [ ] Display summary
 
 **Health Functions:**
+
 ```bash
 # lib/health.sh
 
@@ -479,6 +525,7 @@ run_health_checks()      # Run all health checks
 ```
 
 **Completion:**
+
 ```bash
 generate_pairing_code()  # Generate pairing token
 display_summary()        # Display installation summary
@@ -486,6 +533,7 @@ save_final_state()       # Mark installation complete
 ```
 
 **Phase 2 Completion Criteria:**
+
 - Complete end-to-end installation works
 - All services start successfully
 - Health checks pass
@@ -500,6 +548,7 @@ save_final_state()       # Mark installation complete
 ### Milestone 3.1: Firewall Configuration (Day 15)
 
 **Deliverables:**
+
 - [ ] Detect firewall (UFW)
 - [ ] Backup firewall rules
 - [ ] Configure firewall rules
@@ -507,6 +556,7 @@ save_final_state()       # Mark installation complete
 - [ ] Test connectivity
 
 **Firewall Functions:**
+
 ```bash
 # lib/firewall.sh
 
@@ -518,6 +568,7 @@ verify_ssh()             # Verify SSH still works
 ```
 
 **Acceptance Criteria:**
+
 - Detects UFW if installed
 - Backs up existing rules
 - Detects actual SSH port
@@ -530,6 +581,7 @@ verify_ssh()             # Verify SSH still works
 ### Milestone 3.2: Resume & Rollback (Day 16-17)
 
 **Deliverables:**
+
 - [ ] Implement resume functionality
 - [ ] Detect incomplete installation
 - [ ] Implement rollback
@@ -537,6 +589,7 @@ verify_ssh()             # Verify SSH still works
 - [ ] Clean up on rollback
 
 **Rollback Functions:**
+
 ```bash
 # lib/rollback.sh
 
@@ -550,6 +603,7 @@ restore_firewall()       # Restore firewall rules
 ```
 
 **Acceptance Criteria:**
+
 - Detects incomplete installation
 - Offers resume option
 - Resumes from correct stage
@@ -562,6 +616,7 @@ restore_firewall()       # Restore firewall rules
 ### Milestone 3.3: Error Handling (Day 18)
 
 **Deliverables:**
+
 - [ ] Implement error categories
 - [ ] Implement retry logic
 - [ ] Implement graceful degradation
@@ -569,6 +624,7 @@ restore_firewall()       # Restore firewall rules
 - [ ] Log all errors
 
 **Error Handling:**
+
 ```bash
 # Enhanced error handling
 
@@ -580,6 +636,7 @@ display_error_help()     # Display help for error
 ```
 
 **Acceptance Criteria:**
+
 - Retries recoverable errors
 - Aborts non-recoverable errors
 - Displays actionable error messages
@@ -591,6 +648,7 @@ display_error_help()     # Display help for error
 ### Milestone 3.4: Security Hardening (Day 19)
 
 **Deliverables:**
+
 - [ ] Audit all sudo usage
 - [ ] Verify no secrets in logs
 - [ ] Verify file permissions
@@ -598,6 +656,7 @@ display_error_help()     # Display help for error
 - [ ] Run security checks
 
 **Security Audit:**
+
 ```bash
 # Security verification
 
@@ -609,6 +668,7 @@ run_security_scan()      # Post-install security scan
 ```
 
 **Acceptance Criteria:**
+
 - Sudo only used when necessary
 - No secrets in logs
 - All secret files 600 permissions
@@ -620,6 +680,7 @@ run_security_scan()      # Post-install security scan
 ### Milestone 3.5: Documentation (Day 20)
 
 **Deliverables:**
+
 - [ ] Write installer usage guide
 - [ ] Write troubleshooting guide
 - [ ] Document all flags
@@ -627,6 +688,7 @@ run_security_scan()      # Post-install security scan
 - [ ] Write examples
 
 **Acceptance Criteria:**
+
 - Complete usage documentation
 - Troubleshooting guide with common issues
 - All flags documented
@@ -637,6 +699,7 @@ run_security_scan()      # Post-install security scan
 ### Milestone 3.6: Code Quality (Day 21)
 
 **Deliverables:**
+
 - [ ] Run shellcheck on all scripts
 - [ ] Fix all shellcheck warnings
 - [ ] Add comments to complex sections
@@ -644,6 +707,7 @@ run_security_scan()      # Post-install security scan
 - [ ] Code review
 
 **Phase 3 Completion Criteria:**
+
 - All security features implemented
 - Firewall configuration works
 - Resume/rollback work correctly
@@ -660,12 +724,14 @@ run_security_scan()      # Post-install security scan
 ### Milestone 4.1: Unit Testing (Day 22-23)
 
 **Deliverables:**
+
 - [ ] Write tests for validation functions
 - [ ] Write tests for utility functions
 - [ ] Write tests for error handling
 - [ ] Run all unit tests
 
 **Test Framework:**
+
 ```bash
 # tests/unit/test_validation.sh
 
@@ -673,7 +739,7 @@ test_validate_domain() {
   # Test valid domains
   assert_success validate_domain "example.com"
   assert_success validate_domain "sub.example.com"
-  
+
   # Test invalid domains
   assert_failure validate_domain "example.com/../../etc"
   assert_failure validate_domain "192.168.1.1"
@@ -681,6 +747,7 @@ test_validate_domain() {
 ```
 
 **Acceptance Criteria:**
+
 - Unit tests for critical functions
 - All tests passing
 - Edge cases covered
@@ -690,6 +757,7 @@ test_validate_domain() {
 ### Milestone 4.2: Integration Testing (Day 24)
 
 **Deliverables:**
+
 - [ ] Test on Ubuntu 22.04
 - [ ] Test on Ubuntu 20.04
 - [ ] Test with existing Docker
@@ -698,6 +766,7 @@ test_validate_domain() {
 - [ ] Test without domain
 
 **Acceptance Criteria:**
+
 - Works on Ubuntu 20.04, 22.04
 - Works with/without existing Docker
 - Works with/without domain
@@ -708,12 +777,14 @@ test_validate_domain() {
 ### Milestone 4.3: VPS Provider Testing (Day 25)
 
 **Deliverables:**
+
 - [ ] Test on DigitalOcean
 - [ ] Test on AWS EC2
 - [ ] Test on Linode
 - [ ] Test on Vultr
 
 **Acceptance Criteria:**
+
 - Works on all major VPS providers
 - No provider-specific issues
 
@@ -722,6 +793,7 @@ test_validate_domain() {
 ### Milestone 4.4: Error Scenario Testing (Day 26)
 
 **Deliverables:**
+
 - [ ] Test interrupt and resume
 - [ ] Test checksum failure
 - [ ] Test network failure
@@ -730,6 +802,7 @@ test_validate_domain() {
 - [ ] Test rollback
 
 **Acceptance Criteria:**
+
 - Resume works after interrupt
 - Checksum failure blocked
 - Network failure handled
@@ -742,6 +815,7 @@ test_validate_domain() {
 ### Milestone 4.5: Security Testing (Day 27)
 
 **Deliverables:**
+
 - [ ] Test checksum verification
 - [ ] Test input validation
 - [ ] Test secret generation
@@ -750,6 +824,7 @@ test_validate_domain() {
 - [ ] Verify no secrets in logs
 
 **Acceptance Criteria:**
+
 - All security tests pass
 - No exposed internal services
 - Secrets have sufficient entropy
@@ -760,6 +835,7 @@ test_validate_domain() {
 ### Milestone 4.6: Final Validation (Day 28)
 
 **Deliverables:**
+
 - [ ] End-to-end test on fresh VPS
 - [ ] Performance benchmarking
 - [ ] Create validation report
@@ -767,6 +843,7 @@ test_validate_domain() {
 - [ ] Final code review
 
 **Phase 4 Completion Criteria:**
+
 - All tests passing
 - Tested on multiple platforms
 - Security validated
@@ -783,6 +860,7 @@ test_validate_domain() {
 **Purpose:** Core utilities used by all modules
 
 **Functions:**
+
 - Logging (info, success, warning, error)
 - State management (save_state, load_state)
 - Lock file management
@@ -800,6 +878,7 @@ test_validate_domain() {
 **Purpose:** Logging infrastructure
 
 **Functions:**
+
 - Log to file
 - Log to console
 - Log levels (DEBUG, INFO, WARN, ERROR)
@@ -817,6 +896,7 @@ test_validate_domain() {
 **Purpose:** Platform detection
 
 **Functions:**
+
 - Detect OS
 - Detect architecture
 - Detect init system
@@ -834,6 +914,7 @@ test_validate_domain() {
 **Purpose:** Resource checking
 
 **Functions:**
+
 - Check CPU
 - Check RAM
 - Check disk space
@@ -850,6 +931,7 @@ test_validate_domain() {
 **Purpose:** Network utilities
 
 **Functions:**
+
 - Check internet connectivity
 - Check DNS resolution
 - Get public IP
@@ -867,6 +949,7 @@ test_validate_domain() {
 **Purpose:** Permission checking
 
 **Functions:**
+
 - Check sudo
 - Check write access
 - Check user
@@ -883,6 +966,7 @@ test_validate_domain() {
 **Purpose:** Input validation
 
 **Functions:**
+
 - Validate domain
 - Validate path
 - Validate version
@@ -900,6 +984,7 @@ test_validate_domain() {
 **Purpose:** Dependency management
 
 **Functions:**
+
 - Detect packages
 - Install packages
 - Detect Docker
@@ -917,6 +1002,7 @@ test_validate_domain() {
 **Purpose:** Docker utilities
 
 **Functions:**
+
 - Configure Docker
 - Start Docker
 - Add user to group
@@ -934,6 +1020,7 @@ test_validate_domain() {
 **Purpose:** Release download and verification
 
 **Functions:**
+
 - Determine version
 - Download manifest
 - Download release
@@ -951,6 +1038,7 @@ test_validate_domain() {
 **Purpose:** Configuration generation
 
 **Functions:**
+
 - Generate instance ID
 - Create directories
 - Generate .env
@@ -967,6 +1055,7 @@ test_validate_domain() {
 **Purpose:** Secret generation
 
 **Functions:**
+
 - Generate password
 - Generate secret
 - Generate hex key
@@ -984,6 +1073,7 @@ test_validate_domain() {
 **Purpose:** Firewall configuration
 
 **Functions:**
+
 - Detect firewall
 - Backup rules
 - Configure UFW
@@ -1001,6 +1091,7 @@ test_validate_domain() {
 **Purpose:** Service deployment
 
 **Functions:**
+
 - Generate compose file
 - Configure domain
 - Configure Caddy
@@ -1018,6 +1109,7 @@ test_validate_domain() {
 **Purpose:** Health checks
 
 **Functions:**
+
 - Wait for PostgreSQL
 - Wait for Redis
 - Wait for API
@@ -1035,6 +1127,7 @@ test_validate_domain() {
 **Purpose:** Rollback procedures
 
 **Functions:**
+
 - Detect incomplete
 - Offer resume
 - Rollback installation
@@ -1052,6 +1145,7 @@ test_validate_domain() {
 **Purpose:** Uninstall procedures
 
 **Functions:**
+
 - Stop services
 - Backup config
 - Remove files
@@ -1077,6 +1171,7 @@ test_validate_domain() {
 ## Success Criteria
 
 ### Milestone 1 Success (Foundation)
+
 - [ ] Installer can run preflight checks
 - [ ] Detects supported platforms
 - [ ] Validates resources
@@ -1085,24 +1180,28 @@ test_validate_domain() {
 - [ ] Shellcheck passes
 
 ### Milestone 2 Success (Core Installation)
+
 - [ ] Complete installation works end-to-end
 - [ ] All services start
 - [ ] Health checks pass
 - [ ] Can access via browser
 
 ### Milestone 3 Success (Security)
+
 - [ ] All security features work
 - [ ] No secrets in logs
 - [ ] Network isolation verified
 - [ ] Firewall configured correctly
 
 ### Milestone 4 Success (Testing)
+
 - [ ] All tests pass
 - [ ] Works on multiple platforms
 - [ ] Security validated
 - [ ] Performance acceptable
 
 ### Final Success (Production Ready)
+
 - [ ] All milestones complete
 - [ ] Documentation complete
 - [ ] Tested on real VPS

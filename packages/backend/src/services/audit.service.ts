@@ -1,4 +1,3 @@
-
 import { query } from '../db/pool.js';
 import { subsystemLogger } from '../utils/logger.js';
 
@@ -44,7 +43,7 @@ export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
         input.userAgent ? input.userAgent.slice(0, 512) : null,
         input.target ? input.target.slice(0, 1024) : null,
         input.metadata ? JSON.stringify(input.metadata) : null,
-      ],
+      ]
     );
   } catch (error) {
     log.error({ err: error, action: input.action }, 'failed to write audit event');
@@ -96,7 +95,7 @@ export async function listAuditEvents(options: AuditQuery): Promise<AuditRow[]> 
        ${where}
        ORDER BY at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params,
+    params
   );
 
   return result.rows;

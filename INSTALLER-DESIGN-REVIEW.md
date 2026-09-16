@@ -9,11 +9,14 @@
 
 ## Executive Summary
 
-This document reviews the installer design documentation for **inconsistencies, ambiguities, and gaps** that must be resolved before implementation begins.
+This document reviews the installer design documentation for **inconsistencies, ambiguities, and
+gaps** that must be resolved before implementation begins.
 
-**Finding:** Multiple inconsistencies found between documents regarding stage counts, naming, and specifications.
+**Finding:** Multiple inconsistencies found between documents regarding stage counts, naming, and
+specifications.
 
-**Recommendation:** Resolve all inconsistencies, clarify contracts, and establish single source of truth before coding.
+**Recommendation:** Resolve all inconsistencies, clarify contracts, and establish single source of
+truth before coding.
 
 ---
 
@@ -24,20 +27,23 @@ This document reviews the installer design documentation for **inconsistencies, 
 **Inconsistency Found:**
 
 **INSTALLER-ARCHITECTURE.md states:**
+
 > "The installer operates in **19 stages**"
 
 **INSTALLER-STATE-MACHINE.md shows:**
+
 ```
-START → INITIALIZE → PREFLIGHT → OS_DETECT → RESOURCE_CHK → 
-NETWORK_CHK → PERMISSION → CONFLICT_CHK → DEP_DETECT → 
-DEP_INSTALL → DOCKER_SETUP → DOWNLOAD → VERIFY → EXTRACT → 
-CONFIGURE → SECRETS → DOMAIN → FIREWALL → DEPLOY → DB_INIT → 
+START → INITIALIZE → PREFLIGHT → OS_DETECT → RESOURCE_CHK →
+NETWORK_CHK → PERMISSION → CONFLICT_CHK → DEP_DETECT →
+DEP_INSTALL → DOCKER_SETUP → DOWNLOAD → VERIFY → EXTRACT →
+CONFIGURE → SECRETS → DOMAIN → FIREWALL → DEPLOY → DB_INIT →
 HEALTH_CHECK → HTTPS_SETUP → PAIRING → COMPLETE → SUCCESS
 ```
 
 **Actual count:** 25 states (including START, SUCCESS)
 
 **But then state machine also includes:**
+
 - ERROR (state 26)
 - ROLLBACK (state 27)
 - CLEANUP (state 28)
@@ -48,6 +54,7 @@ HEALTH_CHECK → HTTPS_SETUP → PAIRING → COMPLETE → SUCCESS
 ### Analysis
 
 The confusion comes from mixing:
+
 1. **Functional stages** (what user sees as progress)
 2. **State machine states** (all possible states including error paths)
 
@@ -59,6 +66,7 @@ The confusion comes from mixing:
 - **State Machine States** = All states including error handling (29 states)
 
 **19 Installation Stages (User-Visible):**
+
 1. INITIALIZE
 2. PREFLIGHT
 3. OS_DETECT
@@ -118,6 +126,7 @@ Let me recount the actual functional stages:
 **Actual functional stages: 23**
 
 **Corrected Statement:**
+
 - User sees **23 installation stages**
 - State machine has **29 total states** (including START, SUCCESS, ERROR paths)
 
@@ -128,9 +137,11 @@ Let me recount the actual functional stages:
 ## Issue 2: Word Count Inconsistencies
 
 **INSTALLER-DESIGN-SUMMARY.md claims:**
+
 > "Total Documentation: 58,000+ words"
 
 **Later claims:**
+
 > "Total: 62,000+ words"
 
 **Action Required:** Count actual words and use one consistent number
@@ -140,9 +151,11 @@ Let me recount the actual functional stages:
 ## Issue 3: Document Count Discrepancy
 
 **INSTALLER-DESIGN-SUMMARY.md states:**
+
 > "5 documents"
 
 **But then lists:**
+
 1. INSTALLER-ARCHITECTURE.md
 2. INSTALLER-STATE-MACHINE.md
 3. INSTALLER-SECURITY-MODEL.md
@@ -161,14 +174,17 @@ Let me recount the actual functional stages:
 **Multiple documents list different "supported" platforms:**
 
 **INSTALLER-ARCHITECTURE.md:**
+
 > Ubuntu LTS 64-bit
 
 **INSTALLER-REQUIREMENTS.md:**
+
 > - Ubuntu 20.04 LTS (x86_64)
 > - Ubuntu 22.04 LTS (x86_64)
 > - Ubuntu 24.04 LTS (x86_64)
 
 **Question:** Is Ubuntu 24.04 actually released and stable?
+
 - Ubuntu 24.04 LTS is scheduled for April 2024
 - Current date in context: 2026-09-15
 - So yes, it should be available
@@ -182,17 +198,22 @@ Let me recount the actual functional stages:
 ## Issue 5: Resource Requirements - Provisional or Validated?
 
 **INSTALLER-ARCHITECTURE.md states:**
+
 > "Minimum for installation and smoke test:
+>
 > - 2 vCPU
 > - 4 GB RAM
 > - 40 GB SSD"
 
 **But immediately warns:**
-> "Jangan memasang angka requirement yang belum divalidasi. Tandai angka tersebut sebagai provisional sampai hasil benchmark tersedia."
+
+> "Jangan memasang angka requirement yang belum divalidasi. Tandai angka tersebut sebagai
+> provisional sampai hasil benchmark tersedia."
 
 **Finding:** Resource requirements are **NOT VALIDATED**
 
-**Action Required:** 
+**Action Required:**
+
 - Mark all resource requirements as **PROVISIONAL**
 - Add disclaimer in all docs
 - Plan validation testing
@@ -204,17 +225,20 @@ Let me recount the actual functional stages:
 **Inconsistency:**
 
 **INSTALLER-SECURITY-MODEL.md says:**
-> "Checksum verification (mandatory)"
-> "Signature verification (future)"
+
+> "Checksum verification (mandatory)" "Signature verification (future)"
 
 **But INSTALLER-REQUIREMENTS.md says:**
-> "FR9.1: The installer MUST verify SHA256 checksum"
-> "FR9.5: The installer SHOULD support GPG signature verification (future)"
+
+> "FR9.1: The installer MUST verify SHA256 checksum" "FR9.5: The installer SHOULD support GPG
+> signature verification (future)"
 
 **Finding:** Checksum is MVP, signature is future - **CONSISTENT**
 
 **But security model correctly notes:**
-> "Jelaskan secara khusus mengapa checksum saja tidak cukup untuk melindungi dari server download yang telah dikompromikan."
+
+> "Jelaskan secara khusus mengapa checksum saja tidak cukup untuk melindungi dari server download
+> yang telah dikompromikan."
 
 **Action Required:** Add explicit section explaining checksum limitations
 
@@ -225,13 +249,17 @@ Let me recount the actual functional stages:
 **Inconsistency:**
 
 **Some docs use:**
+
 - `stable` / `beta` / `development`
 
 **Others use:**
+
 - `stable` / `development`
 
 **INSTALLER-REQUIREMENTS.md says:**
+
 > "Release Channels:
+>
 > - stable (default) - Production releases
 > - beta - Pre-release testing
 > - development - Latest builds"
@@ -247,6 +275,7 @@ Let me recount the actual functional stages:
 **Some places say:** `/opt/aether`
 
 **But no document explicitly states:**
+
 - Why `/opt/aether`?
 - What if user doesn't have write access?
 - What if `/opt` is small partition?
@@ -259,9 +288,11 @@ Let me recount the actual functional stages:
 ## Issue 9: Pairing Token Expiry
 
 **INSTALLER-STATE-MACHINE.md says:**
+
 > "PAIRING_EXPIRY=$(date -d '+1 hour' -Iseconds)"
 
 **Question:** Is 1 hour enough?
+
 - User might not be at computer
 - Might need to set up client first
 - Network issues, etc.
@@ -277,12 +308,15 @@ Let me recount the actual functional stages:
 **Ambiguity:**
 
 **INSTALLER-ARCHITECTURE.md says:**
+
 > "Default uninstall tidak boleh menghapus database atau file user"
 
 **But provides flags:**
+
 > `--purge` to remove data
 
 **Question:** What exactly is "user data"?
+
 - Database?
 - Uploaded files?
 - Configuration?
@@ -298,6 +332,7 @@ Let me recount the actual functional stages:
 **Security concern:**
 
 **INSTALLER-STATE-MACHINE.md shows:**
+
 ```bash
 # Add user to docker group
 $SUDO usermod -aG docker $USER
@@ -306,6 +341,7 @@ $SUDO usermod -aG docker $USER
 **But user must log out and back in for group change to take effect**
 
 **Current code checks:**
+
 ```bash
 if [[ ! -w /var/run/docker.sock ]]; then
   warning "Current user cannot access Docker socket"
@@ -315,7 +351,8 @@ fi
 
 **Problem:** Installation continues but Docker commands might fail
 
-**Action Required:** 
+**Action Required:**
+
 - Either use `newgrp docker` during installation
 - Or use sudo for Docker commands in installer
 - Or require user to log out/in and re-run
@@ -327,12 +364,14 @@ fi
 **Critical Safety Issue:**
 
 **INSTALLER-STATE-MACHINE.md shows:**
+
 ```bash
 # Allow SSH (CRITICAL - prevent lockout)
 $SUDO ufw allow ssh
 ```
 
 **But what if SSH is on non-standard port?**
+
 - Many admins run SSH on port 2222, 2200, etc.
 - Simply allowing "ssh" (port 22) won't help
 
@@ -345,6 +384,7 @@ $SUDO ufw allow ssh
 **Inconsistency:**
 
 **INSTALLER-ARCHITECTURE.md shows Docker Compose with:**
+
 ```yaml
 secrets:
   db_password:
@@ -352,6 +392,7 @@ secrets:
 ```
 
 **But INSTALLER-STATE-MACHINE.md generates .env file:**
+
 ```bash
 DATABASE_URL=postgresql://aether:${DB_PASSWORD}@postgres:5432/aether_prod
 ```
@@ -371,9 +412,11 @@ DATABASE_URL=postgresql://aether:${DB_PASSWORD}@postgres:5432/aether_prod
 **What happens if HTTPS setup fails?**
 
 **INSTALLER-REQUIREMENTS.md says:**
+
 > "FR17.6: The installer MAY continue with HTTP if HTTPS fails"
 
 **But security implications not addressed:**
+
 - Should installation fail?
 - Should it require explicit `--allow-http` flag?
 - Should it use self-signed certificate?
@@ -387,6 +430,7 @@ DATABASE_URL=postgresql://aether:${DB_PASSWORD}@postgres:5432/aether_prod
 **Logic Error:**
 
 If user is added to docker group during installation:
+
 1. Installation continues
 2. Docker commands might fail (no permission)
 3. Installation fails
@@ -402,12 +446,14 @@ If user is added to docker group during installation:
 **Not fully specified:**
 
 **INSTALLER-ARCHITECTURE.md shows:**
+
 ```
 Release Artifact:
   aether-<version>-<arch>.tar.gz
 ```
 
 **But what's inside the tarball?**
+
 - Docker images as tarballs?
 - Source code to build?
 - Pre-built binaries?
@@ -422,11 +468,13 @@ Release Artifact:
 **Not addressed:**
 
 **INSTALLER-STATE-MACHINE.md says:**
+
 ```bash
 docker compose exec backend npm run migrate
 ```
 
 **But:**
+
 - What if backend image doesn't have npm?
 - What if migrations are separate service?
 - What if initial schema is in SQL file?
@@ -440,11 +488,13 @@ docker compose exec backend npm run migrate
 **Inconsistency:**
 
 **Different stages use different timeouts:**
+
 - PostgreSQL ready: 30 retries × 2s = 60s
 - API health: 30 retries × 2s = 60s
 - HTTPS: 6 retries × 20s = 120s
 
 **Question:** Are these timeouts adequate?
+
 - Slow VPS might take longer
 - Large Docker images take time to pull
 
@@ -459,6 +509,7 @@ docker compose exec backend npm run migrate
 **INSTALLER-STATE-MACHINE.md shows rollback stops containers and removes files**
 
 **But doesn't address:**
+
 - Firewall rules restoration
 - Docker group removal
 - Installed packages removal
@@ -471,10 +522,13 @@ docker compose exec backend npm run migrate
 ## Issue 20: Test Coverage - MVP vs Full
 
 **INSTALLER-TEST-MATRIX.md shows 0% coverage:**
+
 > "Overall Coverage: 0% (Not yet implemented)"
 
 **But claims:**
+
 > "Ready for Beta Release:
+>
 > - ✅ 100% of P0 tests passing"
 
 **Contradiction:** Can't have 100% passing if 0% tested
@@ -486,18 +540,23 @@ docker compose exec backend npm run migrate
 ## Ambiguous Requirements
 
 ### AR1: Multi-Tenancy
+
 **Status:** Deferred to Phase 2, not blocking MVP
 
 ### AR2: License Choice
+
 **Status:** Not chosen, doesn't block development
 
 ### AR3: Monitoring Integration
+
 **Status:** Not specified, optional
 
 ### AR4: Backup Automation
+
 **Status:** Not specified for MVP
 
 ### AR5: HA Setup
+
 **Status:** Future, not MVP
 
 ---
@@ -505,7 +564,9 @@ docker compose exec backend npm run migrate
 ## Unresolved Risks
 
 ### UR1: Checksum-Only Security
-**Risk:** If release server is compromised, attacker can serve malicious release with matching checksum
+
+**Risk:** If release server is compromised, attacker can serve malicious release with matching
+checksum
 
 **Current Mitigation:** HTTPS protects download channel
 
@@ -516,6 +577,7 @@ docker compose exec backend npm run migrate
 ---
 
 ### UR2: Docker Installation Reliability
+
 **Risk:** Official Docker install script might fail on some systems
 
 **Current Mitigation:** Use official script
@@ -527,6 +589,7 @@ docker compose exec backend npm run migrate
 ---
 
 ### UR3: Firewall Lockout
+
 **Risk:** Incorrect firewall configuration locks out SSH
 
 **Current Mitigation:** Always allow SSH first
@@ -538,6 +601,7 @@ docker compose exec backend npm run migrate
 ---
 
 ### UR4: Resource Exhaustion During Install
+
 **Risk:** Installation itself consumes resources, might cause failure
 
 **Current Mitigation:** Preflight resource check
@@ -549,6 +613,7 @@ docker compose exec backend npm run migrate
 ---
 
 ### UR5: Network Interruption During Download
+
 **Risk:** Large download interrupted
 
 **Current Mitigation:** Retry 3 times
@@ -562,26 +627,38 @@ docker compose exec backend npm run migrate
 ## Required Changes Before Coding
 
 ### Change 1: Correct Stage Count
+
 **Action:** Update all documents to state:
+
 - "23 installation stages (user-visible)"
 - "29 state machine states (including error handling)"
 
 ---
 
 ### Change 2: Mark Resource Requirements as Provisional
+
 **Action:** Add to all docs:
-> "⚠️ Resource requirements are PROVISIONAL and unvalidated. Actual requirements will be determined through testing."
+
+> "⚠️ Resource requirements are PROVISIONAL and unvalidated. Actual requirements will be determined
+> through testing."
 
 ---
 
 ### Change 3: Add Checksum Limitation Disclosure
+
 **Action:** Add to security model:
-> "Checksum verification protects against corrupted downloads and man-in-the-middle attacks, but does NOT protect against a compromised release server. If an attacker gains control of the release server, they can serve a malicious release with a matching checksum. GPG signature verification (planned for v1.1) will address this."
+
+> "Checksum verification protects against corrupted downloads and man-in-the-middle attacks, but
+> does NOT protect against a compromised release server. If an attacker gains control of the release
+> server, they can serve a malicious release with a matching checksum. GPG signature verification
+> (planned for v1.1) will address this."
 
 ---
 
 ### Change 4: Clarify Secret Management
+
 **Action:** Specify:
+
 - MVP uses .env files with 600 permissions
 - Production should use Docker secrets (future enhancement)
 - Document security tradeoff
@@ -589,7 +666,9 @@ docker compose exec backend npm run migrate
 ---
 
 ### Change 5: Specify SSH Port Detection
+
 **Action:** Add to firewall stage:
+
 ```bash
 # Detect actual SSH port
 SSH_PORT=$(ss -tlnp | grep sshd | awk '{print $4}' | cut -d: -f2 | head -1)
@@ -599,7 +678,9 @@ $SUDO ufw allow $SSH_PORT/tcp
 ---
 
 ### Change 6: Define Uninstall Data Policy
+
 **Action:** Specify data categories:
+
 - **Application files** (`/opt/aether/*`) - removed by default
 - **Database data** (`/opt/aether/data/postgres/`) - kept by default, removed with --purge
 - **Configuration** (`/opt/aether/.env`) - backed up, then removed
@@ -609,7 +690,9 @@ $SUDO ufw allow $SSH_PORT/tcp
 ---
 
 ### Change 7: Handle Docker Group Properly
+
 **Action:** Choose one approach:
+
 1. Use `newgrp docker` during installation (requires script re-execution)
 2. Use sudo for all Docker commands in installer
 3. Require user to log out/in and re-run with --resume
@@ -619,7 +702,9 @@ $SUDO ufw allow $SSH_PORT/tcp
 ---
 
 ### Change 8: Define Release Artifact Contents
+
 **Action:** Specify tarball structure:
+
 ```
 aether-v0.1.0-amd64.tar.gz
 ├── manifest.json
@@ -639,7 +724,9 @@ aether-v0.1.0-amd64.tar.gz
 ---
 
 ### Change 9: Extend Health Check Timeouts
+
 **Action:** Increase timeouts for slow systems:
+
 - PostgreSQL ready: 60 retries × 2s = 120s (was 60s)
 - API health: 60 retries × 2s = 120s (was 60s)
 - HTTPS: 10 retries × 20s = 200s (was 120s)
@@ -647,7 +734,9 @@ aether-v0.1.0-amd64.tar.gz
 ---
 
 ### Change 10: Complete Rollback Procedure
+
 **Action:** Add to rollback:
+
 1. Stop containers
 2. Restore firewall rules from backup
 3. Remove user from docker group (optional)
@@ -659,14 +748,14 @@ aether-v0.1.0-amd64.tar.gz
 
 ## Documentation Status After Review
 
-| Document | Word Count | Consistency | Completeness | Action |
-|----------|-----------|-------------|--------------|--------|
-| INSTALLER-ARCHITECTURE.md | ~16,000 | ⚠️ Issues | 85% | Update stage count |
-| INSTALLER-STATE-MACHINE.md | ~12,000 | ⚠️ Issues | 90% | Update stage count, timeouts |
-| INSTALLER-SECURITY-MODEL.md | ~11,000 | ✅ Good | 80% | Add checksum limitation |
-| INSTALLER-TEST-MATRIX.md | ~10,000 | ✅ Good | 70% | Remove premature claims |
-| INSTALLER-REQUIREMENTS.md | ~9,000 | ⚠️ Issues | 85% | Mark resources provisional |
-| INSTALLER-DESIGN-SUMMARY.md | ~4,000 | ⚠️ Issues | 70% | Update counts, add caveats |
+| Document                    | Word Count | Consistency | Completeness | Action                       |
+| --------------------------- | ---------- | ----------- | ------------ | ---------------------------- |
+| INSTALLER-ARCHITECTURE.md   | ~16,000    | ⚠️ Issues   | 85%          | Update stage count           |
+| INSTALLER-STATE-MACHINE.md  | ~12,000    | ⚠️ Issues   | 90%          | Update stage count, timeouts |
+| INSTALLER-SECURITY-MODEL.md | ~11,000    | ✅ Good     | 80%          | Add checksum limitation      |
+| INSTALLER-TEST-MATRIX.md    | ~10,000    | ✅ Good     | 70%          | Remove premature claims      |
+| INSTALLER-REQUIREMENTS.md   | ~9,000     | ⚠️ Issues   | 85%          | Mark resources provisional   |
+| INSTALLER-DESIGN-SUMMARY.md | ~4,000     | ⚠️ Issues   | 70%          | Update counts, add caveats   |
 
 **Total Estimated Word Count:** ~62,000 words (to be verified)
 
@@ -699,17 +788,20 @@ Before writing install.sh:
 **Status:** Design has significant value but requires corrections before implementation
 
 **Priority Actions:**
+
 1. Fix inconsistencies (stage count, word count, document count)
 2. Add missing specifications (contract, release security)
 3. Clarify ambiguities (resource requirements, data handling)
 4. Address unresolved risks (checksum-only security)
 
 **Timeline:**
+
 - Review corrections: 1 day
 - Create missing documents: 2 days
 - Begin implementation: Day 4
 
 **Risk Assessment:**
+
 - **Medium Risk:** Starting implementation now would lead to rework
 - **Low Risk:** After corrections, design is solid foundation
 

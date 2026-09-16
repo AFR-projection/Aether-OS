@@ -9,6 +9,7 @@
 ## Purpose
 
 This document specifies the security model for Aether release artifacts, addressing:
+
 - How releases are built and packaged
 - How integrity is verified
 - Why checksum-only verification is insufficient
@@ -22,6 +23,7 @@ This document specifies the security model for Aether release artifacts, address
 ### 1.1 Release Artifacts
 
 **Release Package Structure:**
+
 ```
 aether-v0.1.0-amd64.tar.gz          # Main release archive
 ├── manifest.json                    # Release metadata
@@ -39,6 +41,7 @@ aether-v0.1.0-amd64.tar.gz          # Main release archive
 ```
 
 **Accompanying Files:**
+
 ```
 checksums.txt                        # SHA256 checksums
 manifest.json                        # Release manifest (public)
@@ -50,6 +53,7 @@ CHANGELOG.md                         # Release notes
 ### 1.2 Manifest Format
 
 **manifest.json:**
+
 ```json
 {
   "version": "0.1.0",
@@ -104,6 +108,7 @@ CHANGELOG.md                         # Release notes
 ### 1.3 Checksum File Format
 
 **checksums.txt:**
+
 ```
 # Aether Cloud OS v0.1.0 Release Checksums
 # Generated: 2026-09-15T20:00:00Z
@@ -122,33 +127,38 @@ a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2  images/backend
 **Installer verification steps:**
 
 1. **Download manifest:**
+
    ```bash
    curl -fsSL https://releases.aether-os.io/stable/v0.1.0/manifest.json \
      -o /tmp/aether-manifest.json
    ```
 
 2. **Download checksums:**
+
    ```bash
    curl -fsSL https://releases.aether-os.io/stable/v0.1.0/checksums.txt \
      -o /tmp/aether-checksums.txt
    ```
 
 3. **Download release archive:**
+
    ```bash
    curl -fsSL https://releases.aether-os.io/stable/v0.1.0/aether-v0.1.0-amd64.tar.gz \
      -o /tmp/aether-release.tar.gz
    ```
 
 4. **Verify checksum:**
+
    ```bash
    cd /tmp
    sha256sum -c aether-checksums.txt --ignore-missing
-   
+
    # Expected output:
    # aether-v0.1.0-amd64.tar.gz: OK
    ```
 
 5. **If verification fails:**
+
    ```bash
    # Display security alert
    echo "╔════════════════════════════════════════════════════════╗"
@@ -173,10 +183,10 @@ a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2  images/backend
    echo ""
    echo "Installation ID: $INSTALL_ID"
    echo "Log file: /tmp/aether-install-*.log"
-   
+
    # Delete unverified file
    rm -f /tmp/aether-release.tar.gz
-   
+
    # Exit with error
    exit 1
    ```
@@ -217,8 +227,9 @@ a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2  images/backend
 ❌ **Checksums DO NOT protect against:**
 
 1. **Compromised Release Server**
-   
+
    **Scenario:**
+
    ```
    Attacker compromises releases.aether-os.io
    → Replaces release artifact with backdoored version
@@ -227,15 +238,16 @@ a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2  images/backend
    → Users download and verify successfully
    → Malicious code installed ✗
    ```
-   
+
    **Why checksum doesn't help:**
    - Checksum is generated from the malicious file
    - Checksum verification passes
    - User has no way to know file is malicious
 
 2. **Compromised Build Pipeline**
-   
+
    **Scenario:**
+
    ```
    Attacker compromises CI/CD pipeline
    → Injects malicious code during build
@@ -246,8 +258,9 @@ a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2  images/backend
    ```
 
 3. **Insider Threat**
-   
+
    **Scenario:**
+
    ```
    Malicious insider with release access
    → Builds malicious release
@@ -257,8 +270,9 @@ a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2  images/backend
    ```
 
 4. **Supply Chain Attack**
-   
+
    **Scenario:**
+
    ```
    Attacker compromises upstream dependency
    → Dependency included in build
@@ -271,6 +285,7 @@ a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2  images/backend
 ### 2.3 Trust Model with Checksums Only
 
 **Current trust model:**
+
 ```
 User trusts:
   ↓
@@ -301,6 +316,7 @@ Dependencies not compromised
 4. **Offline Verification** - Can verify without contacting server
 
 **Key property:**
+
 > Even if release server is compromised, attacker cannot forge GPG signature without private key.
 
 ---
@@ -308,6 +324,7 @@ Dependencies not compromised
 ### 3.2 GPG Signature Model (v1.1 Target)
 
 **Release structure with signatures:**
+
 ```
 aether-v0.1.0-amd64.tar.gz
 aether-v0.1.0-amd64.tar.gz.sig       # GPG signature
@@ -318,6 +335,7 @@ manifest.json.sig                     # GPG signature
 ```
 
 **GPG signature verification:**
+
 ```bash
 # Import Aether public key (one time)
 gpg --keyserver keys.openpgp.org --recv-keys AETHER_KEY_ID
@@ -336,6 +354,7 @@ gpg --verify aether-v0.1.0-amd64.tar.gz.sig aether-v0.1.0-amd64.tar.gz
 ### 3.3 Trust Model with GPG Signatures
 
 **Enhanced trust model:**
+
 ```
 User trusts:
   ↓
@@ -347,6 +366,7 @@ Release is authentic
 ```
 
 **Benefits:**
+
 - Release server compromise doesn't bypass signature
 - Build pipeline compromise detected (unsigned or wrong signature)
 - Insider must have private key (can be protected with HSM)
@@ -359,18 +379,21 @@ Release is authentic
 **GPG key requirements:**
 
 **Primary Key:**
+
 - Algorithm: RSA 4096 or EdDSA (Ed25519)
 - Usage: Certification only
 - Storage: Offline, air-gapped
 - Backup: Encrypted, multiple locations
 
 **Signing Subkey:**
+
 - Algorithm: RSA 4096 or EdDSA (Ed25519)
 - Usage: Signing only
 - Storage: HSM (Hardware Security Module)
 - Rotation: Annually or on compromise
 
 **Key Publication:**
+
 - Public key server: keys.openpgp.org
 - Website: https://aether-os.io/pgp-key.asc
 - Fingerprint published on:
@@ -380,6 +403,7 @@ Release is authentic
   - Twitter/social media
 
 **Key Fingerprint Display:**
+
 ```
 Primary Key Fingerprint: XXXX XXXX XXXX XXXX XXXX  XXXX XXXX XXXX XXXX XXXX
 ```
@@ -389,6 +413,7 @@ Primary Key Fingerprint: XXXX XXXX XXXX XXXX XXXX  XXXX XXXX XXXX XXXX XXXX
 ### 3.5 Signing Process (Future)
 
 **Automated signing in CI/CD:**
+
 ```yaml
 # .github/workflows/release.yml
 - name: Sign release
@@ -397,13 +422,14 @@ Primary Key Fingerprint: XXXX XXXX XXXX XXXX XXXX  XXXX XXXX XXXX XXXX XXXX
     gpg --sign --detach-sig --armor \
       --local-user releases@aether-os.io \
       aether-v${VERSION}-amd64.tar.gz
-    
+
     gpg --sign --detach-sig --armor \
       --local-user releases@aether-os.io \
       checksums.txt
 ```
 
 **Manual verification by release manager:**
+
 ```bash
 # Verify signature before publishing
 gpg --verify aether-v0.1.0-amd64.tar.gz.sig
@@ -419,13 +445,14 @@ aws s3 sync ./release/ s3://releases.aether-os.io/stable/v0.1.0/
 ### 4.1 MVP (Checksum Only)
 
 **Current installer behavior:**
+
 ```bash
 verify_release() {
   local file=$1
   local checksums=$2
-  
+
   info "Verifying release integrity..."
-  
+
   cd /tmp
   if sha256sum -c "$checksums" --ignore-missing 2>&1 | grep -q "OK"; then
     success "Checksum verification passed"
@@ -434,13 +461,13 @@ verify_release() {
   else
     error "Checksum verification FAILED"
     log_security_event "CHECKSUM_FAILED" "$file"
-    
+
     # Display security alert
     display_security_alert
-    
+
     # Delete unverified file
     rm -f "$file"
-    
+
     return 1
   fi
 }
@@ -451,15 +478,16 @@ verify_release() {
 ### 4.2 Future (with GPG Signatures)
 
 **Enhanced installer behavior:**
+
 ```bash
 verify_release_with_signature() {
   local file=$1
   local signature=$2
   local checksums=$3
   local checksums_sig=$4
-  
+
   info "Verifying release signature..."
-  
+
   # First verify checksums file signature
   if ! gpg --verify "$checksums_sig" "$checksums" 2>/dev/null; then
     error "Checksums signature verification FAILED"
@@ -468,9 +496,9 @@ verify_release_with_signature() {
     rm -f "$file" "$checksums"
     return 1
   fi
-  
+
   success "Checksums signature valid"
-  
+
   # Then verify release archive signature
   if ! gpg --verify "$signature" "$file" 2>/dev/null; then
     error "Release signature verification FAILED"
@@ -479,9 +507,9 @@ verify_release_with_signature() {
     rm -f "$file"
     return 1
   fi
-  
+
   success "Release signature valid"
-  
+
   # Finally verify checksums match
   if sha256sum -c "$checksums" --ignore-missing 2>&1 | grep -q "OK"; then
     success "Checksum verification passed"
@@ -503,6 +531,7 @@ verify_release_with_signature() {
 ### 5.1 Channel Definitions
 
 **stable:**
+
 - Production releases
 - Fully tested
 - Security reviewed
@@ -510,6 +539,7 @@ verify_release_with_signature() {
 - Recommended for production
 
 **beta:**
+
 - Pre-release testing
 - Feature complete
 - Not fully tested
@@ -517,6 +547,7 @@ verify_release_with_signature() {
 - For early adopters
 
 **development:**
+
 - Latest builds
 - May be unstable
 - Not fully tested
@@ -529,12 +560,14 @@ verify_release_with_signature() {
 ### 5.2 Channel Selection
 
 **Default behavior:**
+
 ```bash
 # Installer uses stable by default
 CHANNEL=${AETHER_CHANNEL:-stable}
 ```
 
 **Explicit development channel:**
+
 ```bash
 # User must explicitly request development
 curl -fsSL https://aether-os.io/install.sh | bash -s -- --channel development
@@ -559,6 +592,7 @@ fi
 **Hosting options:**
 
 **Option 1: GitHub Releases**
+
 - ✅ Free
 - ✅ Reliable CDN
 - ✅ Built-in checksums
@@ -567,6 +601,7 @@ fi
 - ⚠️ Requires GitHub account compromise to attack
 
 **Option 2: Cloudflare R2 + CDN**
+
 - ✅ Fast global CDN
 - ✅ DDoS protection
 - ✅ Custom domain
@@ -574,6 +609,7 @@ fi
 - ⚠️ Requires Cloudflare compromise to attack
 
 **Option 3: Self-hosted CDN**
+
 - ✅ Full control
 - ✅ Custom infrastructure
 - ⚠️ More maintenance
@@ -586,6 +622,7 @@ fi
 ### 6.2 Release URL Structure
 
 **Stable releases:**
+
 ```
 https://releases.aether-os.io/stable/v0.1.0/aether-v0.1.0-amd64.tar.gz
 https://releases.aether-os.io/stable/v0.1.0/checksums.txt
@@ -594,12 +631,14 @@ https://releases.aether-os.io/stable/latest -> v0.1.0/
 ```
 
 **Beta releases:**
+
 ```
 https://releases.aether-os.io/beta/v0.2.0-beta.1/...
 https://releases.aether-os.io/beta/latest -> v0.2.0-beta.1/
 ```
 
 **Development releases:**
+
 ```
 https://releases.aether-os.io/development/v0.3.0-dev.20260915/...
 https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
@@ -612,6 +651,7 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 ### 7.1 Scenario: Compromised Release Server (MVP)
 
 **Attack:**
+
 1. Attacker gains access to releases.aether-os.io
 2. Replaces release with backdoored version
 3. Regenerates checksums for backdoored release
@@ -622,6 +662,7 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 **Impact:** Critical - widespread compromise
 
 **Mitigation:**
+
 - Server hardening
 - Access controls
 - Monitoring and alerting
@@ -633,6 +674,7 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 ### 7.2 Scenario: Man-in-the-Middle (Current)
 
 **Attack:**
+
 1. Attacker intercepts HTTPS connection
 2. Serves fake release
 
@@ -641,6 +683,7 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 **Impact:** Low - HTTPS prevents MITM
 
 **Mitigation:**
+
 - HTTPS enforced
 - Checksum verification
 - Certificate pinning (future)
@@ -650,17 +693,20 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 ### 7.3 Scenario: DNS Hijacking (Current)
 
 **Attack:**
+
 1. Attacker compromises DNS
 2. Redirects aether-os.io to fake server
 3. Serves malicious release
 
-**Detection:** 
+**Detection:**
+
 - TLS certificate mismatch (if attacker doesn't have valid cert)
 - Checksum mismatch (if attacker doesn't know checksums)
 
 **Impact:** Medium - requires DNS compromise + valid TLS cert
 
 **Mitigation:**
+
 - DNSSEC (future)
 - Certificate pinning (future)
 - GPG signatures (future)
@@ -670,6 +716,7 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 ### 7.4 Scenario: Compromised Build Pipeline (MVP)
 
 **Attack:**
+
 1. Attacker compromises CI/CD
 2. Injects malicious code during build
 3. Build produces backdoored release with valid checksums
@@ -679,6 +726,7 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 **Impact:** Critical - supply chain attack
 
 **Mitigation:**
+
 - Build pipeline security
 - Code review
 - Automated testing
@@ -689,12 +737,14 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 ## 8. Roadmap
 
 ### Phase 1 (MVP - Current)
+
 - ✅ SHA256 checksums
 - ✅ HTTPS downloads
 - ✅ Manifest with metadata
 - ✅ Checksum verification in installer
 
 ### Phase 2 (v1.1 - Target: Q4 2026)
+
 - ⏳ GPG key generation
 - ⏳ GPG signing in CI/CD
 - ⏳ Public key publication
@@ -702,12 +752,14 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 - ⏳ Key rotation procedures
 
 ### Phase 3 (v1.2 - Target: Q1 2027)
+
 - ⏳ Reproducible builds
 - ⏳ Build attestation
 - ⏳ SBOM (Software Bill of Materials)
 - ⏳ Supply chain provenance
 
 ### Phase 4 (v2.0 - Target: Q2 2027)
+
 - ⏳ Multi-party signing (2-of-3 required)
 - ⏳ Hardware security module integration
 - ⏳ Certificate transparency logs
@@ -721,18 +773,23 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 
 **⚠️ IMPORTANT DISCLOSURE:**
 
-> The Aether installer (v1.0) uses SHA256 checksum verification to ensure download integrity. This protects against corrupted downloads and man-in-the-middle attacks when combined with HTTPS.
-> 
+> The Aether installer (v1.0) uses SHA256 checksum verification to ensure download integrity. This
+> protects against corrupted downloads and man-in-the-middle attacks when combined with HTTPS.
+>
 > **However, checksum verification alone does NOT protect against:**
+>
 > - Compromised release server
 > - Compromised build pipeline
 > - Insider threats
-> 
-> **If the release server or build infrastructure is compromised, an attacker could serve malicious releases with valid checksums.**
-> 
-> GPG signature verification (planned for v1.1) will address this limitation by cryptographically proving releases are from the Aether team.
-> 
-> For production deployments requiring maximum security, wait for v1.1 with GPG signatures or implement additional verification steps.
+>
+> **If the release server or build infrastructure is compromised, an attacker could serve malicious
+> releases with valid checksums.**
+>
+> GPG signature verification (planned for v1.1) will address this limitation by cryptographically
+> proving releases are from the Aether team.
+>
+> For production deployments requiring maximum security, wait for v1.1 with GPG signatures or
+> implement additional verification steps.
 
 ---
 
@@ -745,6 +802,7 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
    - Compare with published hash on GitHub, Twitter, etc.
 
 2. **Use specific version, not "latest":**
+
    ```bash
    AETHER_VERSION=v0.1.0 curl ... | bash
    ```
@@ -764,6 +822,7 @@ https://releases.aether-os.io/development/latest -> v0.3.0-dev.20260915/
 ## 10. Security Contact
 
 **Report security issues:**
+
 - Email: security@aether-os.io
 - PGP Key: https://aether-os.io/pgp-key.asc (when available)
 - Response time: 48 hours

@@ -22,7 +22,7 @@ export const usernameSchema = z
   .max(32, 'Username must be at most 32 characters')
   .regex(
     /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/,
-    'Username may only contain lowercase letters, digits, "_" and "-"',
+    'Username may only contain lowercase letters, digits, "_" and "-"'
   );
 
 /**
@@ -78,5 +78,5 @@ export const relativePathSchema = z
   .refine((value) => !value.startsWith('~'), 'Home-relative paths are not allowed')
   .refine(
     (value) => !value.split(/[\\/]+/).includes('..'),
-    'Parent directory segments are not allowed',
+    'Parent directory segments are not allowed'
   );

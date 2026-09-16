@@ -1,4 +1,3 @@
-
 import { AppCatalogApp } from './app-catalog/AppCatalogApp.js';
 import { CodeStudioApp } from './code-studio/CodeStudioApp.js';
 import { FilesApp } from './files/FilesApp.js';

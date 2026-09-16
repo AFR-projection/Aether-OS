@@ -20,7 +20,6 @@ import { apiRequest } from './api-client.js';
 
 import type { TerminalClientMessage, TerminalServerMessage } from '@aether/shared';
 
-
 /** WebSocket close codes used by the backend; mirrored from `WS_CLOSE`. */
 const CLOSE_UNAUTHENTICATED = 4001;
 const CLOSE_FORBIDDEN = 4003;

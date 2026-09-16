@@ -3,15 +3,18 @@
 **Version:** 1.0.0  
 **Date:** 2026-09-15  
 **Status:** Phase 0 - Architecture Design  
-**Target Platform:** Linux VPS (Ubuntu LTS) - Primary  
+**Target Platform:** Linux VPS (Ubuntu LTS) - Primary
 
 ---
 
 ## EXECUTIVE SUMMARY
 
-Aether Cloud OS adalah universal browser-based desktop environment yang memungkinkan pengguna mengakses dan mengoperasikan VPS atau local host melalui interface desktop modern yang berjalan di browser.
+Aether Cloud OS adalah universal browser-based desktop environment yang memungkinkan pengguna
+mengakses dan mengoperasikan VPS atau local host melalui interface desktop modern yang berjalan di
+browser.
 
 **Core Value Proposition:**
+
 - VPS tanpa GUI desktop mendapatkan pengalaman desktop modern melalui browser
 - Terminal asli melalui PTY, bukan simulasi
 - Filesystem host nyata, bukan virtual filesystem palsu
@@ -22,7 +25,9 @@ Aether Cloud OS adalah universal browser-based desktop environment yang memungki
 - AI assistant dengan tool permission yang terkontrol
 
 **Engineering Principles:**
-1. **Reliability** > Security > Correctness > Maintainability > Performance > Visual polish > Feature quantity
+
+1. **Reliability** > Security > Correctness > Maintainability > Performance > Visual polish >
+   Feature quantity
 2. No fake features - semua fitur harus benar-benar functional
 3. Capability-based design - detect dan adapt berdasarkan host capabilities
 4. Security by design - tidak ada shortcuts yang mengorbankan security
@@ -106,6 +111,7 @@ Aether Cloud OS adalah universal browser-based desktop environment yang memungki
 ### 1.2 Component Responsibilities
 
 #### Browser Client Layer
+
 - **Frontend Desktop**: React-based desktop environment
 - **Window Manager**: Manages window lifecycle, focus, positioning, z-index
 - **App Runtime**: Executes and manages applications
@@ -114,6 +120,7 @@ Aether Cloud OS adalah universal browser-based desktop environment yang memungki
 - **State Management**: Global state, caching, offline support
 
 #### Backend Server Layer
+
 - **API Gateway**: Request routing, rate limiting, logging
 - **Auth Service**: User authentication, authorization, RBAC
 - **Host Service**: Host management, capability detection, pairing
@@ -123,6 +130,7 @@ Aether Cloud OS adalah universal browser-based desktop environment yang memungki
 - **AI Agent Service**: AI assistant with tool permission control
 
 #### Host Agent Layer
+
 - **Host Agent Core**: Main agent process, lifecycle management
 - **Secure Pairing**: Device authentication and pairing
 - **Host Discovery**: Capability detection, resource monitoring
@@ -137,6 +145,7 @@ Aether Cloud OS adalah universal browser-based desktop environment yang memungki
 ### 1.3 Deployment Architectures
 
 #### VPS Deployment (Primary Target)
+
 ```
 Internet → Reverse Proxy (nginx) → Aether Backend + Host Agent → Host OS
              ├─ HTTPS (443)
@@ -144,11 +153,13 @@ Internet → Reverse Proxy (nginx) → Aether Backend + Host Agent → Host OS
 ```
 
 #### Local Host Deployment
+
 ```
 Browser → Aether Backend (localhost) → Host Agent → Local OS
 ```
 
 #### Remote Host Deployment
+
 ```
 Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
              (Secure tunnel/VPN)
@@ -157,6 +168,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 ### 1.4 Communication Flow
 
 #### Desktop Initialization Flow
+
 ```
 1. User opens browser → Aether Frontend
 2. Frontend requests authentication
@@ -171,6 +183,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 ```
 
 #### Terminal Session Flow
+
 ```
 1. User opens Terminal app
 2. App requests PTY session from backend
@@ -185,6 +198,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 ```
 
 #### Filesystem Operation Flow
+
 ```
 1. User browses filesystem in Aether Files
 2. App requests directory listing
@@ -214,7 +228,9 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 **DECISION REQUIRED: Frontend Framework**
 
 #### Option A: React + TypeScript (RECOMMENDED)
+
 **Pros:**
+
 - Mature ecosystem dengan banyak libraries
 - Excellent TypeScript support
 - Virtual DOM performance untuk complex UI
@@ -224,11 +240,13 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Component reusability
 
 **Cons:**
+
 - Bundle size bisa besar jika tidak dioptimasi
 - Requires build tooling
 - Learning curve untuk state management
 
 **Libraries:**
+
 - React 18+ dengan concurrent features
 - TypeScript 5+ untuk type safety
 - Vite untuk build tool (fast HMR)
@@ -243,7 +261,9 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - React Router untuk routing
 
 #### Option B: Svelte + TypeScript
+
 **Pros:**
+
 - Smaller bundle size
 - No virtual DOM overhead
 - Reactive by default
@@ -251,12 +271,14 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Excellent performance
 
 **Cons:**
+
 - Smaller ecosystem
 - Fewer UI component libraries
 - Less mature tooling
 - Smaller community
 
-**Recommendation: Option A (React)** karena maturity, ecosystem, dan availability of production-ready components untuk complex desktop UI.
+**Recommendation: Option A (React)** karena maturity, ecosystem, dan availability of
+production-ready components untuk complex desktop UI.
 
 ---
 
@@ -265,7 +287,9 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 **DECISION REQUIRED: Backend Runtime**
 
 #### Option A: Node.js + TypeScript + Express (RECOMMENDED)
+
 **Pros:**
+
 - Single language dengan frontend (TypeScript)
 - Excellent WebSocket support (ws, socket.io)
 - node-pty untuk PTY terminal yang mature
@@ -275,11 +299,13 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Easier untuk share types dengan frontend
 
 **Cons:**
+
 - Single-threaded (mitigated dengan cluster mode)
 - Garbage collection pauses
 - Memory usage bisa lebih tinggi dari Go
 
 **Stack:**
+
 - Node.js 20 LTS
 - TypeScript 5+
 - Express.js untuk HTTP API
@@ -295,7 +321,9 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - bull atau bullmq untuk job queues
 
 #### Option B: Go + Fiber/Echo
+
 **Pros:**
+
 - Excellent performance dan memory efficiency
 - Built-in concurrency
 - Static binary deployment
@@ -303,18 +331,21 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Strong typing
 
 **Cons:**
+
 - Different language dari frontend
 - PTY library kurang mature (go-pty)
 - Smaller web ecosystem vs Node.js
 - Slower development untuk rapid iteration
 
 **Recommendation: Option A (Node.js + TypeScript)** untuk MVP karena:
+
 - node-pty adalah library PTY paling mature dan reliable
 - Type sharing dengan frontend
 - Faster development velocity
 - Sufficient performance untuk target use case
 
-**Future consideration:** Migrate Host Agent ke Go untuk better performance dan lower resource usage setelah protocol stabilized.
+**Future consideration:** Migrate Host Agent ke Go untuk better performance dan lower resource usage
+setelah protocol stabilized.
 
 ---
 
@@ -323,7 +354,9 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 **DECISION REQUIRED: Primary Database**
 
 #### Option A: PostgreSQL (RECOMMENDED)
+
 **Pros:**
+
 - Mature, reliable, production-tested
 - ACID compliance
 - JSON support untuk flexible schemas
@@ -333,28 +366,34 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Free dan open source
 
 **Cons:**
+
 - Slightly higher resource usage
 - More complex administration
 
 #### Option B: SQLite
+
 **Pros:**
+
 - Zero configuration
 - Single file database
 - Very low resource usage
 - Built-in backup (file copy)
 
 **Cons:**
+
 - Tidak cocok untuk concurrent writes
 - Limited untuk multi-user scenarios
 - Tidak ada network access
 
 **Recommendation: PostgreSQL** karena:
+
 - Multi-user support
 - Concurrent access
 - Better untuk production deployment
 - Scalability untuk future growth
 
 **Storage Breakdown:**
+
 - **PostgreSQL**: Users, hosts, sessions, apps, audit logs, metadata
 - **Redis**: Session cache, real-time presence, pub/sub, rate limiting
 - **Object Storage (S3-compatible)**: Cloud files, backups, app packages, media
@@ -366,18 +405,23 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 **DECISION REQUIRED: Host Agent Runtime**
 
 #### Option A: Node.js + TypeScript
+
 **Pros:**
+
 - Code reuse dengan backend
 - node-pty untuk PTY
 - Easy deployment (npm install)
 - Same tooling dan debugging
 
 **Cons:**
+
 - Higher memory footprint
 - Slower startup
 
 #### Option B: Go
+
 **Pros:**
+
 - Single binary deployment
 - Lower memory usage (critical pada VPS)
 - Fast startup
@@ -385,6 +429,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Cross-compilation untuk Windows/Mac
 
 **Cons:**
+
 - PTY library kurang mature
 - More complex untuk rapid iteration
 - No code sharing dengan backend
@@ -392,12 +437,14 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 **Recommendation untuk MVP: Node.js**, migrate ke Go later:
 
 **Phase 1-6 (MVP)**: Node.js Host Agent
+
 - Faster development
 - Proven PTY support
 - Code sharing dengan backend
 - Easier debugging
 
 **Phase 9+ (Production Hardening)**: Go Host Agent
+
 - Rewrite agent core di Go
 - Keep protocol compatible
 - Better performance
@@ -409,6 +456,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 ### 2.6 Realtime Communication
 
 **WebSocket (ws library)** untuk semua realtime communication:
+
 - Terminal I/O
 - File sync events
 - Notification delivery
@@ -416,6 +464,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Presence status
 
 **Protocol:**
+
 - JSON-based message format
 - Message types: `request`, `response`, `event`, `error`
 - Request/response dengan correlation ID
@@ -428,6 +477,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 ### 2.7 Development Tools
 
 **Frontend:**
+
 - Vite untuk dev server dan build
 - ESLint + Prettier untuk code quality
 - Vitest untuk unit testing
@@ -435,6 +485,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Storybook untuk component development
 
 **Backend:**
+
 - tsx untuk development (fast TypeScript execution)
 - ts-node untuk scripts
 - nodemon untuk hot reload
@@ -443,6 +494,7 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 - Docker Compose untuk local development environment
 
 **Infrastructure:**
+
 - Docker untuk containerization
 - nginx untuk reverse proxy
 - Let's Encrypt untuk SSL
@@ -453,32 +505,31 @@ Browser → Aether Backend (Cloud) → Host Agent (Remote Host) → Remote OS
 
 ### 2.8 Technology Stack Summary
 
-| Layer | Technology | Version | Purpose |
-|-------|-----------|---------|---------|
-| Frontend Framework | React | 18+ | UI library |
-| Frontend Language | TypeScript | 5+ | Type safety |
-| Frontend Build | Vite | 5+ | Build tool |
-| Frontend State | Zustand | 4+ | Client state |
-| Frontend Data | React Query | 5+ | Server state |
-| Frontend Styling | Tailwind CSS | 3+ | Utility CSS |
-| Terminal Emulator | xterm.js | 5+ | Terminal UI |
-| Code Editor | Monaco Editor | Latest | Code editing |
-| Backend Runtime | Node.js | 20 LTS | Server runtime |
-| Backend Language | TypeScript | 5+ | Type safety |
-| Backend Framework | Express.js | 4+ | HTTP server |
-| WebSocket | ws | 8+ | Realtime |
-| PTY | node-pty | 1+ | Terminal |
-| Database | PostgreSQL | 16+ | Primary DB |
-| Cache | Redis | 7+ | Caching |
-| Object Storage | MinIO/S3 | Compatible | File storage |
-| ORM | Prisma | 5+ | Database ORM |
-| Validation | Zod | 3+ | Schema validation |
-| Authentication | Passport.js | Latest | Auth middleware |
-| Logging | Winston | 3+ | Structured logs |
-| Job Queue | BullMQ | 5+ | Background jobs |
-| Host Agent | Node.js → Go | 20 LTS / 1.22+ | Host integration |
-| Reverse Proxy | nginx | 1.24+ | Load balancer |
-| Process Manager | systemd | System | Service management |
+| Layer              | Technology    | Version        | Purpose            |
+| ------------------ | ------------- | -------------- | ------------------ |
+| Frontend Framework | React         | 18+            | UI library         |
+| Frontend Language  | TypeScript    | 5+             | Type safety        |
+| Frontend Build     | Vite          | 5+             | Build tool         |
+| Frontend State     | Zustand       | 4+             | Client state       |
+| Frontend Data      | React Query   | 5+             | Server state       |
+| Frontend Styling   | Tailwind CSS  | 3+             | Utility CSS        |
+| Terminal Emulator  | xterm.js      | 5+             | Terminal UI        |
+| Code Editor        | Monaco Editor | Latest         | Code editing       |
+| Backend Runtime    | Node.js       | 20 LTS         | Server runtime     |
+| Backend Language   | TypeScript    | 5+             | Type safety        |
+| Backend Framework  | Express.js    | 4+             | HTTP server        |
+| WebSocket          | ws            | 8+             | Realtime           |
+| PTY                | node-pty      | 1+             | Terminal           |
+| Database           | PostgreSQL    | 16+            | Primary DB         |
+| Cache              | Redis         | 7+             | Caching            |
+| Object Storage     | MinIO/S3      | Compatible     | File storage       |
+| ORM                | Prisma        | 5+             | Database ORM       |
+| Validation         | Zod           | 3+             | Schema validation  |
+| Authentication     | Passport.js   | Latest         | Auth middleware    |
+| Logging            | Winston       | 3+             | Structured logs    |
+| Job Queue          | BullMQ        | 5+             | Background jobs    |
+| Host Agent         | Node.js → Go  | 20 LTS / 1.22+ | Host integration   |
+| Reverse Proxy      | nginx         | 1.24+          | Load balancer      |
+| Process Manager    | systemd       | System         | Service management |
 
 ---
-

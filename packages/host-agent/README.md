@@ -1,6 +1,7 @@
 # @aether/host-agent
 
-Host agent for Aether Cloud OS that runs on the user's local machine to provide secure access to local resources.
+Host agent for Aether Cloud OS that runs on the user's local machine to provide secure access to
+local resources.
 
 ## Features
 

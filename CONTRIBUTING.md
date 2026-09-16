@@ -1,6 +1,7 @@
 # Contributing to Aether Cloud OS
 
-Thank you for your interest in contributing to Aether Cloud OS! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to Aether Cloud OS! This document provides guidelines
+and instructions for contributing.
 
 ## Table of Contents
 
@@ -68,6 +69,7 @@ git checkout -b feature/your-feature-name
 ### 2. Create a Branch
 
 Branch naming convention:
+
 ```
 feature/description    # New features
 bugfix/issue-123      # Bug fixes
@@ -116,6 +118,7 @@ git commit -m "docs(api): update WebSocket protocol documentation"
 ```
 
 **Commit Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -163,26 +166,32 @@ git push origin feature/your-feature-name --force-with-lease
 
 ```markdown
 ## Description
+
 Brief description of what this PR does.
 
 ## Type of Change
+
 - [ ] Bug fix (non-breaking change that fixes an issue)
 - [ ] New feature (non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+- [ ] Breaking change (fix or feature that would cause existing functionality to not work as
+      expected)
 - [ ] Documentation update
 - [ ] Refactoring (no functional changes)
 
 ## Related Issues
-Closes #123
-Related to #456
+
+Closes #123 Related to #456
 
 ## How Has This Been Tested?
+
 Describe the tests you ran and how to reproduce them.
 
 ## Screenshots (if applicable)
+
 Add screenshots for UI changes.
 
 ## Checklist
+
 - [ ] My code follows the project's code standards
 - [ ] I have performed a self-review of my code
 - [ ] I have commented my code, particularly in hard-to-understand areas
@@ -251,6 +260,7 @@ git push origin --delete feature/your-feature-name
 ### Unit Tests
 
 Required for:
+
 - New features
 - Bug fixes
 - Utility functions
@@ -272,6 +282,7 @@ describe('MyFunction', () => {
 ### Integration Tests
 
 Required for:
+
 - API endpoints
 - Database operations
 - WebSocket communication
@@ -293,14 +304,12 @@ Required for:
 ```typescript
 /**
  * Processes user authentication request.
- * 
+ *
  * @param credentials - User login credentials
  * @returns Authentication token and user data
  * @throws AuthenticationError if credentials are invalid
  */
-export async function authenticate(
-  credentials: Credentials
-): Promise<AuthResult> {
+export async function authenticate(credentials: Credentials): Promise<AuthResult> {
   // Implementation
 }
 ```
@@ -308,6 +317,7 @@ export async function authenticate(
 ### Documentation Files
 
 Update when relevant:
+
 - `README.md` - Project overview
 - `DEVELOPMENT-SETUP.md` - Setup instructions
 - `CODE-STANDARDS.md` - Coding standards
@@ -329,23 +339,29 @@ Use the bug report template and include:
 - **Additional Context**: Any other relevant information
 
 Example:
+
 ```markdown
 ## Bug Description
+
 Terminal crashes when pasting large text blocks.
 
 ## Steps to Reproduce
+
 1. Open terminal
 2. Copy >10KB of text
 3. Paste into terminal
 4. Terminal becomes unresponsive
 
 ## Expected Behavior
+
 Text should be pasted and processed normally.
 
 ## Actual Behavior
+
 Terminal freezes and must be restarted.
 
 ## Environment
+
 - OS: Windows 11
 - Browser: Chrome 120
 - Aether version: 0.1.0
@@ -366,6 +382,7 @@ Include:
 **DO NOT** open public issues for security vulnerabilities.
 
 Instead:
+
 1. Email security@aether-os.io (if available)
 2. Provide detailed description
 3. Wait for response before disclosure
@@ -380,13 +397,15 @@ Instead:
 ## Recognition
 
 Contributors will be:
+
 - Listed in CONTRIBUTORS.md
 - Credited in release notes
 - Acknowledged in project documentation
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project.
+By contributing, you agree that your contributions will be licensed under the same license as the
+project.
 
 ---
 

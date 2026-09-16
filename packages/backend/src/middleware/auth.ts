@@ -1,8 +1,12 @@
-
 import { cache } from '../cache/index.js';
 import { config } from '../config.js';
 import { recordAuditEvent } from '../services/audit.service.js';
-import { findSessionById, isSessionActive, touchSession, verifyAccessToken } from '../services/auth.service.js';
+import {
+  findSessionById,
+  isSessionActive,
+  touchSession,
+  verifyAccessToken,
+} from '../services/auth.service.js';
 import { toPublicUser, findUserById } from '../services/user.service.js';
 import { ForbiddenError, UnauthenticatedError } from '../utils/errors.js';
 
@@ -87,7 +91,10 @@ export function requirePrincipal(request: FastifyRequest): AuthenticatedPrincipa
  * Must be registered *after* `authenticate` on the same route.
  */
 export function requirePermission(permission: Permission) {
-  return async function permissionGuard(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
+  return async function permissionGuard(
+    request: FastifyRequest,
+    _reply: FastifyReply
+  ): Promise<void> {
     const principal = requirePrincipal(request);
 
     if (!principal.user.permissions.includes(permission)) {
@@ -111,7 +118,13 @@ export function requirePermission(permission: Permission) {
 }
 
 /** Paths that never require authentication. */
-export const PUBLIC_PATHS: readonly string[] = ['/health', '/api/health', '/api/auth/login', '/api/auth/refresh', '/api/auth/bootstrap-status'];
+export const PUBLIC_PATHS: readonly string[] = [
+  '/health',
+  '/api/health',
+  '/api/auth/login',
+  '/api/auth/refresh',
+  '/api/auth/bootstrap-status',
+];
 
 export function isPublicPath(url: string): boolean {
   const pathname = url.split('?')[0] ?? url;

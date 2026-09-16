@@ -42,15 +42,19 @@ export interface PairAgentOptions {
 }
 
 /** Generates a token, stores its hash, and returns the plaintext exactly once. */
-export async function pairAgent(options: PairAgentOptions): Promise<{ agentId: string; token: string }> {
-  const agentId = randomBytes(16).toString('hex').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
+export async function pairAgent(
+  options: PairAgentOptions
+): Promise<{ agentId: string; token: string }> {
+  const agentId = randomBytes(16)
+    .toString('hex')
+    .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
   const token = `aether-agent_${randomBytes(32).toString('base64url')}`;
   const tokenHash = hashToken(token);
 
   await query(
     `INSERT INTO aether.host_agents (id, label, token_hash, owner_user_id)
      VALUES ($1, $2, $3, $4)`,
-    [agentId, options.label, tokenHash, options.ownerUserId],
+    [agentId, options.label, tokenHash, options.ownerUserId]
   );
 
   log.info({ agentId }, 'host agent paired');
@@ -61,7 +65,7 @@ export async function pairAgent(options: PairAgentOptions): Promise<{ agentId: s
 export async function revokeAgent(agentId: string, ownerUserId: string): Promise<boolean> {
   const result = await query(
     `DELETE FROM aether.host_agents WHERE id = $1 AND owner_user_id = $2`,
-    [agentId, ownerUserId],
+    [agentId, ownerUserId]
   );
   const revoked = (result.rowCount ?? 0) > 0;
   if (revoked) log.warn({ agentId }, 'host agent revoked');
@@ -69,10 +73,15 @@ export async function revokeAgent(agentId: string, ownerUserId: string): Promise
 }
 
 export async function listAgents(ownerUserId: string): Promise<AgentRecord[]> {
-  const result = await query<{ id: string; label: string; owner_user_id: string; created_at: string }>(
+  const result = await query<{
+    id: string;
+    label: string;
+    owner_user_id: string;
+    created_at: string;
+  }>(
     `SELECT id, label, owner_user_id, created_at
      FROM aether.host_agents WHERE owner_user_id = $1 ORDER BY created_at DESC`,
-    [ownerUserId],
+    [ownerUserId]
   );
   return result.rows.map((row) => ({
     agentId: row.id,
@@ -88,10 +97,17 @@ export async function listAgents(ownerUserId: string): Promise<AgentRecord[]> {
  * distinguishable in logs but both close the socket the same way.
  */
 export async function authenticateAgent(agentId: string, token: string): Promise<AgentRecord> {
-  const result = await query<{ id: string; label: string; token_hash: string; owner_user_id: string; created_at: string; revoked_at: string | null }>(
+  const result = await query<{
+    id: string;
+    label: string;
+    token_hash: string;
+    owner_user_id: string;
+    created_at: string;
+    revoked_at: string | null;
+  }>(
     `SELECT id, label, token_hash, owner_user_id, created_at, revoked_at
      FROM aether.host_agents WHERE id = $1`,
-    [agentId],
+    [agentId]
   );
 
   const row = result.rows[0];
