@@ -5,26 +5,20 @@
 #   curl -fsSL https://<install-domain>/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/install.sh | bash
 #
-# When run from a repo checkout (the common dev path) it sources the installer
-# libraries straight from ./deploy/lib. When piped from a remote host with no
-# checkout it must have the libraries in the same directory — the release
-# packaging step copies deploy/lib next to install.sh, so this works for both
-# curl|bash and local runs without special-casing.
-#
-# All flags forward to the orchestrator; see deploy/lib/install.sh header.
+# When run from a repo checkout the libraries live in ./deploy/lib. When
+# packaged for remote install they are copied next to this file. We detect
+# which layout we are in by looking for deploy/lib/install.sh relative to
+# this script.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ ! -f "$SCRIPT_DIR/deploy/lib/install.sh" ]; then
-    # Piped (curl|bash) with no checkout: libraries sit next to this script.
-    if [ -f "$SCRIPT_DIR/install.sh" ]; then
-        exec "$SCRIPT_DIR/install.sh" "$@"
-    fi
-    echo "Aether installer: could not find deploy/lib/install.sh in $SCRIPT_DIR." >&2
-    echo "Run from a checkout of the repo, or use a properly packaged release." >&2
-    exit 1
+if [ -f "$SCRIPT_DIR/deploy/lib/install.sh" ]; then
+    # Repo checkout: source from deploy/lib
+    exec "$SCRIPT_DIR/deploy/lib/install.sh" "$@"
 fi
 
-exec "$SCRIPT_DIR/deploy/lib/install.sh" "$@"
+echo "Aether installer: could not find deploy/lib/install.sh." >&2
+echo "Run this from a clone of the repo, or use the official packaged installer." >&2
+exit 1

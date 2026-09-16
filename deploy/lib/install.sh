@@ -43,10 +43,11 @@ Usage: install.sh [options]
 
 Options:
   --domain DOMAIN        public domain pointing at this host
-  --email EMAIL        admin email for certificate notices
-  --dir PATH             installation directory (default /opt/aether)
+  --email  EMAIL         admin email for certificate notices
+  --dir    PATH          installation directory (default /opt/aether)
   --yes                  non-interactive; accept defaults
   --resume               skip stages already completed in this directory
+  --dry-run              validate everything but make no changes to the system
   --help                 show this message
 
 Environment: see the header comment in $(basename "$0").
@@ -59,14 +60,16 @@ parse_args() {
             --domain) AETHER_DOMAIN="$2"; shift 2 ;;
             --email) AETHER_ADMIN_EMAIL="$2"; shift 2 ;;
             --dir) AETHER_INSTALL_DIR="$2"; shift 2 ;;
-            --yes) AETHER_YES=true ;;
-            --resume) AETHER_RESUME=true ;;
+            --yes) AETHER_YES=true; shift ;;
+            --resume) AETHER_RESUME=true; shift ;;
+            --dry-run) AETHER_DRY_RUN=true; shift ;;
             --help) usage; exit 0 ;;
             *) printf 'Unknown option: %s\n\n' "$1" >&2; usage; exit 2 ;;
         esac
     done
     export AETHER_DOMAIN="${AETHER_DOMAIN:-}" AETHER_ADMIN_EMAIL="${AETHER_ADMIN_EMAIL:-}" \
         AETHER_YES="${AETHER_YES:-false}" AETHER_RESUME="${AETHER_RESUME:-false}" \
+        AETHER_DRY_RUN="${AETHER_DRY_RUN:-false}" \
         AETHER_INSTALL_DIR
 }
 
@@ -98,9 +101,38 @@ main() {
     info "Aether Cloud OS install ${AETHER_VERSION} (id ${AETHER_INSTALLATION_ID})"
     info "Install dir: ${AETHER_INSTALL_DIR} | Log: ${AETHER_LOG_FILE}"
 
+    if [ "${AETHER_DRY_RUN:-false}" = "true" ]; then
+        info "=== DRY RUN MODE — no changes will be made ==="
+        run_preflight
+        prompt_for_settings
+        info "Dry run complete. Everything above would be executed on a real install."
+        info "Install dir: $AETHER_INSTALL_DIR | Domain: $AETHER_DOMAIN | Email: $AETHER_ADMIN_EMAIL"
+        exit 0
+    fi
+
     # The stage total covers configure through finalize; preflight and
     # dependencies already called stage() themselves.
     run_stage preflight run_preflight
+
+    # Handle existing installation: offer resume / reinstall / abort.
+    if [ -n "${EXISTING_STATE:-}" ] && [ "${AETHER_RESUME:-false}" != "true" ]; then
+        warn "An existing Aether installation was found at $AETHER_INSTALL_DIR"
+        if [ -t 0 ]; then
+            printf 'Resume the previous install? [Y/n]: '
+            read -r answer || answer=""
+            case "$answer" in
+                ""|[Yy]*) AETHER_RESUME=true ;;
+                *)
+                    fatal "Aborted. To reinstall from scratch, remove $AETHER_INSTALL_DIR first, or pass --resume."
+                    ;;
+            esac
+        else
+            info "Non-interactive: resuming existing installation automatically."
+            AETHER_RESUME=true
+        fi
+        export AETHER_RESUME
+    fi
+
     run_stage dependencies install_dependencies
     run_stage configure configure_system
     run_stage deploy deploy_application

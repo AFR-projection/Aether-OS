@@ -11,7 +11,7 @@
 BASE_PACKAGES=(curl wget git openssl ca-certificates)
 
 # Installer prerequisites some minimal VPS images lack.
-DOCKER_HELPER_PACKAGES=(gnupg lsb-release)
+DOCKER_HELPER_PACKAGES=(gnupg lsb-release dnsutils)
 
 _apt_install() {
     $SUDO apt-get install -y --no-install-recommends "$@"

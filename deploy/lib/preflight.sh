@@ -162,6 +162,43 @@ check_network() {
     fi
 }
 
+check_dns_resolution() {
+    # Verify the configured domain resolves to this server's public IP.
+    # Failing here means Caddy's ACME challenge will also fail, so abort early.
+    local domain="${AETHER_DOMAIN:-}"
+    [ -n "$domain" ] || return 0  # domain not yet set; configure stage handles it
+
+    local public_ip
+    public_ip=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || true)
+    if [ -z "$public_ip" ]; then
+        warn "Could not determine public IP (https://api.ipify.org unreachable). Skipping DNS check."
+        return 0
+    fi
+
+    # Resolve domain IP; try dig (dnsutils), then nslookup, then host.
+    local server_ip=""
+    if command_exists dig; then
+        server_ip=$(dig +short "$domain" A 2>/dev/null | head -1 || true)
+    elif command_exists nslookup; then
+        server_ip=$(nslookup "$domain" 2>/dev/null | awk '/^Address: / {print $2; exit}' || true)
+    elif command_exists host; then
+        server_ip=$(host "$domain" 2>/dev/null | awk '/has address/ {print $NF; exit}' || true)
+    else
+        warn "No DNS resolver found (dig/nslookup/host). Install dnsutils. Skipping DNS check."
+        return 0
+    fi
+
+    if [ -z "$server_ip" ]; then
+        fatal "Domain $domain does not resolve to any IP address. Create an A record pointing to $public_ip before retrying."
+    fi
+
+    if [ "$server_ip" = "$public_ip" ]; then
+        info "DNS check passed: $domain → $server_ip (matches this server)"
+    else
+        fatal "Domain $domain resolves to $server_ip, but this server's public IP is $public_ip. Update your DNS A record to $public_ip."
+    fi
+}
+
 check_existing_installation() {
     # Contract §9.1: detect what is already there so install.sh can offer
     # resume / upgrade / repair instead of trampling a live system.
@@ -187,4 +224,6 @@ run_preflight() {
     check_install_dir
     check_ports
     check_network
+    check_existing_installation || true
+    check_dns_resolution
 }
