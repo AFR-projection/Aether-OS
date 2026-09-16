@@ -125,7 +125,7 @@ services:
     env_file:
       - .env
     environment:
-      AETHER_DOMAIN: ${AETHER_DOMAIN:?AETHER_DOMAIN is required}
+      AETHER_DOMAIN: ${AETHER_DOMAIN:-}
     networks:
       - edge
     healthcheck:

@@ -13,21 +13,33 @@ AETHER_ADMIN_EMAIL_TEMPLATE="{{AETHER_ADMIN_EMAIL_PLACEHOLDER}}"
 validate_domain() {
     local domain="$1"
 
-    if [ -z "$domain" ]; then
-        fatal "A domain name is required. The installer cannot issue certificates or route traffic without one."
-    fi
+    # Empty means IP-only mode: Caddy serves HTTP on port 80 and no ACME
+    # certificate is requested. A domain is still required for HTTPS mode.
+    [ -z "$domain" ] && return 0
 
     if [ "${#domain}" -gt 253 ]; then
         fatal "Domain too long (max 253 characters): $domain"
     fi
 
-    if [[ "$domain" == *..* ]] || [[ ! "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || [[ "$domain" == */* ]]; then
-        fatal "Domain is not RFC 1035 compliant: $domain"
-    fi
+    [[ "$domain" != *..* ]] || fatal "Domain contains an empty label: $domain"
+    [[ "$domain" != */* ]] || fatal "Domain must not contain '/': $domain"
+    [[ "$domain" != *["]"]* ]] || fatal "Domain contains invalid characters: $domain"
+    [[ "$domain" =~ ^[A-Za-z0-9.-]+$ ]] || fatal "Domain is not RFC 1035 compliant: $domain"
+
+    local label
+    IFS='.' read -r -a labels <<< "$domain"
+    for label in "${labels[@]}"; do
+        [ -n "$label" ] || fatal "Domain contains an empty label: $domain"
+        [ "${#label}" -le 63 ] || fatal "Domain label is longer than 63 characters: $label"
+        [[ "$label" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$ ]] || \
+            fatal "Domain label is not RFC 1035 compliant: $label"
+    done
 }
 
 validate_email() {
     local email="$1"
+    # Email is optional in IP-only mode; Caddy's local default is sufficient.
+    [ -z "$email" ] && return 0
     if [[ ! "$email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
         fatal "Admin email does not look like an email address: $email"
     fi
@@ -45,7 +57,7 @@ prompt_for_settings() {
         if [ "${AETHER_YES:-false}" = "true" ] || [ ! -t 0 ]; then
             domain="$AETHER_DOMAIN_TEMPLATE"
         else
-            printf 'Domain for this instance: '
+            printf 'Domain for this instance (leave blank for IP-only HTTP): '
             read -r domain || true
         fi
     fi
@@ -60,9 +72,9 @@ prompt_for_settings() {
     fi
 
     # A packaged release may replace these placeholders with defaults. If it
-    # did not, fail clearly instead of writing invalid Caddy configuration.
-    [[ "$domain" != *'{{'* ]] || fatal "No domain supplied. Use --domain example.com (or configure a packaged domain default)."
-    [[ "$email" != *'{{'* ]] || fatal "No admin email supplied. Use --email admin@example.com."
+    # did not, preserve an empty value for supported IP-only mode.
+    [[ "$domain" != *'{{'* ]] || domain=""
+    [[ "$email" != *'{{'* ]] || email=""
 
     validate_domain "$domain"
     validate_email "$email"
@@ -89,8 +101,8 @@ generate_env_file() {
 NODE_ENV=production
 PORT=3000
 HOST=0.0.0.0
-BASE_URL=https://${AETHER_DOMAIN}
-ALLOWED_ORIGINS=https://${AETHER_DOMAIN}
+BASE_URL=$( if [ -n "${AETHER_DOMAIN}" ] && [ "${AETHER_NO_HTTPS:-false}" != "true" ]; then printf 'https://%s' "${AETHER_DOMAIN}"; elif [ -n "${AETHER_DOMAIN}" ]; then printf 'http://%s' "${AETHER_DOMAIN}"; else printf 'http://127.0.0.1'; fi )
+ALLOWED_ORIGINS=$( if [ -n "${AETHER_DOMAIN}" ] && [ "${AETHER_NO_HTTPS:-false}" != "true" ]; then printf 'https://%s' "${AETHER_DOMAIN}"; elif [ -n "${AETHER_DOMAIN}" ]; then printf 'http://%s' "${AETHER_DOMAIN}"; else printf 'http://127.0.0.1,http://localhost'; fi )
 
 POSTGRES_USER=aether
 POSTGRES_PASSWORD=${SECRET_DB_PASSWORD}
@@ -142,6 +154,7 @@ configure_system() {
     stage "Configuring installation"
 
     prompt_for_settings
+    check_dns_resolution
 
     mkdir -p "$AETHER_INSTALL_DIR/data/workspace" "$AETHER_INSTALL_DIR/data/uploads"
     mkdir -p "$AETHER_INSTALL_DIR/logs" "$AETHER_INSTALL_DIR/backups"

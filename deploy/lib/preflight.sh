@@ -167,6 +167,7 @@ check_dns_resolution() {
     # Failing here means Caddy's ACME challenge will also fail, so abort early.
     local domain="${AETHER_DOMAIN:-}"
     [ -n "$domain" ] || return 0  # domain not yet set; configure stage handles it
+    [ "${AETHER_NO_HTTPS:-false}" = "true" ] && return 0 # HTTP-only mode
 
     local public_ip
     public_ip=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || true)
@@ -225,5 +226,4 @@ run_preflight() {
     check_ports
     check_network
     check_existing_installation || true
-    check_dns_resolution
 }

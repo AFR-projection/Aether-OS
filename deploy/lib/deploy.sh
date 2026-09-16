@@ -87,8 +87,23 @@ build_frontend_bundle() {
 write_caddyfile() {
     local caddy_dir="$AETHER_INSTALL_DIR/caddy"
     mkdir -p "$caddy_dir"
-    cp "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile" "$caddy_dir/Caddyfile"
-    info "Caddyfile installed"
+
+    if [ -n "${AETHER_DOMAIN:-}" ] && [ "${AETHER_NO_HTTPS:-false}" != "true" ]; then
+        cp "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile" "$caddy_dir/Caddyfile"
+        info "Caddyfile installed (HTTPS domain mode)"
+    else
+        # IP-only and --no-https modes use an explicit HTTP listener. An empty
+        # Caddy site address is invalid and would prevent the proxy starting.
+        if [ -n "${AETHER_DOMAIN:-}" ]; then
+            awk '{ if ($0 == "{$AETHER_DOMAIN} {") print "http://{$AETHER_DOMAIN} {"; else print }' \
+                "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile" > "$caddy_dir/Caddyfile"
+            info "Caddyfile installed (HTTP-only domain mode)"
+        else
+            awk '{ if ($0 == "{$AETHER_DOMAIN} {") print ":80 {"; else print }' \
+                "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile" > "$caddy_dir/Caddyfile"
+            info "Caddyfile installed (HTTP IP-only mode)"
+        fi
+    fi
 }
 
 install_compose_file() {

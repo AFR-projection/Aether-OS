@@ -112,9 +112,19 @@ EOF
 health_check() {
     info "Waiting for the stack to become healthy…"
 
-    local attempts=60
+    local attempts=60 health_url
+    if [ -n "${AETHER_DOMAIN:-}" ]; then
+        health_url="http://${AETHER_DOMAIN}/health"
+    else
+        health_url="http://127.0.0.1/health"
+    fi
     while [ $attempts -gt 0 ]; do
-        if curl -sf --max-time 5 --resolve "${AETHER_DOMAIN}:80:127.0.0.1" "http://${AETHER_DOMAIN}/health" >/dev/null 2>&1; then
+        if [ -n "${AETHER_DOMAIN:-}" ]; then
+            if curl -sf --max-time 5 --resolve "${AETHER_DOMAIN}:80:127.0.0.1" "$health_url" >/dev/null 2>&1; then
+                info "Caddy → backend health check passed"
+                break
+            fi
+        elif curl -sf --max-time 5 "$health_url" >/dev/null 2>&1; then
             info "Caddy → backend health check passed"
             break
         fi
@@ -123,7 +133,7 @@ health_check() {
     done
 
     if [ $attempts -eq 0 ]; then
-        warn "Stack is not answering on http://${AETHER_DOMAIN}/health yet."
+        warn "Stack is not answering on ${health_url} yet."
         warn "Recent container status:"
         compose_cmd ps 2>/dev/null || true
         warn "Check progress with: aether logs backend"
