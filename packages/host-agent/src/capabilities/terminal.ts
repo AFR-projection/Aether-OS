@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import { type TerminalServerMessage, type TerminalSession, type TerminalStatus } from '@aether/shared';
+import {
+  type TerminalServerMessage,
+  type TerminalSession,
+  type TerminalStatus,
+} from '@aether/shared';
 
-import type { AgentConfig } from '../config.js';
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '../errors.js';
 import { subsystemLogger } from '../logger.js';
 import { getWorkspaceRoot, joinToRoot, resolveExistingPath } from '../security/workspace.js';
 
+import type { AgentConfig } from '../config.js';
 import type { IPty } from 'node-pty';
 
 const log = subsystemLogger('terminal');
@@ -54,7 +58,7 @@ async function loadPty(): Promise<typeof import('node-pty')> {
     log.error({ err: ptyLoadError }, 'node-pty native module could not be loaded');
     throw new ServiceUnavailableError(
       'Terminal support is unavailable: the node-pty native module failed to load on this host.',
-      { reason: ptyLoadError.message },
+      { reason: ptyLoadError.message }
     );
   }
 }
@@ -115,7 +119,10 @@ export interface CreateSessionOptions {
   shell?: string;
 }
 
-export async function createSession(cfg: AgentConfig, options: CreateSessionOptions): Promise<TerminalSession> {
+export async function createSession(
+  cfg: AgentConfig,
+  options: CreateSessionOptions
+): Promise<TerminalSession> {
   if (!cfg.TERMINAL_ENABLED) {
     throw new ServiceUnavailableError('Terminal access is disabled on this instance');
   }
@@ -205,7 +212,10 @@ export async function createSession(cfg: AgentConfig, options: CreateSessionOpti
   sessions.set(id, runtime);
   resetIdleTimer(runtime, cfg);
 
-  log.info({ sessionId: id, pid: child.pid, shell, ownerUserId: options.ownerUserId }, 'terminal session created');
+  log.info(
+    { sessionId: id, pid: child.pid, shell, ownerUserId: options.ownerUserId },
+    'terminal session created'
+  );
 
   return { ...runtime.session };
 }
@@ -290,7 +300,12 @@ export function listSessionsForUser(userId: string): TerminalSession[] {
   return result;
 }
 
-export function writeInput(sessionId: string, userId: string, data: string, cfg: AgentConfig): void {
+export function writeInput(
+  sessionId: string,
+  userId: string,
+  data: string,
+  cfg: AgentConfig
+): void {
   const runtime = requireSession(sessionId);
   if (runtime.ownerUserId !== userId) {
     throw new NotFoundError('Terminal session does not exist', { sessionId });
@@ -316,7 +331,11 @@ export function resizeSession(sessionId: string, userId: string, cols: number, r
   runtime.session.rows = rows;
 }
 
-export function sendSignal(sessionId: string, userId: string, signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'): void {
+export function sendSignal(
+  sessionId: string,
+  userId: string,
+  signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'
+): void {
   const runtime = requireSession(sessionId);
   if (runtime.ownerUserId !== userId) {
     throw new NotFoundError('Terminal session does not exist', { sessionId });
@@ -367,7 +386,7 @@ export function attach(
   cfg: AgentConfig,
   sessionId: string,
   userId: string,
-  subscriber: TerminalSubscriber,
+  subscriber: TerminalSubscriber
 ): AttachResult {
   const runtime = requireSession(sessionId);
   if (runtime.ownerUserId !== userId) {
@@ -408,7 +427,11 @@ export function killAllSessions(reason: string): number {
   return killed;
 }
 
-export function terminalStats(cfg: AgentConfig): { active: number; available: boolean; maxPerUser: number } {
+export function terminalStats(cfg: AgentConfig): {
+  active: number;
+  available: boolean;
+  maxPerUser: number;
+} {
   return {
     active: sessions.size,
     available: isTerminalAvailable(cfg),

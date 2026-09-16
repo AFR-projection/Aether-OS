@@ -14,7 +14,7 @@ const log = subsystemLogger('agent-routes');
  * Tokens are shown exactly once at pairing time; the backend stores only the
  * SHA-256 hash.
  */
-export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
+export function registerAgentRoutes(app: FastifyInstance): void {
   /** List paired agents (no secrets). */
   app.get('/api/agents', {
     preHandler: [authenticate, requirePermission('settings:manage')],
@@ -66,7 +66,10 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const principal = requirePrincipal(request);
       const { agentId } = request.params as { agentId?: string };
-      if (!agentId) return reply.status(400).send({ error: { code: 'VALIDATION_FAILED', message: 'agentId is required' } });
+      if (!agentId)
+        return reply
+          .status(400)
+          .send({ error: { code: 'VALIDATION_FAILED', message: 'agentId is required' } });
 
       const revoked = await revokeAgent(agentId, principal.user.id);
       if (!revoked) {

@@ -1,7 +1,8 @@
-import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildServer } from './server.js';
+
+import type { FastifyInstance } from 'fastify';
 
 /**
  * HTTP-level integration tests.
@@ -14,6 +15,19 @@ import { buildServer } from './server.js';
  */
 
 let app: FastifyInstance;
+
+type ErrorResponse = { code?: string; statusCode?: number; message?: string };
+type ApiResponse = {
+  status?: string;
+  version?: string;
+  terminalAvailable?: boolean;
+  node?: string;
+  error?: ErrorResponse;
+};
+
+function json(response: { json(): unknown }): ApiResponse {
+  return response.json() as ApiResponse;
+}
 
 beforeAll(async () => {
   app = await buildServer();
@@ -29,19 +43,18 @@ describe('liveness', () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: 'ok' });
-    expect(typeof response.json().version).toBe('string');
+    expect(json(response)).toMatchObject({ status: 'ok' });
+    expect(typeof json(response).version).toBe('string');
   });
 
   it('answers /api/version with the running version and Node version', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/version' });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      version: expect.any(String),
-      terminalAvailable: expect.any(Boolean),
-      node: expect.stringMatching(/^v\d+\./),
-    });
+    const body = json(response);
+    expect(typeof body.version).toBe('string');
+    expect(typeof body.terminalAvailable).toBe('boolean');
+    expect(body.node).toMatch(/^v\d+\./);
   });
 });
 
@@ -50,7 +63,7 @@ describe('authentication enforcement', () => {
     const response = await app.inject({ method: 'GET', url: '/api/files/list' });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json().error).toMatchObject({
+    expect(json(response).error).toMatchObject({
       code: 'UNAUTHENTICATED',
       statusCode: 401,
     });
@@ -79,7 +92,7 @@ describe('authentication enforcement', () => {
     });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json().error.statusCode).toBe(401);
+    expect(json(response).error?.statusCode).toBe(401);
   });
 
   it('does not disclose whether a forged token was structurally valid', async () => {
@@ -91,7 +104,7 @@ describe('authentication enforcement', () => {
 
     // A signature failure and an expired token must not be distinguishable by
     // message, or the endpoint becomes a token oracle.
-    expect(response.json().error.message).not.toMatch(/stack|secret|signature/i);
+    expect(json(response).error?.message).not.toMatch(/stack|secret|signature/i);
   });
 });
 
@@ -104,7 +117,7 @@ describe('input validation', () => {
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json().error.statusCode).toBe(400);
+    expect(json(response).error?.statusCode).toBe(400);
   });
 
   it('rejects malformed JSON with 400 rather than crashing', async () => {
@@ -135,7 +148,7 @@ describe('routing', () => {
     const response = await app.inject({ method: 'GET', url: '/api/does-not-exist' });
 
     expect(response.statusCode).toBe(404);
-    expect(response.json().error).toMatchObject({ code: 'NOT_FOUND', statusCode: 404 });
+    expect(json(response).error).toMatchObject({ code: 'NOT_FOUND', statusCode: 404 });
   });
 
   it('returns 404 rather than 500 for a browser navigation when no frontend is built', async () => {
@@ -190,8 +203,8 @@ describe('error masking', () => {
     expect(body).not.toMatch(/password/i);
 
     if (response.statusCode >= 500) {
-      expect(response.json().error.code).toBe('INTERNAL_ERROR');
-      expect(response.json().error.message).toBe('Internal Server Error');
+      expect(json(response).error?.code).toBe('INTERNAL_ERROR');
+      expect(json(response).error?.message).toBe('Internal Server Error');
     }
   });
 });

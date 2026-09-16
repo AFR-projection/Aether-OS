@@ -1,13 +1,13 @@
 import { lstat, mkdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { Stats } from 'node:fs';
-
 import { isSafeRelativePath, normalizeRelativePath } from '@aether/shared';
 
-import type { AgentConfig } from '../config.js';
 import { PathRejectedError } from '../errors.js';
 import { getLogger } from '../logger.js';
+
+import type { AgentConfig } from '../config.js';
+import type { Stats } from 'node:fs';
 
 let workspaceRootPromise: Promise<string> | null = null;
 
@@ -56,7 +56,10 @@ export interface ResolvedPath {
   exists: boolean;
 }
 
-export async function resolveExistingPath(cfg: AgentConfig, relative: string): Promise<ResolvedPath> {
+export async function resolveExistingPath(
+  cfg: AgentConfig,
+  relative: string
+): Promise<ResolvedPath> {
   const root = await getWorkspaceRoot(cfg);
   const safeRelative = assertSafeRelativePath(relative);
   const candidate = joinToRoot(root, safeRelative);
@@ -76,7 +79,11 @@ export async function resolveExistingPath(cfg: AgentConfig, relative: string): P
     throw new PathRejectedError('Path resolves outside the workspace');
   }
 
-  return { absolute: resolved, relative: normalizeRelativePath(path.relative(root, resolved)), exists: true };
+  return {
+    absolute: resolved,
+    relative: normalizeRelativePath(path.relative(root, resolved)),
+    exists: true,
+  };
 }
 
 export interface ResolveWriteOptions {
@@ -86,7 +93,7 @@ export interface ResolveWriteOptions {
 export async function resolvePathForWrite(
   cfg: AgentConfig,
   relative: string,
-  options: ResolveWriteOptions = {},
+  options: ResolveWriteOptions = {}
 ): Promise<ResolvedPath> {
   const root = await getWorkspaceRoot(cfg);
   const safeRelative = assertSafeRelativePath(relative);

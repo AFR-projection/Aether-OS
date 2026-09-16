@@ -1,24 +1,12 @@
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rmdir,
-  stat,
-  unlink,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, readFile, readdir, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { Stats } from 'node:fs';
-
-import type { AgentConfig } from '../config.js';
 import { NotFoundError } from '../errors.js';
 import { subsystemLogger } from '../logger.js';
-import {
-  joinToRoot,
-  resolveExistingPath,
-  resolvePathForWrite,
-} from '../security/workspace.js';
+import { joinToRoot, resolveExistingPath, resolvePathForWrite } from '../security/workspace.js';
+
+import type { AgentConfig } from '../config.js';
+import type { Stats } from 'node:fs';
 
 const log = subsystemLogger('filesystem');
 
@@ -63,8 +51,7 @@ export async function listFiles(cfg: AgentConfig, relative: string): Promise<Fil
 
   const result: FileEntry[] = [];
   for (const entry of entries) {
-    const entryPath =
-      resolved.relative === '' ? entry.name : `${resolved.relative}/${entry.name}`;
+    const entryPath = resolved.relative === '' ? entry.name : `${resolved.relative}/${entry.name}`;
 
     if (entry.isSymbolicLink()) {
       result.push({
@@ -109,9 +96,11 @@ export async function writeFileContent(
   cfg: AgentConfig,
   relative: string,
   content: Buffer | string,
-  options?: { createParents?: boolean },
+  options?: { createParents?: boolean }
 ): Promise<void> {
-  const resolved = await resolvePathForWrite(cfg, relative, { createParents: options?.createParents });
+  const resolved = await resolvePathForWrite(cfg, relative, {
+    createParents: options?.createParents,
+  });
   await writeFile(resolved.absolute, content);
 }
 
@@ -148,7 +137,7 @@ export async function createDirectory(cfg: AgentConfig, relative: string): Promi
 
 export async function fileStat(
   cfg: AgentConfig,
-  relative: string,
+  relative: string
 ): Promise<{ entry: FileEntry; absolute: string }> {
   const resolved = await resolveExistingPath(cfg, relative);
 

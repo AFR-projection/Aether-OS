@@ -4,8 +4,6 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { PathRejectedError } from '../utils/errors.js';
-
 import {
   assertSafeRelativePath,
   getWorkspaceRoot,
@@ -14,6 +12,7 @@ import {
   resolvePathForWrite,
   toRelativePath,
 } from './workspace.js';
+import { PathRejectedError } from '../utils/errors.js';
 
 /**
  * Containment tests for the workspace sandbox.
@@ -35,7 +34,11 @@ async function canCreateDirectorySymlink(): Promise<boolean> {
   const probe = await mkdtemp(path.join(os.tmpdir(), 'aether-symlink-probe-'));
   try {
     await mkdir(path.join(probe, 'target'));
-    await symlink(path.join(probe, 'target'), path.join(probe, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
+    await symlink(
+      path.join(probe, 'target'),
+      path.join(probe, 'link'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
     return true;
   } catch {
     return false;
@@ -101,7 +104,10 @@ describe('resolveExistingPath', () => {
     const link = path.join(sandbox, 'escape-link');
     await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
 
-    const relativeLink = path.relative(root, path.join(link, 'secret.txt')).split(path.sep).join('/');
+    const relativeLink = path
+      .relative(root, path.join(link, 'secret.txt'))
+      .split(path.sep)
+      .join('/');
 
     await expect(resolveExistingPath(relativeLink)).rejects.toThrow(PathRejectedError);
   });
@@ -128,7 +134,9 @@ describe('resolvePathForWrite', () => {
     await expect(resolvePathForWrite('no-such-dir/file.txt')).rejects.toThrow();
   });
 
-  it('refuses to write through a symlinked directory that leaves the workspace', async ({ skip }) => {
+  it('refuses to write through a symlinked directory that leaves the workspace', async ({
+    skip,
+  }) => {
     if (!(await canCreateDirectorySymlink())) {
       skip('directory symlinks are not permitted on this platform');
       return;
@@ -137,7 +145,10 @@ describe('resolvePathForWrite', () => {
     const link = path.join(sandbox, 'write-escape');
     await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
 
-    const relativeLink = path.relative(root, path.join(link, 'planted.txt')).split(path.sep).join('/');
+    const relativeLink = path
+      .relative(root, path.join(link, 'planted.txt'))
+      .split(path.sep)
+      .join('/');
 
     await expect(resolvePathForWrite(relativeLink)).rejects.toThrow(PathRejectedError);
   });
@@ -172,7 +183,7 @@ describe('resolvePathForWrite', () => {
       const expected = path.join(sandbox, 'fresh', 'nested', 'leaf.txt');
       const result = await resolvePathForWrite(
         path.relative(root, expected).split(path.sep).join('/'),
-        { createParents: true },
+        { createParents: true }
       );
 
       expect(result.exists).toBe(false);
@@ -188,13 +199,16 @@ describe('resolvePathForWrite', () => {
       const link = path.join(sandbox, 'mkdir-escape');
       await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
 
-      const target = path.relative(root, path.join(link, 'new', 'deep', 'file.txt'))
+      const target = path
+        .relative(root, path.join(link, 'new', 'deep', 'file.txt'))
         .split(path.sep)
         .join('/');
 
       // Missing intermediate directories must not become a way around the
       // containment check on the deepest existing ancestor.
-      await expect(resolvePathForWrite(target, { createParents: true })).rejects.toThrow(PathRejectedError);
+      await expect(resolvePathForWrite(target, { createParents: true })).rejects.toThrow(
+        PathRejectedError
+      );
     });
   });
 });
@@ -212,7 +226,12 @@ describe('joinToRoot', () => {
 describe('toRelativePath', () => {
   it('converts an absolute path inside the workspace', async () => {
     const relative = await toRelativePath(path.join(sandbox, 'a', 'b.txt'));
-    expect(relative).toBe(path.relative(root, path.join(sandbox, 'a', 'b.txt')).split(path.sep).join('/'));
+    expect(relative).toBe(
+      path
+        .relative(root, path.join(sandbox, 'a', 'b.txt'))
+        .split(path.sep)
+        .join('/')
+    );
   });
 
   it('rejects a path outside the workspace', async () => {

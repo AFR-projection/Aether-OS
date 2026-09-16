@@ -43,40 +43,42 @@ export class MemoryCache implements Cache {
     this.maxEntries = maxEntries;
   }
 
-  async get<T>(key: string): Promise<T | null> {
+  get<T>(key: string): Promise<T | null> {
     const entry = this.entries.get(key);
-    if (!entry) return null;
+    if (!entry) return Promise.resolve(null);
     if (entry.expiresAt <= Date.now()) {
       this.entries.delete(key);
-      return null;
+      return Promise.resolve(null);
     }
-    return entry.value as T;
+    return Promise.resolve(entry.value as T);
   }
 
-  async set<T>(key: string, value: T, ttlMs: number): Promise<void> {
+  set<T>(key: string, value: T, ttlMs: number): Promise<void> {
     if (this.entries.size >= this.maxEntries) {
       this.evict();
     }
     this.entries.set(key, { value, expiresAt: Date.now() + ttlMs });
+    return Promise.resolve();
   }
 
-  async delete(key: string): Promise<void> {
+  delete(key: string): Promise<void> {
     this.entries.delete(key);
+    return Promise.resolve();
   }
 
-  async increment(key: string, ttlMs: number): Promise<number> {
+  increment(key: string, ttlMs: number): Promise<number> {
     const existing = this.entries.get(key);
     const now = Date.now();
 
     if (!existing || existing.expiresAt <= now) {
       if (this.entries.size >= this.maxEntries) this.evict();
       this.entries.set(key, { value: 1, expiresAt: now + ttlMs });
-      return 1;
+      return Promise.resolve(1);
     }
 
     const next = (existing.value as number) + 1;
     existing.value = next;
-    return next;
+    return Promise.resolve(next);
   }
 
   sweep(): void {
@@ -105,7 +107,7 @@ export const cache: Cache = new MemoryCache();
 if (config.REDIS_URL) {
   log.warn(
     'REDIS_URL is configured but the Redis cache backend is not implemented in this release; ' +
-      'falling back to the in-process cache. Rate-limit counters are therefore per-process.',
+      'falling back to the in-process cache. Rate-limit counters are therefore per-process.'
   );
 }
 

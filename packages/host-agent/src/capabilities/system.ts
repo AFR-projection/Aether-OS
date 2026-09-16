@@ -1,11 +1,18 @@
 import { readFile, statfs } from 'node:fs/promises';
 import os from 'node:os';
 
-import { type CpuInfo, type DiskInfo, type MemoryInfo, type NetworkInterfaceInfo, type SystemInfo } from '@aether/shared';
+import {
+  type CpuInfo,
+  type DiskInfo,
+  type MemoryInfo,
+  type NetworkInterfaceInfo,
+  type SystemInfo,
+} from '@aether/shared';
 
-import type { AgentConfig } from '../config.js';
 import { subsystemLogger } from '../logger.js';
 import { AETHER_VERSION } from '../version.js';
+
+import type { AgentConfig } from '../config.js';
 
 const log = subsystemLogger('system');
 

@@ -10,7 +10,6 @@ import {
   writeFileBodySchema,
 } from '@aether/shared';
 
-
 import { config } from '../config.js';
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
 import { recordAuditEvent } from '../services/audit.service.js';
@@ -39,7 +38,7 @@ import type { FastifyInstance } from 'fastify';
  * check against the realpath of the workspace root before anything touches
  * disk.
  */
-export async function registerFilesRoutes(app: FastifyInstance): Promise<void> {
+export function registerFilesRoutes(app: FastifyInstance): void {
   const readGuards = [authenticate, requirePermission('files:read')];
   const writeGuards = [authenticate, requirePermission('files:write')];
   const deleteGuards = [authenticate, requirePermission('files:delete')];
@@ -51,7 +50,11 @@ export async function registerFilesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/files/stat', { preHandler: readGuards }, async (request) => {
-    const query = parseOrThrow(readFileQuerySchema.pick({ path: true }), request.query, 'stat query');
+    const query = parseOrThrow(
+      readFileQuerySchema.pick({ path: true }),
+      request.query,
+      'stat query'
+    );
     return { data: await statPath(query.path) };
   });
 
@@ -192,7 +195,11 @@ export async function registerFilesRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/files/search', { preHandler: readGuards }, async (request) => {
     const query = parseOrThrow(searchQuerySchema, request.query, 'search query');
-    const results = await searchEntries({ relative: query.path, query: query.query, limit: query.limit });
+    const results = await searchEntries({
+      relative: query.path,
+      query: query.query,
+      limit: query.limit,
+    });
     return { data: { results, total: results.length } };
   });
 

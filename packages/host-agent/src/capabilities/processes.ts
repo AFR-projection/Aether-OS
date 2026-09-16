@@ -3,9 +3,10 @@ import os from 'node:os';
 
 import { type ProcessInfo, type ProcessListResponse } from '@aether/shared';
 
-import type { AgentConfig } from '../config.js';
 import { ForbiddenError, NotFoundError, NotImplementedError } from '../errors.js';
 import { subsystemLogger } from '../logger.js';
+
+import type { AgentConfig } from '../config.js';
 
 const LINUX = process.platform === 'linux';
 
@@ -65,7 +66,7 @@ async function readProcess(
   clockTicks: number,
   bootTimeMs: number,
   protectedPids: ReadonlySet<number>,
-  cfg: AgentConfig,
+  cfg: AgentConfig
 ): Promise<ProcessInfo | null> {
   const statContent = await readProcFile(`/proc/${pid}/stat`);
   if (!statContent) return null;
@@ -139,7 +140,10 @@ export interface ListProcessOptions {
   search?: string;
 }
 
-export async function listProcesses(cfg: AgentConfig, options: ListProcessOptions): Promise<ProcessListResponse> {
+export async function listProcesses(
+  cfg: AgentConfig,
+  options: ListProcessOptions
+): Promise<ProcessListResponse> {
   const emptyResponse: ProcessListResponse = {
     processes: [],
     total: 0,
@@ -214,7 +218,11 @@ export type AllowedProcessSignal = (typeof ALLOWED_PROCESS_SIGNALS)[number];
  * bypassed by a second caller. The guards are checked in order of severity: a
  * disabled feature first, then an unknown process, then the protected set.
  */
-export async function signalProcess(cfg: AgentConfig, pid: number, signal: AllowedProcessSignal): Promise<void> {
+export async function signalProcess(
+  cfg: AgentConfig,
+  pid: number,
+  signal: AllowedProcessSignal
+): Promise<void> {
   if (!cfg.PROCESS_SIGNAL_ENABLED) {
     throw new ForbiddenError(
       'Process signalling is disabled on this instance. Set PROCESS_SIGNAL_ENABLED=true to allow it.',

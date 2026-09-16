@@ -12,10 +12,9 @@ import Fastify, {
   type RawServerDefault,
 } from 'fastify';
 
-
 import { config } from './config.js';
-import { registerAuditRoutes } from './routes/audit.routes.js';
 import { registerAgentRoutes } from './routes/agent.routes.js';
+import { registerAuditRoutes } from './routes/audit.routes.js';
 import { registerAuthRoutes, registerUserRoutes } from './routes/auth.routes.js';
 import { registerFilesRoutes } from './routes/files.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
@@ -23,8 +22,8 @@ import { registerSystemRoutes } from './routes/system.routes.js';
 import { registerTerminalRoutes } from './routes/terminal.routes.js';
 import { isAppError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
-import { registerTerminalWebSocket } from './ws/terminal.ws.js';
 import { registerAgentWebSocket } from './ws/agent.ws.js';
+import { registerTerminalWebSocket } from './ws/terminal.ws.js';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -107,12 +106,9 @@ export async function buildServer(): Promise<FastifyInstance> {
    * route untouched. The size limit is enforced by the upload handler while
    * writing, not by `bodyLimit`, because the body is never buffered.
    */
-  app.addContentTypeParser(
-    'application/octet-stream',
-    (_request, payload, done) => {
-      done(null, payload);
-    },
-  );
+  app.addContentTypeParser('application/octet-stream', (_request, payload, done) => {
+    done(null, payload);
+  });
 
   /**
    * Echo the request id back on every response.
@@ -122,21 +118,21 @@ export async function buildServer(): Promise<FastifyInstance> {
    * the frontend do) has no way to correlate a successful response with the
    * server-side log line — only error bodies carry the id.
    */
-  app.addHook('onSend', async (request, reply, payload) => {
-    reply.header('x-request-id', request.id);
-    return payload;
+  app.addHook('onSend', (request, reply, payload) => {
+    void reply.header('x-request-id', request.id);
+    return Promise.resolve(payload);
   });
 
-  await registerHealthRoutes(app);
-  await registerAuthRoutes(app);
-  await registerUserRoutes(app);
-  await registerFilesRoutes(app);
-  await registerTerminalRoutes(app);
-  await registerSystemRoutes(app);
-  await registerAuditRoutes(app);
-  await registerAgentRoutes(app);
-  await registerTerminalWebSocket(app);
-  await registerAgentWebSocket(app);
+  registerHealthRoutes(app);
+  registerAuthRoutes(app);
+  registerUserRoutes(app);
+  registerFilesRoutes(app);
+  registerTerminalRoutes(app);
+  registerSystemRoutes(app);
+  registerAuditRoutes(app);
+  registerAgentRoutes(app);
+  registerTerminalWebSocket(app);
+  registerAgentWebSocket(app);
 
   const servingFrontend = await registerStaticFrontend(app);
 
@@ -198,7 +194,11 @@ export async function buildServer(): Promise<FastifyInstance> {
     // `reply.sendFile` only exists once `@fastify/static` is registered. Without
     // this guard an API-only deployment (no built frontend) would answer a
     // browser navigating to `/desktop` with a 500 instead of a 404.
-    if (servingFrontend && isSpaRoute(request.url) && request.headers.accept?.includes('text/html')) {
+    if (
+      servingFrontend &&
+      isSpaRoute(request.url) &&
+      request.headers.accept?.includes('text/html')
+    ) {
       return reply.type('text/html').sendFile('index.html');
     }
 
@@ -219,7 +219,9 @@ export async function buildServer(): Promise<FastifyInstance> {
 
 function isSpaRoute(url: string): boolean {
   const pathname = url.split('?')[0] ?? url;
-  return !pathname.startsWith('/api') && !pathname.startsWith('/ws') && !pathname.startsWith('/health');
+  return (
+    !pathname.startsWith('/api') && !pathname.startsWith('/ws') && !pathname.startsWith('/health')
+  );
 }
 
 /**
@@ -244,7 +246,7 @@ async function registerStaticFrontend(app: FastifyInstance): Promise<boolean> {
   } catch {
     app.log.warn(
       { staticDir: root },
-      'AETHER_STATIC_DIR is set but does not contain index.html; the API will run without serving the UI',
+      'AETHER_STATIC_DIR is set but does not contain index.html; the API will run without serving the UI'
     );
     return false;
   }
@@ -257,9 +259,9 @@ async function registerStaticFrontend(app: FastifyInstance): Promise<boolean> {
     // or a deploy would keep serving the previous bundle.
     setHeaders: (response, filePath) => {
       if (filePath.endsWith('index.html')) {
-        response.setHeader('Cache-Control', 'no-cache');
+        void response.setHeader('Cache-Control', 'no-cache');
       } else {
-        response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        void response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       }
     },
   });

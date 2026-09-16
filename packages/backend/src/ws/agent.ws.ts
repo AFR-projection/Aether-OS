@@ -1,7 +1,7 @@
 import { LIMITS, WS_CLOSE } from '@aether/shared';
 
-import { authenticateAgent } from '../services/agent-pairing.service.js';
 import { dispatchAgentMessage } from '../services/agent-gateway.service.js';
+import { authenticateAgent } from '../services/agent-pairing.service.js';
 import { subsystemLogger } from '../utils/logger.js';
 
 import type { FastifyInstance } from 'fastify';
@@ -20,7 +20,7 @@ const MAX_FRAMES_PER_SECOND = 200;
  * before it reaches a capability, so a compromised agent can only invoke the
  * capability surface, never raw shell.
  */
-export async function registerAgentWebSocket(app: FastifyInstance): Promise<void> {
+export function registerAgentWebSocket(app: FastifyInstance): void {
   app.get('/ws/agent', { websocket: true }, (socket, request) => {
     const query = request.query as { agentId?: string; token?: string };
     const agentId = query.agentId;

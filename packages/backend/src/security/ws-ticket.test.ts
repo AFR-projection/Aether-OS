@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { UnauthenticatedError } from '../utils/errors.js';
-
 import { WS_TICKET_TTL_MS, issueTicket, redeemTicket } from './ws-ticket.js';
+import { UnauthenticatedError } from '../utils/errors.js';
 
 /**
  * Single-use WebSocket tickets.
@@ -56,7 +55,9 @@ describe('ws tickets', () => {
   });
 
   it('rejects an unknown ticket', async () => {
-    await expect(redeemTicket('not-a-real-ticket', 'session-1')).rejects.toThrow(UnauthenticatedError);
+    await expect(redeemTicket('not-a-real-ticket', 'session-1')).rejects.toThrow(
+      UnauthenticatedError
+    );
   });
 
   it('expires a ticket after its TTL', async () => {

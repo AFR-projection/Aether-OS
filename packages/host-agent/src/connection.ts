@@ -1,10 +1,8 @@
 import os from 'node:os';
 
+import { LIMITS, WS_CLOSE, type TerminalServerMessage } from '@aether/shared';
 import WebSocket from 'ws';
 
-import { LIMITS, WS_CLOSE, type TerminalServerMessage } from '@aether/shared';
-
-import type { AgentConfig } from './config.js';
 import { subsystemLogger } from './logger.js';
 import {
   agentCapabilities,
@@ -15,6 +13,8 @@ import {
 } from './protocol.js';
 import { dispatchRequest, subscribeToSession } from './router.js';
 import { AETHER_VERSION } from './version.js';
+
+import type { AgentConfig } from './config.js';
 
 const log = subsystemLogger('connection');
 
@@ -58,7 +58,7 @@ export class AgentConnection {
 
   constructor(
     private readonly cfg: AgentConfig,
-    private readonly events: ConnectionEvents,
+    private readonly events: ConnectionEvents
   ) {}
 
   start(): void {
@@ -178,7 +178,11 @@ export class AgentConnection {
       });
 
       socket.on('message', (raw: WebSocket.RawData) => {
-        const text = raw.toString();
+        const text = Buffer.isBuffer(raw)
+          ? raw.toString('utf8')
+          : Array.isArray(raw)
+            ? Buffer.concat(raw).toString('utf8')
+            : Buffer.from(raw).toString('utf8');
         if (Buffer.byteLength(text, 'utf8') > LIMITS.WS_MESSAGE_MAX_BYTES) {
           log.warn('oversize frame dropped');
           return;
@@ -307,7 +311,7 @@ export class AgentConnection {
 
     // Terminal subscription management from the backend.
     if (record['type'] === 'terminal.subscribe' && typeof record['id'] === 'string') {
-      await this.handleSubscribe(socket, String(record['id']), record);
+      this.handleSubscribe(socket, String(record['id']), record);
       return;
     }
     if (record['type'] === 'terminal.unsubscribe' && typeof record['id'] === 'string') {
@@ -324,13 +328,23 @@ export class AgentConnection {
       request = parseAgentMessage(text);
     } catch (error) {
       const id = typeof record['id'] === 'string' ? record['id'] : 'unknown';
-      this.send(socket, errReply(id, 'VALIDATION_FAILED', error instanceof Error ? error.message : 'Invalid message'));
+      this.send(
+        socket,
+        errReply(
+          id,
+          'VALIDATION_FAILED',
+          error instanceof Error ? error.message : 'Invalid message'
+        )
+      );
       return;
     }
 
     const owner = this.ownerUserId;
     if (!owner) {
-      this.send(socket, errReply(request.id, 'UNAUTHENTICATED', 'Agent has not completed pairing yet'));
+      this.send(
+        socket,
+        errReply(request.id, 'UNAUTHENTICATED', 'Agent has not completed pairing yet')
+      );
       return;
     }
 
@@ -338,11 +352,7 @@ export class AgentConnection {
     this.send(socket, reply);
   }
 
-  private async handleSubscribe(
-    socket: WebSocket,
-    id: string,
-    record: Record<string, unknown>,
-  ): Promise<void> {
+  private handleSubscribe(socket: WebSocket, id: string, record: Record<string, unknown>): void {
     const owner = this.ownerUserId;
     if (!owner) {
       this.send(socket, errReply(id, 'UNAUTHENTICATED', 'Agent has not completed pairing yet'));
@@ -368,7 +378,11 @@ export class AgentConnection {
     }
   }
 
-  private sendTerminalEvent(socket: WebSocket, sessionId: string, message: TerminalServerMessage): void {
+  private sendTerminalEvent(
+    socket: WebSocket,
+    sessionId: string,
+    message: TerminalServerMessage
+  ): void {
     this.requestCounter += 1;
     this.send(socket, {
       id: `evt-${Date.now()}-${this.requestCounter}`,

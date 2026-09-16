@@ -33,7 +33,7 @@ const settingsUpdateSchema = z.object({
   settings: z.record(z.unknown()),
 });
 
-export async function registerSystemRoutes(app: FastifyInstance): Promise<void> {
+export function registerSystemRoutes(app: FastifyInstance): void {
   app.get(
     '/api/system/info',
     { preHandler: [authenticate, requirePermission('system:read')] },

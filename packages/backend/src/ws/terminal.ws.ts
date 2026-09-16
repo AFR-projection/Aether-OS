@@ -1,9 +1,19 @@
-import { LIMITS, terminalClientMessageSchema, WS_CLOSE, type TerminalServerMessage } from '@aether/shared';
-
+import {
+  LIMITS,
+  terminalClientMessageSchema,
+  WS_CLOSE,
+  type TerminalServerMessage,
+} from '@aether/shared';
 
 import { config } from '../config.js';
 import { redeemTicket } from '../security/ws-ticket.js';
-import { attach, isTerminalAvailable, resizeSession, sendSignal, writeInput } from '../services/terminal.service.js';
+import {
+  attach,
+  isTerminalAvailable,
+  resizeSession,
+  sendSignal,
+  writeInput,
+} from '../services/terminal.service.js';
 import { subsystemLogger } from '../utils/logger.js';
 
 import type { FastifyInstance } from 'fastify';
@@ -19,7 +29,7 @@ const log = subsystemLogger('terminal-ws');
  */
 const MAX_FRAMES_PER_SECOND = 200;
 
-export async function registerTerminalWebSocket(app: FastifyInstance): Promise<void> {
+export function registerTerminalWebSocket(app: FastifyInstance): void {
   app.get('/ws/terminal/:id', { websocket: true }, (socket, request) => {
     const params = request.params as { id?: string };
     const sessionId = params.id;
@@ -101,7 +111,11 @@ export async function registerTerminalWebSocket(app: FastifyInstance): Promise<v
         frameBudget.count += 1;
 
         if (frameBudget.count > MAX_FRAMES_PER_SECOND) {
-          send(socket, { type: 'error', code: 'RATE_LIMITED', message: 'Too many terminal messages' });
+          send(socket, {
+            type: 'error',
+            code: 'RATE_LIMITED',
+            message: 'Too many terminal messages',
+          });
           socket.close(WS_CLOSE.RATE_LIMITED, 'Rate limited');
           return;
         }
@@ -128,7 +142,11 @@ export async function registerTerminalWebSocket(app: FastifyInstance): Promise<v
 
         const result = terminalClientMessageSchema.safeParse(parsed);
         if (!result.success) {
-          send(socket, { type: 'error', code: 'INVALID_MESSAGE', message: 'Unsupported terminal message' });
+          send(socket, {
+            type: 'error',
+            code: 'INVALID_MESSAGE',
+            message: 'Unsupported terminal message',
+          });
           return;
         }
 
@@ -170,7 +188,10 @@ export async function registerTerminalWebSocket(app: FastifyInstance): Promise<v
 
       // Detaching does not kill the shell: a page reload should reconnect to a
       // live session, and the idle timer reclaims abandoned ones.
-      log.debug({ sessionId, userId, idleTimeoutMs: config.TERMINAL_IDLE_TIMEOUT }, 'terminal websocket attached');
+      log.debug(
+        { sessionId, userId, idleTimeoutMs: config.TERMINAL_IDLE_TIMEOUT },
+        'terminal websocket attached'
+      );
     })();
   });
 
@@ -179,7 +200,7 @@ export async function registerTerminalWebSocket(app: FastifyInstance): Promise<v
 
 function send(
   socket: { readyState: number; OPEN: number; send(data: string): void },
-  message: TerminalServerMessage,
+  message: TerminalServerMessage
 ): void {
   if (socket.readyState !== socket.OPEN) return;
   try {

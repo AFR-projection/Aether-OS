@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { killAllSessions, resetSessionsForTests } from '../capabilities/terminal.js';
 import { loadConfig } from '../config.js';
 import { createLogger } from '../logger.js';
-import { resetWorkspaceRootCache } from '../security/workspace.js';
-import { killAllSessions, resetSessionsForTests } from '../capabilities/terminal.js';
 import { getSystemInfo } from './system.js';
+import { resetWorkspaceRootCache } from '../security/workspace.js';
 
 beforeEach(() => {
   resetSessionsForTests();

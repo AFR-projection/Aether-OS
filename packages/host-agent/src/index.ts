@@ -1,9 +1,9 @@
+import { killAllSessions } from './capabilities/terminal.js';
 import { loadConfig } from './config.js';
 import { AgentConnection } from './connection.js';
 import { createLogger, getLogger, logStartupConfiguration } from './logger.js';
-import { killAllSessions } from './capabilities/terminal.js';
 
-async function main(): Promise<void> {
+function main(): void {
   const cfg = loadConfig();
   createLogger(cfg);
   logStartupConfiguration(cfg);
@@ -63,10 +63,12 @@ async function main(): Promise<void> {
   log.info('agent started');
 }
 
-void main().catch((error: unknown) => {
+try {
+  main();
+} catch (error: unknown) {
   // Logger may not exist yet if config failed; fall back to stderr and never
   // print the error object itself, which could contain secret material.
   // eslint-disable-next-line no-console
   console.error('Failed to start agent:', error instanceof Error ? error.message : 'unknown error');
   process.exit(1);
-});
+}

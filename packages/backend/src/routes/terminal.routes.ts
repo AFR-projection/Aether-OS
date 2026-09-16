@@ -5,7 +5,6 @@ import {
   terminalInputBodySchema,
 } from '@aether/shared';
 
-
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
 import { issueTicket } from '../security/ws-ticket.js';
 import { recordAuditEvent } from '../services/audit.service.js';
@@ -24,16 +23,19 @@ import { parseOrThrow } from '../utils/validate.js';
 
 import type { FastifyInstance } from 'fastify';
 
-export async function registerTerminalRoutes(app: FastifyInstance): Promise<void> {
+export function registerTerminalRoutes(app: FastifyInstance): void {
   const guards = [authenticate, requirePermission('terminal:create')];
 
-  app.get('/api/terminal/status', { preHandler: [authenticate] }, async () => ({
+  app.get('/api/terminal/status', { preHandler: [authenticate] }, () => ({
     data: terminalStats(),
   }));
 
-  app.get('/api/terminal/sessions', { preHandler: guards }, async (request) => {
-    const principal = requirePrincipal(request);
-    return { data: { sessions: listSessionsForUser(principal.user.id) } };
+  app.get('/api/terminal/sessions', {
+    preHandler: guards,
+    handler: (request) => {
+      const principal = requirePrincipal(request);
+      return { data: { sessions: listSessionsForUser(principal.user.id) } };
+    },
   });
 
   app.post('/api/terminal/sessions', { preHandler: guards }, async (request, reply) => {
@@ -63,7 +65,7 @@ export async function registerTerminalRoutes(app: FastifyInstance): Promise<void
     return reply.status(201).send({ data: session });
   });
 
-  app.get('/api/terminal/sessions/:id', { preHandler: guards }, async (request) => {
+  app.get('/api/terminal/sessions/:id', { preHandler: guards }, (request) => {
     const principal = requirePrincipal(request);
     const params = parseOrThrow(terminalIdParamSchema, request.params, 'session id');
     return { data: getOwnedSession(params.id, principal.user.id) };
@@ -113,7 +115,7 @@ export async function registerTerminalRoutes(app: FastifyInstance): Promise<void
     return reply.status(204).send();
   });
 
-  app.get('/api/terminal/available', async () => ({ data: { available: isTerminalAvailable() } }));
+  app.get('/api/terminal/available', () => ({ data: { available: isTerminalAvailable() } }));
 
   /**
    * Issues a single-use ticket for the WebSocket handshake.
@@ -132,6 +134,6 @@ export async function registerTerminalRoutes(app: FastifyInstance): Promise<void
       getOwnedSession(params.id, principal.user.id);
 
       return { data: await issueTicket(params.id, principal.user.id) };
-    },
+    }
   );
 }

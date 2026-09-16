@@ -14,7 +14,6 @@ import {
   type AuthSession,
 } from '@aether/shared';
 
-
 import { config } from '../config.js';
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
 import { recordAuditEvent } from '../services/audit.service.js';
@@ -45,7 +44,12 @@ import {
   toPublicUser,
   updateUser,
 } from '../services/user.service.js';
-import { ConflictError, ForbiddenError, NotFoundError, UnauthenticatedError } from '../utils/errors.js';
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  UnauthenticatedError,
+} from '../utils/errors.js';
 import { parseOrThrow } from '../utils/validate.js';
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -61,7 +65,7 @@ function requestContext(request: FastifyRequest): { ipAddress: string; userAgent
   };
 }
 
-export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
+export function registerAuthRoutes(app: FastifyInstance): void {
   /**
    * Reports whether the instance still needs its first (owner) account.
    * Unauthenticated by necessity: the login screen needs it before any
@@ -175,7 +179,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         });
         throw new UnauthenticatedError(
           'Account is temporarily locked after repeated failed sign-in attempts',
-          'INVALID_CREDENTIALS',
+          'INVALID_CREDENTIALS'
         );
       }
 
@@ -255,7 +259,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.post('/api/auth/logout', { preHandler: authenticate }, async (request, reply) => {
+  app.post('/api/auth/logout', { preHandler: [authenticate] }, async (request, reply) => {
     const principal = requirePrincipal(request);
     await revokeSession(principal.sessionId, 'user_logout');
     killSessionsForUser(principal.user.id, 'logout');
@@ -273,18 +277,22 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** Verifies the current access token and returns the caller's profile. */
-  app.get('/api/auth/me', { preHandler: authenticate }, async (request) => {
-    const principal = requirePrincipal(request);
-    return { data: principal.user };
+  app.get('/api/auth/me', {
+    preHandler: [authenticate],
+    handler: (request) => {
+      const principal = requirePrincipal(request);
+      return { data: principal.user };
+    },
   });
 
   /** Lists the caller's active sessions, for the Settings app. */
-  app.get('/api/auth/sessions', { preHandler: authenticate }, async (request) => {
-    const principal = requirePrincipal(request);
-    const rows = await listSessionsForUser(principal.user.id);
+  app.get('/api/auth/sessions', {
+    preHandler: [authenticate],
+    handler: async (request) => {
+      const principal = requirePrincipal(request);
+      const rows = await listSessionsForUser(principal.user.id);
 
-    const sessions = rows.map(
-      (row): AuthSession => ({
+      const sessions = rows.map((row): AuthSession => ({
         id: row.id,
         userAgent: row.user_agent,
         ipAddress: row.ip_address,
@@ -292,82 +300,88 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         lastSeenAt: row.last_seen_at.toISOString(),
         expiresAt: row.expires_at.toISOString(),
         current: row.id === principal.sessionId,
-      }),
-    );
+      }));
 
-    return { data: parseOrThrow(listSessionsResponseSchema, sessions) };
+      return { data: parseOrThrow(listSessionsResponseSchema, sessions) };
+    },
   });
 
-  app.delete('/api/auth/sessions/:id', { preHandler: authenticate }, async (request, reply) => {
-    const principal = requirePrincipal(request);
-    const params = parseOrThrow(sessionIdParamSchema, request.params, 'session id');
+  app.delete('/api/auth/sessions/:id', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const principal = requirePrincipal(request);
+      const params = parseOrThrow(sessionIdParamSchema, request.params, 'session id');
 
-    const session = await findSessionById(params.id);
-    if (!session || session.user_id !== principal.user.id) {
-      // Same response whether the session is someone else's or does not exist.
-      throw new NotFoundError('Session not found');
-    }
+      const session = await findSessionById(params.id);
+      if (!session || session.user_id !== principal.user.id) {
+        // Same response whether the session is someone else's or does not exist.
+        throw new NotFoundError('Session not found');
+      }
 
-    await revokeSession(params.id, 'user_revoked');
+      await revokeSession(params.id, 'user_revoked');
 
-    await recordAuditEvent({
-      action: 'auth.session.revoked',
-      outcome: 'success',
-      actorUserId: principal.user.id,
-      actorUsername: principal.user.username,
-      sessionId: principal.sessionId,
-      target: params.id,
-      ...requestContext(request),
-    });
+      await recordAuditEvent({
+        action: 'auth.session.revoked',
+        outcome: 'success',
+        actorUserId: principal.user.id,
+        actorUsername: principal.user.username,
+        sessionId: principal.sessionId,
+        target: params.id,
+        ...requestContext(request),
+      });
 
-    return reply.status(204).send();
+      return reply.status(204).send();
+    },
   });
 
-  app.post('/api/auth/password', { preHandler: authenticate }, async (request, reply) => {
-    const principal = requirePrincipal(request);
-    const body = parseOrThrow(changePasswordRequestSchema, request.body, 'password change');
+  app.post('/api/auth/password', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const principal = requirePrincipal(request);
+      const body = parseOrThrow(changePasswordRequestSchema, request.body, 'password change');
 
-    const user = await findUserById(principal.user.id);
-    if (!user) throw new NotFoundError('User not found');
+      const user = await findUserById(principal.user.id);
+      if (!user) throw new NotFoundError('User not found');
 
-    const valid = await verifyPassword(body.currentPassword, user.password_hash);
-    if (!valid) {
-      throw new UnauthenticatedError('Current password is incorrect', 'INVALID_CREDENTIALS');
-    }
+      const valid = await verifyPassword(body.currentPassword, user.password_hash);
+      if (!valid) {
+        throw new UnauthenticatedError('Current password is incorrect', 'INVALID_CREDENTIALS');
+      }
 
-    await updateUser(user.id, { passwordHash: await hashPassword(body.newPassword) });
+      await updateUser(user.id, { passwordHash: await hashPassword(body.newPassword) });
 
-    // Every session is revoked, including the one this request arrived on —
-    // changing a password must not leave a stolen refresh token usable. A fresh
-    // session is then issued and its tokens are returned here, because the
-    // caller's existing pair is now dead. (Returning nothing would sign the user
-    // out of the tab they just changed their password in, once the five-second
-    // session cache expired and the next request failed.)
-    const revoked = await revokeAllSessionsForUser(user.id, 'password_changed');
-    const session = await createSession({
-      userId: user.id,
-      userAgent: request.headers['user-agent'] ?? null,
-      ipAddress: request.ip,
-    });
+      // Every session is revoked, including the one this request arrived on —
+      // changing a password must not leave a stolen refresh token usable. A fresh
+      // session is then issued and its tokens are returned here, because the
+      // caller's existing pair is now dead. (Returning nothing would sign the user
+      // out of the tab they just changed their password in, once the five-second
+      // session cache expired and the next request failed.)
+      const revoked = await revokeAllSessionsForUser(user.id, 'password_changed');
+      const session = await createSession({
+        userId: user.id,
+        userAgent: request.headers['user-agent'] ?? null,
+        ipAddress: request.ip,
+      });
 
-    await recordAuditEvent({
-      action: 'settings.updated',
-      outcome: 'success',
-      actorUserId: user.id,
-      actorUsername: user.username,
-      sessionId: session.sessionId,
-      metadata: { change: 'password', sessionsRevoked: revoked },
-      ...requestContext(request),
-    });
+      await recordAuditEvent({
+        action: 'settings.updated',
+        outcome: 'success',
+        actorUserId: user.id,
+        actorUsername: user.username,
+        sessionId: session.sessionId,
+        metadata: { change: 'password', sessionsRevoked: revoked },
+        ...requestContext(request),
+      });
 
-    return reply.send({
-      data: { ...buildLoginResponse(user, session), sessionsRevoked: revoked },
-    });
+      return reply.send({
+        data: { ...buildLoginResponse(user, session), sessionsRevoked: revoked },
+      });
+    },
   });
 }
 
 /** User administration. Requires the `users:manage` permission. */
-export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
+export function registerUserRoutes(app: FastifyInstance): void {
   app.get(
     '/api/users',
     { preHandler: [authenticate, requirePermission('users:manage')] },
@@ -376,7 +390,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       const users = await listUsers();
       const slice = users.slice(pagination.offset, pagination.offset + pagination.limit);
       return { data: { users: slice.map(toPublicUser), total: users.length } };
-    },
+    }
   );
 
   app.post(
@@ -412,7 +426,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       });
 
       return reply.status(201).send({ data: toPublicUser(user) });
-    },
+    }
   );
 
   app.patch(
@@ -453,7 +467,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       });
 
       return { data: updated ? toPublicUser(updated) : null };
-    },
+    }
   );
 
   app.delete(
@@ -487,7 +501,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       });
 
       return reply.status(204).send();
-    },
+    }
   );
 }
 

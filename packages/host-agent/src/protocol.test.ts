@@ -1,6 +1,5 @@
-import { describe, expect, it } from 'vitest';
-
 import { LIMITS } from '@aether/shared';
+import { describe, expect, it } from 'vitest';
 
 import { errReply, okReply, parseAgentMessage } from './protocol.js';
 
@@ -11,14 +10,16 @@ describe('parseAgentMessage', () => {
   });
 
   it('applies defaults for processes.list', () => {
-    const request = parseAgentMessage(JSON.stringify({ id: 'a2', type: 'processes.list', params: {} }));
+    const request = parseAgentMessage(
+      JSON.stringify({ id: 'a2', type: 'processes.list', params: {} })
+    );
     expect(request.type).toBe('processes.list');
     expect(request.params).toMatchObject({ limit: 100 });
   });
 
   it('rejects an unknown message type', () => {
     expect(() => parseAgentMessage(JSON.stringify({ id: 'a3', type: 'nope' }))).toThrow(
-      /unsupported message type/i,
+      /unsupported message type/i
     );
   });
 
@@ -33,16 +34,24 @@ describe('parseAgentMessage', () => {
   it('rejects out-of-range process signal pids', () => {
     expect(() =>
       parseAgentMessage(
-        JSON.stringify({ id: 'a4', type: 'processes.signal', params: { pid: 0, signal: 'SIGTERM' } }),
-      ),
+        JSON.stringify({
+          id: 'a4',
+          type: 'processes.signal',
+          params: { pid: 0, signal: 'SIGTERM' },
+        })
+      )
     ).toThrow(/invalid params/i);
   });
 
   it('rejects an unsupported process signal', () => {
     expect(() =>
       parseAgentMessage(
-        JSON.stringify({ id: 'a5', type: 'processes.signal', params: { pid: 42, signal: 'SIGSTOP' } }),
-      ),
+        JSON.stringify({
+          id: 'a5',
+          type: 'processes.signal',
+          params: { pid: 42, signal: 'SIGSTOP' },
+        })
+      )
     ).toThrow(/invalid params/i);
   });
 
@@ -54,28 +63,32 @@ describe('parseAgentMessage', () => {
           id: 'a6',
           type: 'terminal.input',
           params: { id: '00000000-0000-4000-8000-000000000001', data: oversized },
-        }),
-      ),
+        })
+      )
     ).toThrow(/invalid params/i);
   });
 
   it('rejects absolute file paths at the protocol boundary', () => {
     expect(() =>
-      parseAgentMessage(JSON.stringify({ id: 'a7', type: 'files.read', params: { path: '/etc/passwd' } })),
+      parseAgentMessage(
+        JSON.stringify({ id: 'a7', type: 'files.read', params: { path: '/etc/passwd' } })
+      )
     ).toThrow(/invalid params/i);
   });
 
   it('rejects parent traversal at the protocol boundary', () => {
     expect(() =>
-      parseAgentMessage(JSON.stringify({ id: 'a8', type: 'files.read', params: { path: '../secret' } })),
+      parseAgentMessage(
+        JSON.stringify({ id: 'a8', type: 'files.read', params: { path: '../secret' } })
+      )
     ).toThrow(/invalid params/i);
   });
 
   it('rejects unknown params keys (strict schemas)', () => {
     expect(() =>
       parseAgentMessage(
-        JSON.stringify({ id: 'a9', type: 'system.info', params: { extra: 'nope' } }),
-      ),
+        JSON.stringify({ id: 'a9', type: 'system.info', params: { extra: 'nope' } })
+      )
     ).toThrow(/invalid params/i);
   });
 
@@ -85,7 +98,7 @@ describe('parseAgentMessage', () => {
         id: 'a10',
         type: 'terminal.resize',
         params: { id: '00000000-0000-4000-8000-000000000001', cols: 120, rows: 40 },
-      }),
+      })
     );
     expect(request.type).toBe('terminal.resize');
   });

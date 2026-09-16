@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { killAllSessions, resetSessionsForTests } from '../capabilities/terminal.js';
 import { loadConfig } from '../config.js';
 import { createLogger } from '../logger.js';
-import { resetWorkspaceRootCache } from '../security/workspace.js';
-import { killAllSessions, resetSessionsForTests } from '../capabilities/terminal.js';
 import { listProcesses, signalProcess, ALLOWED_PROCESS_SIGNALS } from './processes.js';
+import { resetWorkspaceRootCache } from '../security/workspace.js';
 
 beforeEach(() => {
   resetSessionsForTests();
@@ -38,7 +38,9 @@ describe('signalProcess', () => {
 
   it('refuses to signal its own process', async () => {
     const cfg = loadConfig();
-    await expect(signalProcess(cfg, process.pid, 'SIGTERM')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(signalProcess(cfg, process.pid, 'SIGTERM')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
   });
 });
 
@@ -48,7 +50,7 @@ describe('ALLOWED_PROCESS_SIGNALS', () => {
     // SIGKILL is a last resort but the policy allows it; SIGSTOP/SIGKILL-pair
     // is the uncatchable one we must NOT permit for ordinary process control,
     // but SIGTERM/SIGINT/SIGHUP/SIGKILL are all in the allowlist per the spec.
-    expect(set.has('SIGSTOP')).toBe(false);
+    expect([...set]).not.toContain('SIGSTOP');
     expect(set.has('SIGKILL')).toBe(true);
   });
 });

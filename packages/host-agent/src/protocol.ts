@@ -1,11 +1,5 @@
+import { LIMITS, relativePathSchema, terminalClientMessageSchema, WS_CLOSE } from '@aether/shared';
 import { z } from 'zod';
-
-import {
-  LIMITS,
-  relativePathSchema,
-  terminalClientMessageSchema,
-  WS_CLOSE,
-} from '@aether/shared';
 
 export { LIMITS, WS_CLOSE };
 
@@ -66,14 +60,15 @@ export const processSignalParamsSchema = z
   })
   .strict();
 
-export const filesListParamsSchema = z
-  .object({ path: relativePathSchema.default('') })
-  .strict();
+export const filesListParamsSchema = z.object({ path: relativePathSchema.default('') }).strict();
 
 export const filesReadParamsSchema = z.object({ path: relativePathSchema }).strict();
 
 export const filesWriteParamsSchema = z
-  .object({ path: relativePathSchema, contentBase64: z.string().max(LIMITS.MAX_FILE_READ_BYTES * 2) })
+  .object({
+    path: relativePathSchema,
+    contentBase64: z.string().max(LIMITS.MAX_FILE_READ_BYTES * 2),
+  })
   .strict();
 
 export const filesDeleteParamsSchema = z.object({ path: relativePathSchema }).strict();
@@ -92,7 +87,13 @@ export const terminalCreateParamsSchema = z
 export const terminalIdParamsSchema = z.object({ id: uuidSchema }).strict();
 
 export const terminalInputParamsSchema = z
-  .object({ id: uuidSchema, data: z.string().min(1).max(64 * 1024) })
+  .object({
+    id: uuidSchema,
+    data: z
+      .string()
+      .min(1)
+      .max(64 * 1024),
+  })
   .strict();
 
 export const terminalResizeParamsSchema = z
@@ -161,7 +162,7 @@ export function parseAgentMessage(raw: string): ParsedRequest {
     throw new Error(`Invalid params for ${envelope.data.type}: ${errorMessage(params.error)}`);
   }
 
-  return { id: envelope.data.id, type: envelope.data.type as RequestType, params: params.data };
+  return { id: envelope.data.id, type: envelope.data.type, params: params.data };
 }
 
 export interface ReplyOk {

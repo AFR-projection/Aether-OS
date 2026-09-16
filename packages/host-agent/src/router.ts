@@ -1,14 +1,5 @@
 import { Buffer } from 'node:buffer';
 
-import type { AgentConfig } from './config.js';
-import { toErrorCode, toStatusCode } from './errors.js';
-import { subsystemLogger } from './logger.js';
-import {
-  errReply,
-  okReply,
-  type ParsedRequest,
-  type Reply,
-} from './protocol.js';
 import {
   createDirectory,
   deleteEntry,
@@ -32,6 +23,11 @@ import {
   sendSignal,
   writeInput,
 } from './capabilities/terminal.js';
+import { toErrorCode, toStatusCode } from './errors.js';
+import { subsystemLogger } from './logger.js';
+import { errReply, okReply, type ParsedRequest, type Reply } from './protocol.js';
+
+import type { AgentConfig } from './config.js';
 
 const log = subsystemLogger('router');
 
@@ -95,7 +91,7 @@ interface TerminalSignalParams {
 export async function dispatchRequest(
   cfg: AgentConfig,
   ownerUserId: string,
-  request: ParsedRequest,
+  request: ParsedRequest
 ): Promise<Reply> {
   try {
     const result = await route(cfg, ownerUserId, request);
@@ -116,7 +112,11 @@ export async function dispatchRequest(
   }
 }
 
-async function route(cfg: AgentConfig, ownerUserId: string, request: ParsedRequest): Promise<unknown> {
+async function route(
+  cfg: AgentConfig,
+  ownerUserId: string,
+  request: ParsedRequest
+): Promise<unknown> {
   switch (request.type) {
     case 'system.info': {
       return getSystemInfo(cfg);
@@ -220,7 +220,7 @@ export function subscribeToSession(
   cfg: AgentConfig,
   sessionId: string,
   ownerUserId: string,
-  onMessage: (message: { type: string; data?: string }) => void,
+  onMessage: (message: { type: string; data?: string }) => void
 ): () => void {
   const attached = attach(cfg, sessionId, ownerUserId, onMessage);
   for (const chunk of attached.replay) {
