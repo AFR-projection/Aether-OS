@@ -114,7 +114,7 @@ health_check() {
 
     local attempts=60
     while [ $attempts -gt 0 ]; do
-        if curl -sf --max-time 5 http://127.0.0.1/health >/dev/null 2>&1; then
+        if curl -sf --max-time 5 --resolve "${AETHER_DOMAIN}:80:127.0.0.1" "http://${AETHER_DOMAIN}/health" >/dev/null 2>&1; then
             info "Caddy → backend health check passed"
             break
         fi
@@ -123,9 +123,11 @@ health_check() {
     done
 
     if [ $attempts -eq 0 ]; then
-        warn "Stack is not answering on http://127.0.0.1/health yet."
-        warn "Check progress with: aether logs -f backend"
-        return
+        warn "Stack is not answering on http://${AETHER_DOMAIN}/health yet."
+        warn "Recent container status:"
+        compose_cmd ps 2>/dev/null || true
+        warn "Check progress with: aether logs backend"
+        fatal "Health check failed. Fix the reported service and rerun with --resume."
     fi
 
     # Post-install security check (contract §6.2): internal ports must NOT be

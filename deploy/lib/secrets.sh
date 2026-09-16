@@ -12,9 +12,12 @@
 
 generate_secret_alnum() {
     local length="${1:-32}"
-    # base64 then strip non-alphanumerics so the value is safe inside
-    # DATABASE_URL and any shell that sources .env.
-    openssl rand -base64 256 | tr -dc 'a-zA-Z0-9' | head -c "$length"
+    # Do not pipe into head: with pipefail enabled, the producer can receive
+    # SIGPIPE and make an otherwise successful install fail intermittently.
+    local value
+    value=$(openssl rand -base64 256 | tr -dc 'a-zA-Z0-9')
+    [ "${#value}" -ge "$length" ] || fatal "CSPRNG returned too few alphanumeric bytes"
+    printf '%s' "${value:0:length}"
 }
 
 generate_secret_hex() {
@@ -31,6 +34,7 @@ generate_secret_base64() {
 # persisting it only when the file does not exist yet.
 ensure_secret() {
     local name="$1" generator="$2"
+    shift 2
     local file="$AETHER_SECRETS_DIR/$name"
 
     if [ ! -d "$AETHER_SECRETS_DIR" ]; then
@@ -39,11 +43,11 @@ ensure_secret() {
     fi
 
     if [ -s "$file" ]; then
-        info "Reusing existing secret: $name"
+        info "Reusing existing secret: $name" >&2
     else
-        info "Generating new secret: $name"
+        info "Generating new secret: $name" >&2
         umask 077
-        "$generator" > "$file"
+        "$generator" "$@" > "$file"
         chmod 600 "$file"
     fi
 

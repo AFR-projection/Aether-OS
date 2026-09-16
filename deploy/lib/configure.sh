@@ -34,23 +34,40 @@ validate_email() {
 }
 
 prompt_for_settings() {
-    # Skipped when the operator already answered (flags or --yes), or when
-    # there is no TTY to read from — the defaults documented below then apply.
-    if [ "${AETHER_YES:-false}" = "true" ] || [ ! -t 0 ]; then
-        info "Non-interactive install: using domain '$AETHER_DOMAIN_TEMPLATE', email '$AETHER_ADMIN_EMAIL_TEMPLATE'"
-        AETHER_DOMAIN="$AETHER_DOMAIN_TEMPLATE"
-        AETHER_ADMIN_EMAIL="$AETHER_ADMIN_EMAIL_TEMPLATE"
-    else
-        printf 'Domain for this instance [%s]: ' "$AETHER_DOMAIN_TEMPLATE"
-        read -r answer || true
-        AETHER_DOMAIN="${answer:-$AETHER_DOMAIN_TEMPLATE}"
-        printf 'Admin email for certificate notices [%s]: ' "$AETHER_ADMIN_EMAIL_TEMPLATE"
-        read -r answer || true
-        AETHER_ADMIN_EMAIL="${answer:-$AETHER_ADMIN_EMAIL_TEMPLATE}"
+    # Never overwrite values supplied through --domain/--email or the
+    # environment. This is especially important for `curl | bash`, where
+    # stdin is not a TTY and the old implementation silently replaced CLI
+    # values with the literal template placeholders.
+    local domain="${AETHER_DOMAIN:-}"
+    local email="${AETHER_ADMIN_EMAIL:-}"
+
+    if [ -z "$domain" ]; then
+        if [ "${AETHER_YES:-false}" = "true" ] || [ ! -t 0 ]; then
+            domain="$AETHER_DOMAIN_TEMPLATE"
+        else
+            printf 'Domain for this instance: '
+            read -r domain || true
+        fi
     fi
 
-    validate_domain "$AETHER_DOMAIN"
-    validate_email "$AETHER_ADMIN_EMAIL"
+    if [ -z "$email" ]; then
+        if [ "${AETHER_YES:-false}" = "true" ] || [ ! -t 0 ]; then
+            email="$AETHER_ADMIN_EMAIL_TEMPLATE"
+        else
+            printf 'Admin email for certificate notices: '
+            read -r email || true
+        fi
+    fi
+
+    # A packaged release may replace these placeholders with defaults. If it
+    # did not, fail clearly instead of writing invalid Caddy configuration.
+    [[ "$domain" != *'{{'* ]] || fatal "No domain supplied. Use --domain example.com (or configure a packaged domain default)."
+    [[ "$email" != *'{{'* ]] || fatal "No admin email supplied. Use --email admin@example.com."
+
+    validate_domain "$domain"
+    validate_email "$email"
+    AETHER_DOMAIN="$domain"
+    AETHER_ADMIN_EMAIL="$email"
     export AETHER_DOMAIN AETHER_ADMIN_EMAIL
 }
 

@@ -20,7 +20,7 @@ AETHER_LOCK_FILE="${AETHER_LOCK_FILE:-/tmp/aether-install.lock}"
 AETHER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # The repository the installer deploys from (set by the root install.sh).
-AETHER_REPO_DIR="${AETHER_REPO_DIR:-$(dirname "$AETHER_LIB_DIR")}"
+AETHER_REPO_DIR="${AETHER_REPO_DIR:-$(cd "$AETHER_LIB_DIR/../.." && pwd)}"
 
 # Set by preflight: "sudo" for unprivileged users, "" when already root.
 SUDO="${SUDO:-}"
