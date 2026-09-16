@@ -1,9 +1,12 @@
 import { type FastifyInstance } from 'fastify';
 
 import { authenticate, requirePrincipal, requirePermission } from '../middleware/auth.js';
+import { agentConnectedAt, isAgentConnected } from '../services/agent-connections.js';
 import { pairAgent, listAgents, revokeAgent } from '../services/agent-pairing.service.js';
 import { recordAuditEvent } from '../services/audit.service.js';
 import { subsystemLogger } from '../utils/logger.js';
+
+import type { HostAgent } from '@aether/shared';
 
 const log = subsystemLogger('agent-routes');
 
@@ -15,13 +18,20 @@ const log = subsystemLogger('agent-routes');
  * SHA-256 hash.
  */
 export function registerAgentRoutes(app: FastifyInstance): void {
-  /** List paired agents (no secrets). */
+  /** List paired agents (no secrets), with live connection state. */
   app.get('/api/agents', {
     preHandler: [authenticate, requirePermission('settings:manage')],
     handler: async (request, reply) => {
       const principal = requirePrincipal(request);
       const agents = await listAgents(principal.user.id);
-      return reply.send({ data: agents });
+
+      const data: HostAgent[] = agents.map((agent) => ({
+        ...agent,
+        connected: isAgentConnected(agent.agentId),
+        connectedAt: agentConnectedAt(agent.agentId),
+      }));
+
+      return reply.send({ data });
     },
   });
 

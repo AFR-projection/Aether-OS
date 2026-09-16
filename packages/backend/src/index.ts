@@ -1,4 +1,4 @@
-import { startCacheSweeper, stopCacheSweeper } from './cache/index.js';
+import { closeCache, initCache, startCacheSweeper, stopCacheSweeper } from './cache/index.js';
 import { config, describeConfig } from './config.js';
 import { runMigrations } from './db/migrate.js';
 import { closePool, checkDatabaseHealth } from './db/pool.js';
@@ -34,6 +34,7 @@ async function main(): Promise<void> {
     if (killed > 0) logger.info({ killed }, 'terminated active terminal sessions');
 
     stopCacheSweeper();
+    await closeCache();
 
     try {
       await app.close();
@@ -90,6 +91,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   logger.info({ latencyMs: health.latencyMs }, 'database reachable');
+
+  // Selecting the cache backend is deliberately last in the preflight: it is
+  // the only dependency whose absence degrades rather than blocks, so a Redis
+  // outage must not prevent an otherwise healthy instance from starting.
+  await initCache();
 
   startCacheSweeper();
 

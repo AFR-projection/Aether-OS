@@ -1,3 +1,4 @@
+import { RedisCache } from './redis.js';
 import { config } from '../config.js';
 import { subsystemLogger } from '../utils/logger.js';
 
@@ -6,10 +7,13 @@ const log = subsystemLogger('cache');
 /**
  * Small cache interface used for rate-limit counters and short-lived lookups.
  *
- * The only implementation shipped today is in-process. A Redis-backed
- * implementation is planned for multi-replica deployments; see
- * `KNOWN-LIMITATIONS.md`. Because the interface is asynchronous, swapping the
- * implementation will not change any call site.
+ * Two implementations ship: `MemoryCache` (in-process, the fallback) and
+ * `RedisCache` (shared across replicas). Because the interface is
+ * asynchronous, `initCache()` can select either at startup without any call
+ * site knowing which one it got.
+ *
+ * Every method is best-effort: a cache failure is a miss, never a thrown
+ * error. Callers must be able to rebuild the value from the database.
  */
 export interface Cache {
   get<T>(key: string): Promise<T | null>;
@@ -19,7 +23,9 @@ export interface Cache {
   increment(key: string, ttlMs: number): Promise<number>;
   /** Removes expired entries. Called periodically by the owner. */
   sweep(): void;
-  readonly backend: 'memory';
+  readonly backend: 'memory' | 'redis';
+  /** Round-trips the backend. Only the Redis implementation can fail. */
+  ping?(): Promise<boolean>;
 }
 
 interface Entry {
@@ -102,13 +108,80 @@ export class MemoryCache implements Cache {
   }
 }
 
-export const cache: Cache = new MemoryCache();
+/**
+ * The active backend. Swapped once by `initCache()` before the server listens,
+ * so no call site ever has to care which implementation is in use.
+ */
+let active: Cache = new MemoryCache();
 
-if (config.REDIS_URL) {
-  log.warn(
-    'REDIS_URL is configured but the Redis cache backend is not implemented in this release; ' +
-      'falling back to the in-process cache. Rate-limit counters are therefore per-process.'
-  );
+/**
+ * Stable facade over the active backend.
+ *
+ * Call sites import `cache` directly, so this object must keep its identity
+ * for the lifetime of the process. A facade — rather than reassigning the
+ * export — is what lets `initCache()` swap the implementation without
+ * invalidating the module bindings every importer already holds.
+ */
+export const cache: Cache = {
+  get backend() {
+    return active.backend;
+  },
+  get: <T>(key: string) => active.get<T>(key),
+  set: <T>(key: string, value: T, ttlMs: number) => active.set<T>(key, value, ttlMs),
+  delete: (key: string) => active.delete(key),
+  increment: (key: string, ttlMs: number) => active.increment(key, ttlMs),
+  sweep: () => active.sweep(),
+  ping: () => (active.ping ? active.ping() : Promise.resolve(true)),
+};
+
+/**
+ * Selects the cache backend.
+ *
+ * Runs before the HTTP listener opens. When `REDIS_URL` is set the Redis
+ * backend is tried first; if Redis cannot be reached the process keeps
+ * running on the in-process cache and logs the degradation loudly, because a
+ * cache outage must not become a total outage. In that state the deployment
+ * is single-replica-safe only: WebSocket tickets and rate-limit counters are
+ * per-process.
+ */
+export async function initCache(): Promise<void> {
+  if (!config.REDIS_URL) {
+    log.info({ backend: 'memory' }, 'no REDIS_URL configured; using the in-process cache');
+    return;
+  }
+
+  const redisCache = new RedisCache(config.REDIS_URL);
+  try {
+    await redisCache.connect();
+    active = redisCache;
+    log.info({ backend: 'redis' }, 'redis cache backend active');
+  } catch (error) {
+    log.error(
+      { err: error },
+      'REDIS_URL is set but Redis is unreachable; falling back to the in-process cache. ' +
+        'WebSocket tickets and rate-limit counters are now per-process — run a single ' +
+        'backend replica until Redis is reachable.'
+    );
+    await redisCache.close().catch(() => undefined);
+  }
+}
+
+/** Releases the cache backend's resources. Safe to call when never connected. */
+export async function closeCache(): Promise<void> {
+  const current = active;
+  active = new MemoryCache();
+  if (current.backend === 'redis' && current instanceof RedisCache) {
+    await current.close();
+  }
+}
+
+/** Reports whether the active cache backend is answering. Drives the readiness probe. */
+export async function checkCacheHealth(): Promise<{ ok: boolean; backend: 'memory' | 'redis' }> {
+  if (active.backend === 'memory') {
+    return { ok: true, backend: 'memory' };
+  }
+  const ok = active.ping ? await active.ping() : true;
+  return { ok, backend: active.backend };
 }
 
 let sweepTimer: NodeJS.Timeout | null = null;

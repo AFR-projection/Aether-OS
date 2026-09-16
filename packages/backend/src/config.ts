@@ -1,3 +1,4 @@
+import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
 /**
@@ -10,6 +11,21 @@ import { z } from 'zod';
  *   this file; a missing secret is a fatal configuration error.
  * - `describeConfig()` returns a redacted summary that is safe to log.
  */
+
+/**
+ * Load `.env` for local development.
+ *
+ * Nothing else reads the file: `pnpm dev:backend` runs `tsx` directly, which
+ * does not load it, so without this call `DATABASE_URL` and `JWT_SECRET` were
+ * undefined and every development start failed validation. Production does not
+ * depend on this — Docker Compose passes the environment directly and the file
+ * is not present in the image.
+ *
+ * This runs before the schema below and never overrides variables that are
+ * already set, so a value exported in the shell — or injected by the test
+ * runner — always wins over the file.
+ */
+loadDotenv();
 
 const booleanFromEnv = z.union([z.boolean(), z.string()]).transform((value) => {
   if (typeof value === 'boolean') return value;
@@ -86,8 +102,11 @@ const envSchema = z.object({
 
   // --- First-run bootstrap -------------------------------------------------
   /**
-   * When set, the owner account is created automatically at first boot if no
-   * users exist yet. The installer generates this once and never reuses it.
+   * When set, `POST /api/auth/bootstrap` additionally requires this value in
+   * the `X-Bootstrap-Token` header — otherwise anyone who can reach a fresh
+   * instance can claim the owner account. Bootstrap is refused unconditionally
+   * once a user exists. Left unset in development so the first-run screen
+   * needs no token; the installer always generates one.
    */
   AETHER_BOOTSTRAP_TOKEN: z.string().optional(),
 

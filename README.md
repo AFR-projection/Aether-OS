@@ -1,418 +1,164 @@
 # Aether Cloud OS
 
-**Your Cloud. Your Desktop. Anywhere.**
+**Your cloud. Your desktop. Anywhere.**
 
-A universal browser-based desktop environment for VPS and local hosts. Access and operate your Linux
-VPS through a modern desktop interface in your browser, with real terminal, filesystem access, and
-extensible application runtime.
+A browser-based desktop environment for a VPS or any Linux host you own. Open a URL and you get a
+window manager, a file manager, a real terminal, a task manager, and system monitoring — talking to
+the actual machine, not a simulation.
 
----
-
-## 🎯 Vision
-
-Aether Cloud OS transforms headless VPS into fully-featured desktop environments accessible from any
-browser. No more SSH-only access—get a complete graphical interface with window management, file
-explorer, terminal, and applications.
-
-**This is not a mockup.** Aether provides:
-
-- Real PTY terminal executing commands on your host
-- Actual filesystem access (not simulated)
-- Host resource monitoring (real CPU, RAM, disk data)
-- Extensible application runtime
-- Multi-device access with cloud sync
-- AI assistant with controlled host access
+> **Status: pre-1.0.** The core works end to end and is deployed by the installer in this repo. It
+> has not been through an external security audit. Read
+> [Known limitations](docs/status/KNOWN-LIMITATIONS.md) before exposing an instance to the public
+> internet.
 
 ---
 
-## ✨ Features
+## What actually works
 
-### Core Desktop Environment
+Everything below is implemented and covered by the test suite. If it is not listed here, assume it
+is not built — see [Known limitations](docs/status/KNOWN-LIMITATIONS.md).
 
-- **Window Manager** - Full-featured window management with minimize, maximize, resize, snap, and
-  tile
-- **Multiple Themes** - Aether Modern, Windows-inspired, and macOS-inspired themes
-- **Taskbar/Dock** - Application launcher, running apps, system tray
-- **Notifications** - System-wide notification center
-- **Multi-device** - Access your desktop from any device with sync
+**Desktop shell** — window manager (drag, resize, minimize, maximise, snap), taskbar and launcher,
+notification centre, light/dark themes, session persistence across reloads.
 
-### Host Integration
+**Terminal** — a real PTY (`node-pty`) running `bash`/`sh` on the host, streamed over a WebSocket
+with a short-lived ticket rather than the access token in the URL. Multiple tabs.
 
-- **Real Terminal** - PTY-based terminal with real shell execution (bash, zsh, PowerShell)
-- **Filesystem Access** - Browse, edit, upload, download files on your host
-- **Process Management** - View and manage running processes
-- **Resource Monitoring** - Real-time CPU, RAM, disk, and network monitoring
-- **Service Management** - Start, stop, and restart system services
-- **Package Management** - Install and manage packages (apt, yum, brew, winget)
-- **Container Support** - Docker/Podman integration
+**Files** — browse, read, write, rename, delete, upload, download, and search the workspace tree.
+Every path is confined to `AETHER_WORKSPACE_ROOT`; nothing outside it is reachable.
 
-### Built-in Applications
+**System** — CPU, memory, disk, and load from the host's own `/proc`, plus a process list and an
+opt-in signal capability.
 
-- **Aether Files** - Full-featured file manager
-- **Aether Terminal** - Multi-tab terminal emulator
-- **Aether Code Studio** - Code editor with syntax highlighting
-- **Aether Settings** - Configuration center
-- **Aether Task Manager** - Process and resource viewer
-- **Aether System Monitor** - Real-time resource graphs
-- **Aether Browser** - Web browsing capability
-- **Aether App Store** - Discover and install apps
+**Host agents** — a separate agent process runs on any host you want to manage, paired from the
+Settings → Host agents screen. One backend can manage several hosts.
 
-### Cloud Features
+**Accounts** — first-run bootstrap, JWT access/refresh tokens, revocable sessions, password change,
+and four roles (`owner`, `admin`, `operator`, `viewer`) enforced server-side on every request.
 
-- **Cloud Storage** - S3-backed cloud storage with sync
-- **Multi-device Sync** - File sync across devices
-- **Offline Mode** - PWA with offline capabilities
-- **Backup & Recovery** - Automatic backups
+**Audit trail** — sensitive operations are recorded and readable from the Security Center app.
 
-### Security
+### Applications
 
-- **Secure Authentication** - JWT with 2FA support
-- **Host Pairing** - Secure agent pairing with API keys
-- **Permission System** - Role-based access control (RBAC)
-- **Audit Logging** - Complete audit trail
-- **Encrypted Storage** - Sensitive data encrypted at rest
-- **TLS/WSS** - All communications encrypted
+| App               | What it does                                                |
+| ----------------- | ----------------------------------------------------------- |
+| Files             | File manager over the workspace                             |
+| Terminal          | Multi-tab real shell                                        |
+| Code Studio       | Plain-text editor with line numbers and save                |
+| Task Manager      | Process list, memory use, search filter                     |
+| System Monitor    | Live CPU / memory / disk graphs                             |
+| Settings          | Account, sessions, users, host agents, about                |
+| Security Center   | Audit log and session review                                |
+| App Catalog       | The registry of installed apps                              |
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    BROWSER (Any Device)                      │
-│                     Aether Desktop UI                        │
-└────────────────────────┬─────────────────────────────────────┘
-                         │ HTTPS/WSS
-┌────────────────────────┴─────────────────────────────────────┐
-│                   Aether Backend Server                      │
-│  API Gateway │ Auth │ Host Service │ Cloud Storage │ Apps   │
-└────────────────────────┬─────────────────────────────────────┘
-                         │ Secure WebSocket
-┌────────────────────────┴─────────────────────────────────────┐
-│                    Aether Host Agent                         │
-│  PTY │ Filesystem │ Processes │ Resources │ Services        │
-└────────────────────────┬─────────────────────────────────────┘
-                         │
-┌────────────────────────┴─────────────────────────────────────┐
-│                    Native Host OS                            │
-│         Linux │ Windows │ macOS                              │
-└─────────────────────────────────────────────────────────────┘
+        Browser  ──────────────┐
+                               │  HTTPS + WSS
+   Electron desktop client ────┤
+                               ▼
+                    ┌─────────────────────┐
+                    │   Backend (Fastify) │──── PostgreSQL (state)
+                    │   API + WebSocket   │──── Redis (optional cache)
+                    └──────────┬──────────┘
+                               │  WSS /ws/agent
+                               ▼
+                    ┌─────────────────────┐
+                    │   Host Agent        │
+                    │  PTY · files · proc │
+                    └──────────┬──────────┘
+                               ▼
+                         Managed Linux host
 ```
 
-**Technology Stack:**
+The backend never touches the managed host directly. It talks to a **host agent** over a WebSocket,
+and the agent performs the work. That split is what lets one backend manage several machines, and
+it is why the backend can run in a container while the agent runs on the host it manages.
 
-- **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS
-- **Backend:** Node.js 20 + Express + TypeScript
-- **Database:** PostgreSQL 16 + Redis 7
-- **Storage:** S3-compatible (AWS S3, MinIO, Cloudflare R2)
-- **Host Agent:** Node.js (MVP) → Go (production)
-- **Terminal:** xterm.js + node-pty
-- **Real-time:** WebSocket (ws library)
+| Component         | Stack                                                                    |
+| ----------------- | ------------------------------------------------------------------------ |
+| `backend`         | Node 20, Fastify 4, `pg`, `node-pty`, `ws`, JWT, bcryptjs, Zod, Pino      |
+| `frontend`        | React 18, Vite 5, TypeScript, TanStack Query, Zustand, xterm.js, Tailwind |
+| `host-agent`      | Node 20, `ws`, `node-pty`, Zod, Pino                                      |
+| `shared`          | Types, Zod schemas, permissions, constants — imported by all of the above |
+| `desktop-client`  | Electron wrapper around the same frontend                                |
+| Deployment        | Docker Compose + Caddy, driven by a bash installer in `deploy/`           |
 
----
-
-## 📋 System Requirements
-
-### Backend Server (VPS)
-
-**Minimum:**
-
-- OS: Ubuntu 22.04 LTS or 24.04 LTS
-- CPU: 2 vCPU cores
-- RAM: 4 GB
-- Storage: 20 GB SSD
-- Network: 100 Mbps
-
-**Recommended (10-50 users):**
-
-- OS: Ubuntu 24.04 LTS
-- CPU: 4 vCPU cores
-- RAM: 8 GB
-- Storage: 100 GB SSD
-- Network: 1 Gbps
-
-### Host Agent
-
-- **Linux:** Ubuntu 22.04+, Debian 11+, CentOS 8+
-- **Windows:** Windows 10+ (Phase 9)
-- **macOS:** macOS 12+ (Phase 9)
-- RAM: 512 MB (dedicated to agent)
-- Storage: 200 MB
-
-### Browser
-
-- Chrome/Edge 90+
-- Firefox 88+
-- Safari 14+
-- Mobile browsers supported
+Detail: [Architecture overview](docs/architecture/OVERVIEW.md).
 
 ---
 
-## 🚀 Quick Start
+## Quick start
 
-### 1. Install Aether Backend (Ubuntu VPS)
+### Run it locally
 
 ```bash
-# Download and run installer
-curl -fsSL https://install.aether-os.io/install.sh | sudo bash
-
-# Follow prompts to configure
-# - Database setup
-# - SSL certificate (Let's Encrypt)
-# - Admin user creation
+git clone <your-fork> && cd Aether-cloud-os
+pnpm install
+docker compose up -d          # PostgreSQL + Redis
+cp .env.example .env          # then set JWT_SECRET
+pnpm dev
 ```
 
-### 2. Install Host Agent
+The UI is at <http://localhost:5173>. On first load it asks you to create the owner account — in
+development `AETHER_BOOTSTRAP_TOKEN` is unset, so no token is needed.
 
-**On the same VPS (manage itself):**
+Full instructions: [Development](docs/getting-started/DEVELOPMENT.md).
+
+### Install on a VPS
 
 ```bash
-curl -fsSL https://install.aether-os.io/agent.sh | sudo bash
+sudo bash install.sh
 ```
 
-**On another Linux host:**
+The installer checks the platform, installs Docker, generates every secret, writes a hardened
+`.env`, brings up the stack behind Caddy (with automatic HTTPS when you supply a domain), installs
+an `aether` management CLI and a systemd unit, and runs a post-install check that no internal port
+is exposed.
 
-```bash
-# Download agent
-wget https://releases.aether-os.io/agent/latest/aether-agent-linux-x64.tar.gz
-tar -xzf aether-agent-linux-x64.tar.gz
-cd aether-agent
+Then create the owner account at the URL it prints. Guide:
+[Deployment](docs/operations/DEPLOYMENT.md).
 
-# Install
-sudo ./install.sh
+### Add another host
 
-# Get pairing code
-sudo aether-agent pair
-```
-
-### 3. Access Aether Desktop
-
-1. Open browser: `https://your-domain.com` or `https://your-vps-ip`
-2. Login with admin credentials
-3. Add host with pairing code
-4. Desktop loads with available features
+Settings → **Host agents** → **Pair agent**. The dialog shows a one-time token and the exact command
+to run on the target machine. Guide: [Host agents](docs/operations/HOST-AGENTS.md).
 
 ---
 
-## 📖 Documentation
+## Documentation
 
-Comprehensive documentation is available in `docs/`:
+Everything lives under [`docs/`](docs/README.md). Quick index:
 
-- **[Master Architecture](docs/architecture/00-MASTER-ARCHITECTURE.md)** - Complete system
-  architecture
-- **[Desktop & Window Manager](docs/architecture/05-DESKTOP-WINDOW-MANAGER.md)** - UI and window
-  management
-- **[Application Runtime](docs/architecture/06-APPLICATION-RUNTIME.md)** - App system and built-in
-  apps
-- **[Security & Auth](docs/architecture/09-SECURITY-AUTH.md)** - Authentication and security model
-- **[Database & API](docs/architecture/12-DATABASE-API-STORAGE.md)** - Database schema and API specs
-- **[Deployment & Operations](docs/architecture/14-DEPLOYMENT-ROADMAP.md)** - Installation and
-  maintenance
-- **[Risk & Decisions](docs/architecture/16-RISK-DECISIONS.md)** - Architecture decisions and risk
-  management
+| Section                                     | For                                                   |
+| ------------------------------------------- | ----------------------------------------------------- |
+| [Getting started](docs/getting-started/)    | Local development, first run, contributing            |
+| [Architecture](docs/architecture/)          | How the pieces fit and why                            |
+| [Operations](docs/operations/)              | Install, host agents, backup, upgrade, troubleshoot   |
+| [Security](docs/security/)                  | Threat model, auth, sandboxing, what is not covered   |
+| [Reference](docs/reference/)                | HTTP API, WebSocket protocol, config, code standards  |
+| [Status](docs/status/)                      | Known limitations, decision log, release audit        |
 
 ---
 
-## 🗺️ Roadmap
+## Requirements
 
-### Phase 0 - Architecture & Design ✅ (Current)
+| Target        | Needs                                                                     |
+| ------------- | ------------------------------------------------------------------------- |
+| Backend host  | **Ubuntu 22.04 / 24.04 LTS, x86_64**, with systemd. The installer blocks on anything else. 2 vCPU, 4 GB RAM, 20 GB disk recommended (1 core / 2 GB / 20 GB is the hard floor). |
+| Managed host  | Linux with systemd, Node 20 (the installer provides it), Python 3 + a C++ toolchain for `node-pty` |
+| Browser       | Chrome/Edge 90+, Firefox 88+, Safari 14+                                  |
+| Development   | Node 20+, pnpm 8+, Docker                                                   |
 
-Complete technical architecture and design specifications.
-
-### Phase 1 - Foundation (3 weeks)
-
-Repository setup, CI/CD, authentication, basic infrastructure.
-
-### Phase 2 - Linux Host Agent (4 weeks)
-
-Functional Host Agent for Linux with PTY, filesystem, and monitoring.
-
-### Phase 3 - Desktop Shell (3 weeks)
-
-Desktop UI with window manager and core components.
-
-### Phase 4 - Terminal & Filesystem (4 weeks)
-
-Real PTY terminal and host filesystem integration.
-
-### Phase 5 - Core Applications (4 weeks)
-
-Files, Terminal, Settings, Task Manager, System Monitor apps.
-
-### Phase 6 - Application Runtime (3 weeks)
-
-App store, installation, and extensibility system.
-
-### Phase 7 - Cloud Storage & Sync (4 weeks)
-
-Cloud storage with multi-device sync and offline support.
-
-### Phase 8 - AI Agent (3 weeks)
-
-AI assistant with controlled tool access.
-
-### Phase 9 - Platform Expansion (4 weeks)
-
-Windows and macOS host agent support.
-
-### Phase 10 - Production Hardening (6 weeks)
-
-Security audit, load testing, documentation, monitoring.
-
-**Total Timeline:** 6-9 months to production release
+Not Ubuntu, or not x86_64? The installer will refuse. You can still deploy by hand — the stack is
+plain Docker Compose and the host agent builds anywhere Node 20 does — but you are off the tested
+path and the installer's checks will not help you.
 
 ---
 
-## 🔒 Security
+## License
 
-Security is a first-class concern:
-
-- **Transport Security:** TLS 1.3 for all communications
-- **Authentication:** JWT with refresh tokens, optional 2FA
-- **Authorization:** Role-based access control (RBAC)
-- **Input Validation:** Schema validation at every layer
-- **Path Security:** Path traversal prevention with allowlists
-- **Command Safety:** No arbitrary command execution
-- **Audit Logging:** Complete audit trail for sensitive operations
-- **Secret Management:** Argon2id password hashing, encrypted storage
-- **Rate Limiting:** Protection against brute force and abuse
-- **Sandboxing:** Apps run with limited permissions
-
-See [Security Documentation](docs/architecture/09-SECURITY-AUTH.md) for details.
-
----
-
-## 🤝 Contributing
-
-**Current Status:** Architecture phase - not yet accepting contributions.
-
-Once Phase 1 begins, we'll open for contributions with:
-
-- Contribution guidelines
-- Code of conduct
-- Development setup guide
-- Issue templates
-
----
-
-## 📄 License
-
-[License TBD - To be determined before Phase 1]
-
-Options under consideration:
-
-- MIT License (permissive)
-- Apache 2.0 (permissive with patent grant)
-- AGPL 3.0 (copyleft, requires source disclosure)
-
----
-
-## 🔗 Links
-
-- **Website:** [aether-os.io](https://aether-os.io) (coming soon)
-- **Documentation:** [docs.aether-os.io](https://docs.aether-os.io) (coming soon)
-- **Community:** [community.aether-os.io](https://community.aether-os.io) (coming soon)
-- **Status:** [status.aether-os.io](https://status.aether-os.io) (coming soon)
-
----
-
-## ❓ FAQ
-
-### Is this just a web app that looks like a desktop?
-
-No. Aether provides real functionality:
-
-- Terminal executes actual commands on your host via PTY
-- File manager accesses your real host filesystem
-- System Monitor shows actual CPU, RAM, disk usage
-- Process Manager shows real running processes
-
-### Can I use this in production?
-
-Not yet. We're currently in Phase 0 (Architecture). Production-ready release is expected in 6-9
-months.
-
-### What's the difference between Aether and VNC/RDP?
-
-- **VNC/RDP:** Streams a full desktop (high bandwidth, not browser-native)
-- **Aether:** Native browser UI that integrates with host (low bandwidth, modern web UI)
-
-### What's the difference between Aether and web-based terminals?
-
-- **Web terminals:** Just a terminal, nothing else
-- **Aether:** Full desktop environment with file manager, apps, window management, etc.
-
-### Does Aether replace my VPS operating system?
-
-No. Aether is a **desktop environment layer** on top of your existing OS. Your VPS still runs
-Ubuntu/Linux. Aether provides a graphical interface to interact with it.
-
-### Is my data secure?
-
-Yes, with proper deployment:
-
-- All traffic encrypted (HTTPS/WSS)
-- Authentication required
-- Permissions enforced
-- Audit logging
-- Regular security audits (production)
-
-### Can I self-host everything?
-
-Yes. Aether is designed to be fully self-hostable:
-
-- Backend on your VPS
-- Database (PostgreSQL) on your VPS
-- Storage (MinIO) on your VPS or S3
-- No phone-home, no telemetry by default
-
-### What about mobile access?
-
-Aether works on mobile browsers and can be installed as a PWA. Touch-optimized UI is planned for
-later phases.
-
-### Can I extend Aether with custom apps?
-
-Yes. Aether has an Application Runtime that allows:
-
-- Installing apps from App Store
-- Developing custom apps with Aether API
-- Extension system (planned)
-
----
-
-## 🙏 Acknowledgments
-
-Aether Cloud OS is inspired by:
-
-- **WebOS** - Browser-based desktop concept
-- **VS Code** - Modern web-based development environment
-- **Docker** - Container paradigm for application isolation
-- **Jupyter** - Web-based interactive computing
-- **tmux/screen** - Terminal session management
-
-Technologies we leverage:
-
-- **xterm.js** - Terminal emulator
-- **node-pty** - PTY binding
-- **React** - UI framework
-- **PostgreSQL** - Database
-- **Prisma** - ORM
-
----
-
-## 📊 Project Status
-
-**Phase:** 0 - Architecture & Design  
-**Status:** In Progress (80%)  
-**Next Milestone:** Complete architecture review  
-**Target:** Begin Phase 1 implementation
-
-**Architecture Documents:** ✅ Complete  
-**UI/UX Mockups:** 🚧 In Progress  
-**Development Environment:** ⏳ Pending Phase 1  
-**MVP Deployment:** ⏳ Target: Q2 2027
-
----
-
-**Built with ❤️ for developers who love their VPS but want a better interface.**
+Not yet chosen — see [`package.json`](package.json) (`"license": "PENDING"`).

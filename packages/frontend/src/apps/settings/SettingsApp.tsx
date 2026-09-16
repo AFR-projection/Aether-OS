@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button.js';
 import { ConfirmDialog, Dialog } from '../../components/ui/Dialog.js';
 import { Banner, EmptyState, ErrorState, LoadingState } from '../../components/ui/Feedback.js';
 import { Checkbox, Field, Select, TextInput } from '../../components/ui/Input.js';
+import { fetchAgents, pairAgent, revokeAgent } from '../../lib/agent-api.js';
 import { formatDateTime, formatRelative, truncateMiddle } from '../../lib/format.js';
 import { queryKeys } from '../../lib/query-client.js';
 import {
@@ -22,17 +23,18 @@ import { useCurrentUser } from '../../stores/auth.store.js';
 import { useDesktopStore } from '../../stores/desktop.store.js';
 
 import type { AppProps } from '../registry.js';
-import type { AuthSession, PublicUser } from '@aether/shared';
+import type { AgentPairResult, AuthSession, HostAgent, PublicUser } from '@aether/shared';
 
 /**
- * Settings — account, sessions, user administration, and instance information.
+ * Settings — account, sessions, user administration, host agents, and instance
+ * information.
  *
  * The tabs a user can reach are decided by their permissions, and every request
  * behind them is separately authorised on the server. Hiding a tab is a
  * convenience; it is not the control.
  */
 
-type Tab = 'account' | 'sessions' | 'users' | 'about';
+type Tab = 'account' | 'sessions' | 'users' | 'agents' | 'about';
 
 export function SettingsApp({ windowId }: AppProps) {
   const user = useCurrentUser();
@@ -54,6 +56,7 @@ export function SettingsApp({ windowId }: AppProps) {
     { id: 'account', label: 'Account' },
     { id: 'sessions', label: 'Sessions' },
     ...(canManageUsers ? [{ id: 'users' as Tab, label: 'Users' }] : []),
+    ...(canManageSettings ? [{ id: 'agents' as Tab, label: 'Host agents' }] : []),
     { id: 'about', label: 'About' },
   ];
 
@@ -83,6 +86,7 @@ export function SettingsApp({ windowId }: AppProps) {
         {tab === 'account' ? <AccountSection user={user} /> : null}
         {tab === 'sessions' ? <SessionsSection /> : null}
         {tab === 'users' && canManageUsers ? <UsersSection currentUser={user} /> : null}
+        {tab === 'agents' && canManageSettings ? <AgentsSection /> : null}
         {tab === 'about' ? <AboutSection canManageSettings={canManageSettings} /> : null}
       </div>
     </div>
@@ -640,6 +644,307 @@ function CreateUserDialog({
         </Field>
       </div>
     </Dialog>
+  );
+}
+
+function AgentsSection() {
+  const queryClient = useQueryClient();
+  const [pairOpen, setPairOpen] = useState(false);
+  const [pendingRevoke, setPendingRevoke] = useState<HostAgent | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const agents = useQuery({ queryKey: queryKeys.agents, queryFn: fetchAgents });
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.agents });
+  };
+
+  const revokeMutation = useMutation({
+    mutationFn: (agentId: string) => revokeAgent(agentId),
+    onSuccess: () => {
+      setError(null);
+      setPendingRevoke(null);
+      invalidate();
+    },
+    onError: (thrown: unknown) => {
+      setError(thrown instanceof Error ? thrown.message : 'Could not revoke the agent.');
+      setPendingRevoke(null);
+    },
+  });
+
+  return (
+    <Section title="Host agents">
+      {error !== null ? (
+        <div className="mb-2">
+          <Banner tone="danger" onDismiss={() => setError(null)}>
+            {error}
+          </Banner>
+        </div>
+      ) : null}
+
+      <div className="mb-2 flex items-center gap-2">
+        <Button size="sm" variant="primary" onClick={() => setPairOpen(true)}>
+          Pair an agent
+        </Button>
+        <span className="text-[11px] text-slate-500">
+          Agents run on other machines and connect back over a WebSocket to serve this instance&apos;s
+          files, processes, and terminals.
+        </span>
+      </div>
+
+      {agents.isPending ? (
+        <LoadingState label="Listing host agents…" />
+      ) : agents.isError ? (
+        <ErrorState error={agents.error} onRetry={() => void agents.refetch()} />
+      ) : agents.data.length === 0 ? (
+        <EmptyState
+          title="No agents paired"
+          description="Pair an agent to let this instance manage another machine. You will get a token that is shown exactly once."
+        />
+      ) : (
+        <table className="w-full text-xs">
+          <thead className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="py-1 font-medium">Label</th>
+              <th className="py-1 font-medium">Status</th>
+              <th className="py-1 font-medium">Agent id</th>
+              <th className="py-1 font-medium">Paired</th>
+              <th className="py-1 font-medium" />
+            </tr>
+          </thead>
+          <tbody>
+            {agents.data.map((agent) => (
+              <tr key={agent.agentId} className="border-t border-white/5">
+                <td className="py-1 text-slate-300">{agent.label}</td>
+                <td className="py-1">
+                  <AgentStatus agent={agent} />
+                </td>
+                <td className="py-1 font-mono text-[11px] text-slate-500" title={agent.agentId}>
+                  {truncateMiddle(agent.agentId, 26)}
+                </td>
+                <td className="py-1 text-slate-500">{formatRelative(agent.createdAt)}</td>
+                <td className="py-1 text-right">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-300"
+                    onClick={() => setPendingRevoke(agent)}
+                  >
+                    Revoke
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <PairAgentDialog
+        open={pairOpen}
+        onClose={() => setPairOpen(false)}
+        onPaired={invalidate}
+      />
+
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        title={`Revoke ${pendingRevoke?.label ?? 'agent'}?`}
+        destructive
+        busy={revokeMutation.isPending}
+        confirmLabel="Revoke agent"
+        message="The agent's token stops authenticating immediately and the pairing disappears from this list. This cannot be undone."
+        onCancel={() => setPendingRevoke(null)}
+        onConfirm={() => {
+          if (pendingRevoke !== null) revokeMutation.mutate(pendingRevoke.agentId);
+        }}
+      />
+    </Section>
+  );
+}
+
+/**
+ * Online/offline indicator.
+ *
+ * Connection state is reported by the backend replica that answered the list
+ * request, so behind more than one replica it reflects that replica's view.
+ */
+function AgentStatus({ agent }: { agent: HostAgent }) {
+  const label = agent.connected ? 'online' : 'offline';
+  const title =
+    agent.connected && agent.connectedAt !== null
+      ? `Connected since ${formatDateTime(agent.connectedAt)}`
+      : 'No open WebSocket connection to the backend';
+
+  return (
+    <span className="inline-flex items-center gap-1.5" title={title}>
+      <span
+        aria-hidden="true"
+        className={[
+          'inline-block h-1.5 w-1.5 rounded-full',
+          agent.connected ? 'bg-emerald-400' : 'bg-slate-600',
+        ].join(' ')}
+      />
+      <span className={agent.connected ? 'text-emerald-300' : 'text-slate-500'}>{label}</span>
+    </span>
+  );
+}
+
+/**
+ * Pairs an agent and reveals the token once.
+ *
+ * The token is the only copy that will ever exist — the backend stores a hash —
+ * so the success state replaces the form entirely and cannot be dismissed by
+ * accident before the operator has copied it.
+ */
+function PairAgentDialog({
+  open,
+  onClose,
+  onPaired,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPaired: () => void;
+}) {
+  const [label, setLabel] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [paired, setPaired] = useState<AgentPairResult | null>(null);
+
+  const reset = () => {
+    setLabel('');
+    setError(null);
+    setPaired(null);
+  };
+
+  const mutation = useMutation({
+    mutationFn: () => pairAgent(label.trim()),
+    onSuccess: (result) => {
+      setError(null);
+      setPaired(result);
+      onPaired();
+    },
+    onError: (thrown: unknown) => {
+      setError(thrown instanceof Error ? thrown.message : 'Could not pair the agent.');
+    },
+  });
+
+  const close = () => {
+    reset();
+    onClose();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={close}
+      title={paired === null ? 'Pair a host agent' : 'Agent paired'}
+      description={
+        paired === null
+          ? 'The label identifies this agent in the list. A token is generated when you pair.'
+          : 'Copy the values below now. The token is not stored in a readable form and cannot be shown again.'
+      }
+      footer={
+        paired === null ? (
+          <>
+            <Button size="sm" variant="ghost" onClick={close} disabled={mutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              loading={mutation.isPending}
+              disabled={label.trim() === ''}
+              onClick={() => mutation.mutate()}
+            >
+              Pair agent
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" variant="primary" onClick={close}>
+            Done
+          </Button>
+        )
+      }
+    >
+      {error !== null ? (
+        <div className="mb-3">
+          <Banner tone="danger" onDismiss={() => setError(null)}>
+            {error}
+          </Banner>
+        </div>
+      ) : null}
+
+      {paired === null ? (
+        <Field label="Label" hint="Shown in this list and in the audit log.">
+          {(field) => (
+            <TextInput
+              {...field}
+              value={label}
+              autoComplete="off"
+              placeholder="web-01"
+              onChange={(event) => setLabel(event.target.value)}
+            />
+          )}
+        </Field>
+      ) : (
+        <AgentCredentials result={paired} />
+      )}
+    </Dialog>
+  );
+}
+
+/** The one-time token hand-off, with the exact environment the agent needs. */
+function AgentCredentials({ result }: { result: AgentPairResult }) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const backendUrl =
+    typeof window === 'undefined'
+      ? 'wss://your-aether-host'
+      : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+
+  const entries: Array<{ name: string; value: string }> = [
+    { name: 'AETHER_BACKEND_URL', value: backendUrl },
+    { name: 'AETHER_AGENT_ID', value: result.agentId },
+    { name: 'AETHER_PAIRING_TOKEN', value: result.token },
+  ];
+
+  const copy = (name: string, value: string) => {
+    void navigator.clipboard
+      .writeText(value)
+      .then(() => {
+        setCopied(name);
+      })
+      .catch(() => {
+        setCopied(null);
+      });
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Banner tone="warning">
+        This token is shown once and is never retrievable. Store it in the agent&apos;s environment
+        before closing this dialog.
+      </Banner>
+
+      <div className="flex flex-col gap-2">
+        {entries.map((entry) => (
+          <div key={entry.name} className="rounded border border-white/10 bg-surface-900/60 p-2">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="font-mono text-[11px] text-slate-400">{entry.name}</span>
+              <Button size="sm" variant="ghost" onClick={() => copy(entry.name, entry.value)}>
+                {copied === entry.name ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+            <code className="block break-all font-mono text-[11px] text-slate-200">
+              {entry.value}
+            </code>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[11px] text-slate-500">
+        Set these in the agent&apos;s environment, then start it with{' '}
+        <code className="font-mono text-slate-400">aether-agent start</code>.
+      </p>
+    </div>
   );
 }
 

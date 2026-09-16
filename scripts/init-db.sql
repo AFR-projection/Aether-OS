@@ -1,56 +1,43 @@
--- Aether Cloud OS - Database Initialization Script
--- This script runs automatically when the PostgreSQL container starts
+-- Aether Cloud OS — development database bootstrap.
+--
+-- This runs once, when the PostgreSQL container first initialises its data
+-- directory. It deliberately creates NO tables.
+--
+-- The schema has exactly one owner: the backend's migration runner
+-- (packages/backend/migrations/*.sql, applied at startup by src/db/migrate.ts).
+-- An earlier version of this file also defined `aether.users` and
+-- `aether.sessions`. Because the migrations use `CREATE TABLE IF NOT EXISTS`,
+-- those definitions won the race, the migrations then skipped them, and a
+-- later statement (`users_single_owner_key ... WHERE role = 'owner'`)
+-- referenced a column the stale table did not have — so a fresh development
+-- database could not be migrated at all. Keeping this file to extensions and
+-- grants is what prevents that class of drift from coming back.
+--
+-- The first user is created through the application's bootstrap flow
+-- (AETHER_BOOTSTRAP_TOKEN + the first-run screen), not by seeding a row here.
 
--- Create extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- gen_random_uuid() comes from pgcrypto; the migrations use it for every
+-- primary key, so it must exist before the runner starts.
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Create initial schema
+-- The migrations create this too, but the grant below needs it to exist first
+-- and the database owner is the only role that can create extensions.
 CREATE SCHEMA IF NOT EXISTS aether;
 
--- Set default search path
-ALTER DATABASE aether_dev SET search_path TO aether, public;
-
--- Create users table (placeholder for Phase 1)
-CREATE TABLE IF NOT EXISTS aether.users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    username VARCHAR(255) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create sessions table (placeholder for Phase 1)
-CREATE TABLE IF NOT EXISTS aether.sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES aether.users(id) ON DELETE CASCADE,
-    token TEXT UNIQUE NOT NULL,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create indexes
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON aether.sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_token ON aether.sessions(token);
-CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON aether.sessions(expires_at);
-
--- Insert development user (password: "dev123")
-INSERT INTO aether.users (username, email, password_hash)
-VALUES (
-    'dev',
-    'dev@aether-os.local',
-    crypt('dev123', gen_salt('bf'))
-)
-ON CONFLICT (username) DO NOTHING;
-
--- Grant permissions
+-- The application connects as the `aether` role; it owns the schema and every
+-- table the migrations create in it.
 GRANT ALL PRIVILEGES ON SCHEMA aether TO aether;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA aether TO aether;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA aether TO aether;
 
--- Log completion
+-- Tables created by the migrations must be usable by the application role
+-- without an explicit GRANT per migration.
+ALTER DEFAULT PRIVILEGES IN SCHEMA aether
+    GRANT ALL PRIVILEGES ON TABLES TO aether;
+ALTER DEFAULT PRIVILEGES IN SCHEMA aether
+    GRANT ALL PRIVILEGES ON SEQUENCES TO aether;
+
 DO $$
 BEGIN
-    RAISE NOTICE 'Aether Cloud OS database initialized successfully';
+    RAISE NOTICE 'Aether: bootstrap complete — run the backend to apply migrations.';
 END $$;

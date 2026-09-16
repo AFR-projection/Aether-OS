@@ -2,9 +2,9 @@
 # Aether Cloud OS — preflight checks.
 #
 # Validates that the target machine meets every requirement before any
-# modification is attempted. Per INSTALLER-CONTRACT.md, unsupported platforms,
-# architectures, and missing systemd are BLOCKING, not advisory. Failing early
-# avoids wasted time and partial installs that would need to be rolled back.
+# modification is attempted. Unsupported platforms, architectures, and missing
+# systemd are BLOCKING, not advisory. Failing early avoids wasted time and
+# partial installs that would need to be rolled back.
 
 # Blocking thresholds — below these the installer refuses to run at all.
 MIN_BLOCK_CPU_CORES=1
@@ -151,7 +151,7 @@ check_ports() {
             ss -ltnp "( sport = :$port )" 2>/dev/null | tail -n +2 | sed 's/^/    /'
         done
     fi
-    fatal "Stop the service using these port(s) (a web server is usually the cause), or choose to run Aether behind it instead. See docs, section 'Existing web servers'."
+    fatal "Stop the service using these port(s) (a web server is usually the cause), or choose to run Aether behind it instead. See docs/operations/DEPLOYMENT.md."
 }
 
 check_network() {

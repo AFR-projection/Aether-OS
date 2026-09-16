@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Aether Cloud OS — secret generation.
 #
-# Contract (INSTALLER-CONTRACT.md §7):
+# Secret generation rules:
 # - CSPRNG only: openssl rand, never $RANDOM or predictable values.
 # - Each secret lives in its own file under $AETHER_SECRETS_DIR (dir 700,
 #   files 600); the generated `.env` reads them back at install time.

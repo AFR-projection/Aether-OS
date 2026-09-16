@@ -1,3 +1,4 @@
+import { checkCacheHealth } from '../cache/index.js';
 import { checkDatabaseHealth } from '../db/pool.js';
 import { isTerminalAvailable, terminalStats } from '../services/terminal.service.js';
 import { AETHER_VERSION } from '../utils/version.js';
@@ -22,7 +23,11 @@ export function registerHealthRoutes(app: FastifyInstance): void {
   app.get('/api/health', async (_request, reply) => {
     const database = await checkDatabaseHealth();
     const terminal = terminalStats();
+    const cache = await checkCacheHealth();
 
+    // Only the database is required to serve traffic. The cache reports its
+    // state without downgrading the instance: a memory backend is healthy, and
+    // a Redis backend that is down has already degraded to the fallback.
     const healthy = database.ok;
 
     return reply.status(healthy ? 200 : 503).send({
@@ -35,6 +40,10 @@ export function registerHealthRoutes(app: FastifyInstance): void {
           ok: database.ok,
           latencyMs: database.latencyMs,
           ...(database.ok ? {} : { error: database.error }),
+        },
+        cache: {
+          ok: cache.ok,
+          backend: cache.backend,
         },
         terminal: {
           ok: terminal.available,

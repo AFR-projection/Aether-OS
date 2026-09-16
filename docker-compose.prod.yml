@@ -11,7 +11,8 @@
 #   `pnpm --filter @aether/frontend build` before `docker compose build`, or
 #   mount it as a volume. (The installer handles this.)
 # - Postgres data and the workspace are named volumes so `down` never deletes
-#   user data. Back them up; see docs/BACKUP.md.
+#   user data. Back them up with `aether backup`; see
+#   docs/operations/BACKUP-AND-RESTORE.md.
 # - Only Caddy publishes ports to the host. Postgres is reachable only inside
 #   the compose network.
 

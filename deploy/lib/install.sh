@@ -48,7 +48,6 @@ Options:
   --yes                  non-interactive; accept defaults
   --resume               skip stages already completed in this directory
   --dry-run              validate everything but make no changes to the system
-  --channel CHANNEL      release channel: stable, beta, or development
   --no-https              serve HTTP only (domain remains optional)
   --version              show installer version
   --help                 show this message
@@ -66,10 +65,6 @@ parse_args() {
             --yes) AETHER_YES=true; shift ;;
             --resume) AETHER_RESUME=true; shift ;;
             --dry-run) AETHER_DRY_RUN=true; shift ;;
-            --channel)
-                [ $# -ge 2 ] || { printf '%s\n' '--channel requires stable, beta, or development' >&2; exit 2; }
-                case "$2" in stable|beta|development) AETHER_RELEASE_CHANNEL="$2" ;; *) printf 'Invalid release channel: %s\n' "$2" >&2; exit 2 ;; esac
-                shift 2 ;;
             --no-https) AETHER_NO_HTTPS=true; shift ;;
             --version) printf '%s\n' "$AETHER_VERSION"; exit 0 ;;
             --help) usage; exit 0 ;;
@@ -79,7 +74,6 @@ parse_args() {
     export AETHER_DOMAIN="${AETHER_DOMAIN:-}" AETHER_ADMIN_EMAIL="${AETHER_ADMIN_EMAIL:-}" \
         AETHER_YES="${AETHER_YES:-false}" AETHER_RESUME="${AETHER_RESUME:-false}" \
         AETHER_DRY_RUN="${AETHER_DRY_RUN:-false}" \
-        AETHER_RELEASE_CHANNEL="${AETHER_RELEASE_CHANNEL:-stable}" \
         AETHER_NO_HTTPS="${AETHER_NO_HTTPS:-false}" \
         AETHER_INSTALL_DIR
 }

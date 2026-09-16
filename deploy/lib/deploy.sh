@@ -11,17 +11,9 @@
 # Everything here is idempotent: re-running rebuilds what changed and leaves
 # named volumes (database, workspace) untouched.
 
-# Compose runs without sudo when the user is in the docker group; the daemon
-# socket needs root otherwise. $SUDO is set by preflight's permission check.
-compose_cmd() {
-    if docker info >/dev/null 2>&1; then
-        docker compose "$@"
-    elif [ -n "$SUDO" ]; then
-        $SUDO docker compose "$@"
-    else
-        sudo docker compose "$@"
-    fi
-}
+# `compose_cmd` and `docker_cmd` are defined in utils.sh, which install.sh
+# sources before this file, and which is copied beside the post-install helper
+# scripts so they share the same definition.
 
 sync_source() {
     local src="$AETHER_REPO_DIR"

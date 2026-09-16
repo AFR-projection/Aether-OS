@@ -1,5 +1,6 @@
 import { LIMITS, WS_CLOSE } from '@aether/shared';
 
+import { markAgentConnected, markAgentDisconnected } from '../services/agent-connections.js';
 import { dispatchAgentMessage } from '../services/agent-gateway.service.js';
 import { authenticateAgent } from '../services/agent-pairing.service.js';
 import { subsystemLogger } from '../utils/logger.js';
@@ -42,6 +43,7 @@ export function registerAgentWebSocket(app: FastifyInstance): void {
       }
 
       log.info({ agentId: record.agentId }, 'agent connected');
+      markAgentConnected(record.agentId);
 
       const frameBudget = { count: 0, windowStart: Date.now() };
 
@@ -96,6 +98,7 @@ export function registerAgentWebSocket(app: FastifyInstance): void {
 
       socket.on('close', () => {
         clearInterval(heartbeat);
+        markAgentDisconnected(record.agentId);
         log.info({ agentId: record.agentId }, 'agent disconnected');
       });
 

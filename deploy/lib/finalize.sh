@@ -79,10 +79,11 @@ case "\${1:-help}" in
     stop) compose stop ;;
     restart) compose restart ;;
     update)
-        bash "\$INSTALL_DIR/scripts/backup.sh"
-        compose pull
-        compose build --pull
-        compose up -d
+        # Delegated to scripts/update.sh so `aether update` and the script have
+        # exactly one implementation. The CLI used to reimplement it inline,
+        # which is how the two drifted apart.
+        shift
+        bash "\$INSTALL_DIR/scripts/update.sh" "\$@"
         ;;
     repair)
         compose config >/dev/null
@@ -199,18 +200,41 @@ finalize_installation() {
     mark_done finalize
 }
 
+# The URL the operator should open, matching what `write_caddyfile` deployed.
+#
+# IP-only mode has no domain to print, and hardcoding `https://` there would
+# send the operator to a scheme Caddy is not serving.
+installation_url() {
+    if [ -n "${AETHER_DOMAIN:-}" ]; then
+        if [ "${AETHER_NO_HTTPS:-false}" = "true" ]; then
+            printf 'http://%s' "$AETHER_DOMAIN"
+        else
+            printf 'https://%s' "$AETHER_DOMAIN"
+        fi
+        return
+    fi
+
+    # IP-only: report the address the operator most likely reaches this host on.
+    local address
+    address="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    printf 'http://%s' "${address:-<server-ip>}"
+}
+
 print_summary() {
+    local url
+    url="$(installation_url)"
+
     printf '\n'
     printf '  ---------------------------------------------------------------\n'
     printf '   Aether Cloud OS %s installed\n' "$AETHER_VERSION"
     printf '  ---------------------------------------------------------------\n'
-    printf '   URL:              https://%s\n' "$AETHER_DOMAIN"
+    printf '   URL:              %s\n' "$url"
     printf '   Install dir:      %s\n' "$AETHER_INSTALL_DIR"
     printf '   Installer log:    %s\n' "$AETHER_LOG_FILE"
     printf '   Installation ID:  %s\n' "$AETHER_INSTALLATION_ID"
     printf '\n'
     printf '   First steps:\n'
-    printf '     1. Open https://%s and complete the setup wizard.\n' "$AETHER_DOMAIN"
+    printf '     1. Open %s and create the owner account.\n' "$url"
     printf '     2. The one-time bootstrap token is in:\n'
     printf '          grep AETHER_BOOTSTRAP_TOKEN %s/.env\n' "$AETHER_INSTALL_DIR"
     printf '\n'

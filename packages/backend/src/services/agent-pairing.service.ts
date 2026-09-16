@@ -1,6 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { config } from '../config.js';
 import { query } from '../db/pool.js';
 import { ForbiddenError, UnauthenticatedError } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
@@ -61,10 +60,19 @@ export async function pairAgent(
   return { agentId, token };
 }
 
-/** Revokes an agent so its token stops working immediately. */
+/**
+ * Revokes an agent so its token stops working immediately.
+ *
+ * This is a soft revoke — `revoked_at` is stamped rather than the row deleted —
+ * so the pairing stays in the audit history and cannot be silently reused.
+ * `authenticateAgent` rejects any row carrying `revoked_at`, and `listAgents`
+ * hides it, so a revoked agent is gone from every practical standpoint while
+ * the record survives.
+ */
 export async function revokeAgent(agentId: string, ownerUserId: string): Promise<boolean> {
   const result = await query(
-    `DELETE FROM aether.host_agents WHERE id = $1 AND owner_user_id = $2`,
+    `UPDATE aether.host_agents SET revoked_at = now()
+     WHERE id = $1 AND owner_user_id = $2 AND revoked_at IS NULL`,
     [agentId, ownerUserId]
   );
   const revoked = (result.rowCount ?? 0) > 0;
@@ -72,6 +80,7 @@ export async function revokeAgent(agentId: string, ownerUserId: string): Promise
   return revoked;
 }
 
+/** Lists an owner's active (non-revoked) agents, newest first. */
 export async function listAgents(ownerUserId: string): Promise<AgentRecord[]> {
   const result = await query<{
     id: string;
@@ -80,7 +89,9 @@ export async function listAgents(ownerUserId: string): Promise<AgentRecord[]> {
     created_at: string;
   }>(
     `SELECT id, label, owner_user_id, created_at
-     FROM aether.host_agents WHERE owner_user_id = $1 ORDER BY created_at DESC`,
+     FROM aether.host_agents
+     WHERE owner_user_id = $1 AND revoked_at IS NULL
+     ORDER BY created_at DESC`,
     [ownerUserId]
   );
   return result.rows.map((row) => ({
@@ -123,7 +134,6 @@ export async function authenticateAgent(agentId: string, token: string): Promise
     throw new UnauthenticatedError('Invalid agent token');
   }
 
-  void config;
   return {
     agentId: row.id,
     label: row.label,

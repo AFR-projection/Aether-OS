@@ -46,6 +46,7 @@ export const queryKeys = {
   audit: (action: string | undefined, limit: number) => ['audit', action ?? 'all', limit] as const,
   sessions: ['auth', 'sessions'] as const,
   users: ['users'] as const,
+  agents: ['agents'] as const,
   terminals: ['terminal', 'sessions'] as const,
   terminalStatus: ['terminal', 'status'] as const,
 };
