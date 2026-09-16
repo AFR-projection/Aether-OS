@@ -1,0 +1,162 @@
+# Aether Cloud OS — production deployment.
+#
+# Usage:
+#   1. Copy `.env.example` to `.env`, fill in secrets (the installer does this).
+#   2. `docker compose -f docker-compose.prod.yml up -d --build`
+#
+# Design rules:
+# - No secret has a default here. Missing secrets fail fast in the backend's
+#   config validation instead of silently running insecure.
+# - The backend serves a prebuilt bundle via AETHER_STATIC_DIR. Build it with
+#   `pnpm --filter @aether/frontend build` before `docker compose build`, or
+#   mount it as a volume. (The installer handles this.)
+# - Postgres data and the workspace are named volumes so `down` never deletes
+#   user data. Back them up; see docs/BACKUP.md.
+# - Only Caddy publishes ports to the host. Postgres is reachable only inside
+#   the compose network.
+
+name: aether
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aether}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-aether}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER:-aether}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: '0.0.0.0'
+      PORT: '3000'
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-aether}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-aether}'
+      REDIS_URL: 'redis://:${REDIS_PASSWORD}@redis:6379'
+      AETHER_STATIC_DIR: /opt/aether/static
+    volumes:
+      - workspace_data:/opt/aether/workspace
+      - uploads_data:/opt/aether/uploads
+      # The installer copies the built frontend here before first start.
+      - ./packages/frontend/dist:/opt/aether/static:ro
+    networks:
+      - internal
+      - edge
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    env_file:
+      - .env
+    environment:
+      AETHER_DOMAIN: ${AETHER_DOMAIN:?AETHER_DOMAIN is required}
+    networks:
+      - edge
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:80/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  edge:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  workspace_data:
+    driver: local
+  uploads_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

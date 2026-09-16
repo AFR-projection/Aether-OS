@@ -1,0 +1,55 @@
+# Aether Cloud OS — Caddy reverse proxy.
+#
+# The installer writes this file from the domain the operator provides.
+# `${AETHER_DOMAIN}` is substituted by `docker compose` from `.env`.
+#
+# - Automatic HTTPS via Let's Encrypt (HTTP-01). No manual certificates.
+# - Every response carries the security headers below; the backend's own
+#   Helmet headers pass through untouched.
+# - WebSocket upgrades (`/ws/*`) are proxied with full-duplex streaming —
+#   Caddy handles `Upgrade: websocket` transparently, but the timeouts are
+#   raised here so idle terminal sessions are not cut mid-keystroke.
+# - Only `/health` is exempt from access logging noise; everything else logs.
+
+{
+	admin off
+	email {$AETHER_ADMIN_EMAIL:admin@localhost}
+}
+
+{$AETHER_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# Clickjacking: the desktop must never be framed.
+		X-Frame-Options "DENY"
+		# MIME sniffing off; the Files app serves user content.
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# HSTS: only served over HTTPS by Let's Encrypt, so preload is safe.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# Liveness probe for orchestrators; answered by the backend.
+	handle /health {
+		reverse_proxy backend:3000
+	}
+
+	# API + WebSocket + static frontend, all from the backend process.
+	handle {
+		reverse_proxy backend:3000 {
+			# Terminal and agent sockets stay open for hours; never time them out.
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 0s
+				expect_continue_timeout 0s
+			}
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

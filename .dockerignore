@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.gitignore
+*.md
+docs
+packages/*/dist
+packages/*/node_modules
+packages/desktop-client
+workspace
+uploads
+.env
+.env.*
+!.env.example
