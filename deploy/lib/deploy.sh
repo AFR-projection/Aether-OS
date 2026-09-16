@@ -95,7 +95,7 @@ write_caddyfile() {
         # IP-only and --no-https modes use an explicit HTTP listener. An empty
         # Caddy site address is invalid and would prevent the proxy starting.
         if [ -n "${AETHER_DOMAIN:-}" ]; then
-            awk '{ if ($0 == "{$AETHER_DOMAIN} {") print "http://{$AETHER_DOMAIN} {"; else print }' \
+            sed 's|^{\$AETHER_DOMAIN} {|http://{\$AETHER_DOMAIN} {|' \
                 "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile" > "$caddy_dir/Caddyfile"
             info "Caddyfile installed (HTTP-only domain mode)"
         else

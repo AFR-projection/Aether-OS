@@ -23,7 +23,6 @@ validate_domain() {
 
     [[ "$domain" != *..* ]] || fatal "Domain contains an empty label: $domain"
     [[ "$domain" != */* ]] || fatal "Domain must not contain '/': $domain"
-    [[ "$domain" != *["]"]* ]] || fatal "Domain contains invalid characters: $domain"
     [[ "$domain" =~ ^[A-Za-z0-9.-]+$ ]] || fatal "Domain is not RFC 1035 compliant: $domain"
 
     local label
