@@ -13,6 +13,20 @@ source "$SCRIPT_DIR/../lib/utils.sh"
 
 # Default configuration
 AETHER_INSTALL_DIR="${AETHER_INSTALL_DIR:-/opt/aether}"
+AETHER_PURGE=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --purge) AETHER_PURGE=true ;;
+        --help)
+            printf '%s\n' "Usage: $0 [--purge]"
+            exit 0
+            ;;
+        *) fatal "Unknown uninstall option: $arg" ;;
+    esac
+done
+
+export AETHER_PURGE
 AETHER_WORKSPACE_DIR="${AETHER_WORKSPACE_DIR:-/opt/aether/workspace}"
 AETHER_UPLOADS_DIR="${AETHER_UPLOADS_DIR:-/opt/aether/uploads}"
 AETHER_LOG_DIR="${AETHER_LOG_DIR:-/var/log/aether}"
@@ -23,38 +37,42 @@ AETHER_LOG_DIR="${AETHER_LOG_DIR:-/var/log/aether}"
 uninstall_aether() {
     stage "Uninstalling Aether Cloud OS"
 
-    # Confirm uninstall
-    confirm "Are you sure you want to uninstall Aether Cloud OS? This will remove all data." || exit 0
+    if [ "$AETHER_PURGE" = true ]; then
+        confirm "Purge Aether Cloud OS and permanently delete all data?" || exit 0
+    else
+        confirm "Uninstall Aether Cloud OS while preserving data, logs, and backups?" || exit 0
+    fi
 
-    # Stop services
     info "Stopping services"
     stop_services
-
-    # Remove systemd services
     info "Removing systemd services"
     remove_systemd_services
-
-    # Remove Docker containers and volumes
-    info "Removing Docker containers and volumes"
+    info "Removing Docker resources"
     remove_docker_resources
 
-    # Remove installation directory
-    info "Removing installation directory"
-    remove_directory "$AETHER_INSTALL_DIR"
-
-    # Remove workspace directory
-    info "Removing workspace directory"
-    remove_directory "$AETHER_WORKSPACE_DIR"
-
-    # Remove uploads directory
-    info "Removing uploads directory"
-    remove_directory "$AETHER_UPLOADS_DIR"
-
-    # Remove log directory
-    info "Removing log directory"
-    remove_directory "$AETHER_LOG_DIR"
+    if [ "$AETHER_PURGE" = true ]; then
+        remove_directory "$AETHER_INSTALL_DIR"
+        remove_directory "$AETHER_WORKSPACE_DIR"
+        remove_directory "$AETHER_UPLOADS_DIR"
+        remove_directory "$AETHER_LOG_DIR"
+    else
+        # Preserve user data and diagnostics. Remove only runtime source files.
+        backup_configuration_before_uninstall
+        rm -rf "$AETHER_INSTALL_DIR/src" "$AETHER_INSTALL_DIR/static" \
+            "$AETHER_INSTALL_DIR/caddy" "$AETHER_INSTALL_DIR/docker-compose.yml" \
+            "$AETHER_INSTALL_DIR/packages" "$AETHER_INSTALL_DIR/deploy"
+        info "Application files removed; data, logs, backups, and secrets preserved at $AETHER_INSTALL_DIR"
+    fi
 
     info "Aether Cloud OS uninstalled successfully"
+}
+
+backup_configuration_before_uninstall() {
+    local destination="$AETHER_INSTALL_DIR/backups/uninstall-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$destination"
+    [ -f "$AETHER_INSTALL_DIR/.env" ] && cp "$AETHER_INSTALL_DIR/.env" "$destination/"
+    [ -d "$AETHER_INSTALL_DIR/secrets" ] && cp -a "$AETHER_INSTALL_DIR/secrets" "$destination/"
+    info "Configuration backed up to $destination"
 }
 
 stop_services() {
@@ -96,14 +114,15 @@ remove_systemd_services() {
 remove_docker_resources() {
     info "Removing Docker resources"
 
-    if [ -f "$AETHER_INSTALL_DIR/docker-compose.prod.yml" ]; then
+    if [ -f "$AETHER_INSTALL_DIR/docker-compose.yml" ]; then
         cd "$AETHER_INSTALL_DIR"
-        sudo docker compose -f docker-compose.prod.yml down -v
+        if [ "$AETHER_PURGE" = true ]; then
+            sudo docker compose -f docker-compose.yml down -v
+        else
+            sudo docker compose -f docker-compose.yml down
+        fi
         cd - > /dev/null
     fi
-
-    # Remove any dangling images
-    sudo docker image prune -f
 
     info "Docker resources removed successfully"
 }

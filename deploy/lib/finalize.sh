@@ -44,28 +44,62 @@ configure_firewall() {
 }
 
 install_cli() {
-    # Thin wrapper so operators manage the stack without remembering paths.
+    # Install a real management CLI and the helper scripts it dispatches.
     local cli_dir="${AETHER_INSTALL_DIR}/scripts"
-    mkdir -p "$cli_dir"
+    local lib_dir="${AETHER_INSTALL_DIR}/lib"
+    mkdir -p "$cli_dir" "$lib_dir"
+
+    # Helpers source ../lib/core.sh and ../lib/utils.sh. Keep those libraries
+    # beside the installed scripts rather than depending on the source tree.
+    cp "${AETHER_INSTALL_DIR}/src/deploy/lib/core.sh" "$lib_dir/core.sh"
+    cp "${AETHER_INSTALL_DIR}/src/deploy/lib/utils.sh" "$lib_dir/utils.sh"
+    for helper in backup.sh restore.sh update.sh uninstall.sh; do
+        cp "${AETHER_INSTALL_DIR}/src/deploy/scripts/$helper" "$cli_dir/$helper"
+        chmod 755 "$cli_dir/$helper"
+    done
+    # Ensure helper scripts resolve the copied libraries, not the deleted source.
+    chmod 644 "$lib_dir/core.sh" "$lib_dir/utils.sh"
 
     cat > "$cli_dir/aether" <<EOF
 #!/usr/bin/env bash
 # Aether Cloud OS management CLI (installed by the installer).
 set -euo pipefail
-cd "$AETHER_INSTALL_DIR"
+INSTALL_DIR="$AETHER_INSTALL_DIR"
+cd "\$INSTALL_DIR"
 compose() {
     if docker info >/dev/null 2>&1; then docker compose "\$@"; else sudo docker compose "\$@"; fi
 }
+usage() {
+    printf '%s\\n' 'Usage: aether {status|logs [service]|start|stop|restart|update|repair|rollback|backup|restore <archive>|uninstall [--purge]}'
+}
 case "\${1:-help}" in
-    status)   compose ps ;;
-    logs)     shift; compose logs -f "\$@" ;;
-    start)    compose up -d ;;
-    stop)     compose stop ;;
-    restart)  compose restart ;;
-    update)   compose build --pull --no-cache && compose up -d ;;
-    backup)   bash "$AETHER_INSTALL_DIR/scripts/backup.sh" ;;
-    uninstall) bash "$AETHER_INSTALL_DIR/scripts/uninstall.sh" ;;
-    *)        echo "Usage: aether {status|logs|start|stop|restart|update|backup|uninstall}" ;;
+    status) compose ps ;;
+    logs) shift; compose logs -f "\$@" ;;
+    start) compose up -d ;;
+    stop) compose stop ;;
+    restart) compose restart ;;
+    update)
+        bash "\$INSTALL_DIR/scripts/backup.sh"
+        compose pull
+        compose build --pull
+        compose up -d
+        ;;
+    repair)
+        compose config >/dev/null
+        compose up -d --force-recreate
+        ;;
+    rollback)
+        archive="\${2:-}"
+        [ -n "\$archive" ] || { printf '%s\\n' 'rollback requires a backup archive path' >&2; exit 2; }
+        bash "\$INSTALL_DIR/scripts/restore.sh" "\$archive"
+        ;;
+    backup) bash "\$INSTALL_DIR/scripts/backup.sh" ;;
+    restore)
+        [ -n "\${2:-}" ] || { printf '%s\\n' 'restore requires a backup archive path' >&2; exit 2; }
+        bash "\$INSTALL_DIR/scripts/restore.sh" "\$2"
+        ;;
+    uninstall) bash "\$INSTALL_DIR/scripts/uninstall.sh" "\${2:-}" ;;
+    help|*) usage ;;
 esac
 EOF
     chmod 755 "$cli_dir/aether"
