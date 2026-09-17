@@ -687,8 +687,8 @@ function AgentsSection() {
           Pair an agent
         </Button>
         <span className="text-[11px] text-slate-500">
-          Agents run on other machines and connect back over a WebSocket to serve this instance&apos;s
-          files, processes, and terminals.
+          Agents run on other machines and connect back over a WebSocket to serve this
+          instance&apos;s files, processes, and terminals.
         </span>
       </div>
 
@@ -739,11 +739,7 @@ function AgentsSection() {
         </table>
       )}
 
-      <PairAgentDialog
-        open={pairOpen}
-        onClose={() => setPairOpen(false)}
-        onPaired={invalidate}
-      />
+      <PairAgentDialog open={pairOpen} onClose={() => setPairOpen(false)} onPaired={invalidate} />
 
       <ConfirmDialog
         open={pendingRevoke !== null}

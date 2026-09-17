@@ -5,23 +5,23 @@ choice has a cost, the cost is stated alongside it.
 
 ---
 
-| #   | Decision                             | Chose                                  | Over                                        |
-| --- | ------------------------------------ | -------------------------------------- | ------------------------------------------- |
-| 1   | Backend framework                    | Fastify 4                              | Express, NestJS                             |
-| 2   | Database access                      | Hand-written SQL (`pg`)                | Prisma, TypeORM, any ORM                    |
-| 3   | Password hashing                     | bcrypt (cost 12)                       | Argon2                                      |
-| 4   | Architecture                          | Separate host agent, outbound-only     | Backend SSHes into hosts, or agent accepts inbound connections |
-| 5   | WebSocket auth                       | Short-lived single-use tickets         | Token in query string, cookies              |
-| 6   | Session revocability                 | `sessions` table checked per request   | Pure stateless JWTs                         |
-| 7   | Refresh tokens                       | Opaque random values, SHA-256 at rest  | JWTs for refresh                            |
-| 8   | Cache                                | `MemoryCache` default, `RedisCache` when `REDIS_URL` is set | Redis as a hard dependency |
-| 9   | Installer scope                      | Ubuntu 22.04/24.04 x86_64 only, hard fatal | Best-effort multi-distro                 |
-| 10  | Reverse proxy                        | Caddy                                  | nginx, Traefik                              |
-| 11  | Frontend state                       | TanStack Query (server) + Zustand (client) | Redux, single library for both          |
-| 12  | Apps                                 | Compiled-in static registry            | Plugin system, runtime app loading          |
-| 13  | Editor                               | Plain `textarea`                       | Monaco/CodeMirror                           |
-| 14  | Monorepo                             | pnpm workspaces                        | Nx, Turborepo                               |
-| 15  | Validation                           | Zod schemas shared between packages    | Per-package hand-rolled validation          |
+| #   | Decision             | Chose                                                       | Over                                                           |
+| --- | -------------------- | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| 1   | Backend framework    | Fastify 4                                                   | Express, NestJS                                                |
+| 2   | Database access      | Hand-written SQL (`pg`)                                     | Prisma, TypeORM, any ORM                                       |
+| 3   | Password hashing     | bcrypt (cost 12)                                            | Argon2                                                         |
+| 4   | Architecture         | Separate host agent, outbound-only                          | Backend SSHes into hosts, or agent accepts inbound connections |
+| 5   | WebSocket auth       | Short-lived single-use tickets                              | Token in query string, cookies                                 |
+| 6   | Session revocability | `sessions` table checked per request                        | Pure stateless JWTs                                            |
+| 7   | Refresh tokens       | Opaque random values, SHA-256 at rest                       | JWTs for refresh                                               |
+| 8   | Cache                | `MemoryCache` default, `RedisCache` when `REDIS_URL` is set | Redis as a hard dependency                                     |
+| 9   | Installer scope      | Ubuntu 22.04/24.04 x86_64 only, hard fatal                  | Best-effort multi-distro                                       |
+| 10  | Reverse proxy        | Caddy                                                       | nginx, Traefik                                                 |
+| 11  | Frontend state       | TanStack Query (server) + Zustand (client)                  | Redux, single library for both                                 |
+| 12  | Apps                 | Compiled-in static registry                                 | Plugin system, runtime app loading                             |
+| 13  | Editor               | Plain `textarea`                                            | Monaco/CodeMirror                                              |
+| 14  | Monorepo             | pnpm workspaces                                             | Nx, Turborepo                                                  |
+| 15  | Validation           | Zod schemas shared between packages                         | Per-package hand-rolled validation                             |
 
 ---
 
@@ -40,8 +40,8 @@ between what the code says and what the database does.
 
 bcrypt over Argon2 because `bcryptjs` is pure JS and installs everywhere `node-pty` compiles, while
 Argon2 needs a native build chain on every host — including every managed host the setup script
-touches. Cost 12 keeps a hash around 250 ms. If the dependency cost ever stops mattering, Argon2id is
-the better algorithm; the hashing is isolated in `auth.service.ts` behind two functions.
+touches. Cost 12 keeps a hash around 250 ms. If the dependency cost ever stops mattering, Argon2id
+is the better algorithm; the hashing is isolated in `auth.service.ts` behind two functions.
 
 ### 4. The agent split
 
@@ -53,7 +53,7 @@ it asks an agent over WebSocket, and the agent does the work. Consequences, all 
   shell on any managed machine;
 - the agent connects **out**, so no inbound port on managed hosts — the common case where the host
   sits behind a firewall you do not control just works;
-- pairing is a first-class operation with revocable credentials, because the agent *is* a root-level
+- pairing is a first-class operation with revocable credentials, because the agent _is_ a root-level
   credential for its host.
 
 The cost: every feature that touches "the machine" must be designed twice (backend route + agent
@@ -71,7 +71,7 @@ on every request, cached for 5 s — an explicit trade-off documented in
 
 Refresh tokens are opaque 256-bit values stored as SHA-256 digests: a database dump yields no usable
 tokens, and rotation with reuse detection catches theft. JWTs for refresh were rejected — a JWT is a
-credential *format*, not a credential *store*, and the signature adds nothing the session row does
+credential _format_, not a credential _store_, and the signature adds nothing the session row does
 not already provide.
 
 ### 8. Redis optional
@@ -113,11 +113,11 @@ API payload at the route.
 
 ---
 
-## Decisions explicitly *not* made
+## Decisions explicitly _not_ made
 
 - **License** — `"license": "PENDING"` in `package.json`. Blocked on the maintainer, and it blocks
   any public release.
-- **Multi-tenancy** — the data model is single-instance, multi-*user* (roles within one workspace).
+- **Multi-tenancy** — the data model is single-instance, multi-_user_ (roles within one workspace).
   True multi-tenant SaaS is out of scope and would require reworking the workspace model end to end.
 - **2FA** — agreed to be needed eventually; not designed. Adding it later is additive (new table,
   new login step) rather than a breaking change.

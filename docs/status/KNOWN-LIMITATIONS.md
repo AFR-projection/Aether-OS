@@ -2,12 +2,12 @@
 
 **Read this before deploying to the public internet.**
 
-This is the honest list of what Aether does *not* do. Several entries are deliberate design choices
+This is the honest list of what Aether does _not_ do. Several entries are deliberate design choices
 with a stated trade-off; others are work not yet done. Each says which it is, so you can tell
 "unfinished" from "won't fix".
 
-The codebase references this file from six places; the corresponding entries are marked with
-**→ referenced by code**.
+The codebase references this file from six places; the corresponding entries are marked with **→
+referenced by code**.
 
 ---
 
@@ -20,14 +20,14 @@ The codebase references this file from six places; the corresponding entries are
 The access token is held in memory only and never touches storage. The **refresh token is persisted
 in `localStorage`**, because otherwise every page reload would sign the user out.
 
-*Impact:* any XSS on the app's origin can read the refresh token and mint access tokens
-indefinitely — until the session is revoked server-side.
+_Impact:_ any XSS on the app's origin can read the refresh token and mint access tokens indefinitely
+— until the session is revoked server-side.
 
-*Mitigations in place:* a strict Content-Security-Policy with no `unsafe-inline` for scripts, no
+_Mitigations in place:_ a strict Content-Security-Policy with no `unsafe-inline` for scripts, no
 `dangerouslySetInnerHTML` anywhere in the frontend package, and server-side session revocation that
 makes a stolen token revocable.
 
-*The correct fix* is an httpOnly cookie plus a CSRF token. That is a backend change (token issuance
+_The correct fix_ is an httpOnly cookie plus a CSRF token. That is a backend change (token issuance
 and refresh would move to a cookie) and is not scheduled. **This is the largest single weakness in
 the project.**
 
@@ -38,11 +38,11 @@ the project.**
 Every authenticated request performs a session lookup so a revoked session stops working
 immediately, rather than only when its JWT expires. That lookup is cached for a few seconds.
 
-*Impact:* after "revoke this session" or "revoke all sessions", the revoked token keeps working for
+_Impact:_ after "revoke this session" or "revoke all sessions", the revoked token keeps working for
 up to ~5 seconds. Not a meaningful window for an attacker who just lost access, but it is not
 instant, and "log out everywhere" should not be described as instantaneous.
 
-*Why:* without the cache, every API call becomes a database round-trip.
+_Why:_ without the cache, every API call becomes a database round-trip.
 
 ### 3. Rate limiting is per-process unless Redis is configured
 
@@ -51,11 +51,11 @@ instant, and "log out everywhere" should not be described as instantaneous.
 WebSocket tickets and rate-limit counters live in the cache. With the default in-process cache, they
 are per-backend-process.
 
-*Impact:* running more than one backend replica without `REDIS_URL` means each replica enforces its
+_Impact:_ running more than one backend replica without `REDIS_URL` means each replica enforces its
 own rate limits and cannot redeem another replica's WebSocket ticket. The backend detects this and
 logs loudly, but it does **not** refuse to start.
 
-*Rule:* more than one replica requires `REDIS_URL`. One replica is fine without it.
+_Rule:_ more than one replica requires `REDIS_URL`. One replica is fine without it.
 
 ### 4. No two-factor authentication
 
@@ -76,36 +76,36 @@ assessment.
 **→ referenced by `packages/backend/src/services/system.service.ts` and
 `packages/host-agent/src/capabilities/processes.ts`**
 
-Reading `/proc/<pid>/stat` gives a process's *cumulative* CPU time. A percentage requires two
+Reading `/proc/<pid>/stat` gives a process's _cumulative_ CPU time. A percentage requires two
 samples separated in time. Aether currently takes one sample and reports `0` rather than inventing a
 number.
 
-*Impact:* the Task Manager's CPU column is permanently empty. Memory, state, PID, parent, and
-command are all real. System-wide CPU (from `/proc/stat` deltas) *is* implemented; only the
+_Impact:_ the Task Manager's CPU column is permanently empty. Memory, state, PID, parent, and
+command are all real. System-wide CPU (from `/proc/stat` deltas) _is_ implemented; only the
 per-process column is affected.
 
-*Fix:* keep the previous sample per PID and compute the delta. Not scheduled.
+_Fix:_ keep the previous sample per PID and compute the delta. Not scheduled.
 
 ### 7. File search matches names, not contents
 
 **→ referenced by `packages/backend/src/services/files.service.ts`**
 
-`GET /api/files/search` does a case-insensitive substring match over entry *names*. There is no
+`GET /api/files/search` does a case-insensitive substring match over entry _names_. There is no
 content indexing and no full-text search.
 
-*Impact:* searching for a phrase inside a file finds nothing. There is no grep-like capability in
+_Impact:_ searching for a phrase inside a file finds nothing. There is no grep-like capability in
 the UI.
 
 ### 8. Code Studio has no syntax highlighting
 
 **→ referenced by `packages/frontend/src/apps/code-studio/CodeStudioApp.tsx`**
 
-It is a `textarea` with a line-number gutter, not a code editor. No editor library is a dependency of
-the frontend package, and a half-configured one was judged worse than an honest plain editor.
+It is a `textarea` with a line-number gutter, not a code editor. No editor library is a dependency
+of the frontend package, and a half-configured one was judged worse than an honest plain editor.
 
-*Impact:* editing works and is safe; there is no highlighting, autocomplete, or bracket matching.
+_Impact:_ editing works and is safe; there is no highlighting, autocomplete, or bracket matching.
 
-*Related safety rule:* a file the backend truncated for display can never be written back — saving
+_Related safety rule:_ a file the backend truncated for display can never be written back — saving
 would silently discard everything past the truncation point. Saving is disabled in that case.
 
 ### 9. Applications are compiled in — there is no third-party app installation
@@ -113,7 +113,7 @@ would silently discard everything past the truncation point. Saving is disabled 
 The app registry (`packages/frontend/src/apps/registry.ts`) is a static array of React components
 built into the bundle. The "App Catalog" app lists that registry; it does not download anything.
 
-*Impact:* there is no app store, no plugin system, and no sandbox for untrusted third-party code.
+_Impact:_ there is no app store, no plugin system, and no sandbox for untrusted third-party code.
 Adding an app means adding a component and a registry entry. Any future runtime for third-party code
 would need its own sandbox design, which does not exist yet.
 
@@ -122,8 +122,8 @@ would need its own sandbox design, which does not exist yet.
 There is no S3/MinIO client, no object storage, and no sync engine. Uploads are written to the
 backend's local `UPLOAD_DIR`.
 
-*Impact:* files are not shared between instances, and there is no conflict resolution because there
-is no replication. Multiple *users* of one instance share the workspace; multiple *instances* do not
+_Impact:_ files are not shared between instances, and there is no conflict resolution because there
+is no replication. Multiple _users_ of one instance share the workspace; multiple _instances_ do not
 share anything.
 
 ### 11. No AI assistant
@@ -144,7 +144,7 @@ There is no service worker and no web app manifest. The frontend requires a live
 
 ### 14. Windows and macOS agents, and ARM host images
 
-Only relevant to the *agent* (the backend and frontend are platform-independent). Deploying the
+Only relevant to the _agent_ (the backend and frontend are platform-independent). Deploying the
 agent on a non-`x86_64` host requires building `node-pty` from source; the installer installs a
 compiler toolchain, so this works, but the build is slow.
 
@@ -173,32 +173,32 @@ Storing it off-host means encrypting it yourself. See
 
 `aether restore` stops the stack, restores, starts it again, waits for the database check inside the
 container, and then requires the local host agent to reconnect to the backend. If any of that fails
-it exits non-zero and says so — a restore that "succeeded" but left a broken instance is worse than a
-loud failure. There is no automatic rollback *within* restore: the previous state is gone once the
+it exits non-zero and says so — a restore that "succeeded" but left a broken instance is worse than
+a loud failure. There is no automatic rollback _within_ restore: the previous state is gone once the
 data directory is replaced, so the safety net is the archive you still have, not the running
 instance. Take a fresh `aether backup` before restoring an old archive.
 
 ### 18. "Host Agent: connected" is a per-replica claim
 
-The local agent connects to one backend process. With `REDIS_URL` set and multiple backend
-replicas, `aether status` asks whichever replica answers its health probe, and the "agent connected"
-line is proved from *that* replica's logs. An agent that is connected to a different replica can
-therefore read as not connected. The install is one replica by default; this only matters if you
-scale the backend, in which case verify with `aether logs backend | grep "agent connected"` on the
-replica you care about. (Related: #19.)
+The local agent connects to one backend process. With `REDIS_URL` set and multiple backend replicas,
+`aether status` asks whichever replica answers its health probe, and the "agent connected" line is
+proved from _that_ replica's logs. An agent that is connected to a different replica can therefore
+read as not connected. The install is one replica by default; this only matters if you scale the
+backend, in which case verify with `aether logs backend | grep "agent connected"` on the replica you
+care about. (Related: #19.)
 
 ### 19. No horizontal scaling of the WebSocket layer beyond Redis
 
-Redis makes WebSocket *tickets* portable between replicas, so a client can connect to any replica.
+Redis makes WebSocket _tickets_ portable between replicas, so a client can connect to any replica.
 There is no cross-replica fan-out of terminal output or agent events: a terminal session is owned by
 the replica that created it. Sticky sessions at the proxy are therefore still required for terminals
 in a multi-replica deployment.
 
 ### 20. The local agent is unprivileged; a remote agent is not
 
-The host agent the installer puts on the same machine as the backend runs as `aether-agent`
-(uid/gid 1001 — the same numeric ids the backend container uses, so both own the workspace), under a
-hardened unit: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp`,
+The host agent the installer puts on the same machine as the backend runs as `aether-agent` (uid/gid
+1001 — the same numeric ids the backend container uses, so both own the workspace), under a hardened
+unit: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp`,
 `RestrictAddressFamilies`, and `ReadWritePaths` limited to the workspace.
 
 Reproduce the remote flow ([HOST-AGENTS.md](../operations/HOST-AGENTS.md)) and you get a **root**
@@ -219,11 +219,10 @@ talks to. Deploy them together.
 
 ## What has and has not been verified
 
-The installer, the CLI, and the update path are exercised by
-`deploy/tests/vps-harness.sh`: a full install, `status`/`doctor`/`version`, a backup and restore
-round-trip (including a deliberately corrupted archive that must be refused), an update that must
-report `Already up to date` on the second run, a repair, an uninstall that preserves data, and a
-reinstall-then-purge.
+The installer, the CLI, and the update path are exercised by `deploy/tests/vps-harness.sh`: a full
+install, `status`/`doctor`/`version`, a backup and restore round-trip (including a deliberately
+corrupted archive that must be refused), an update that must report `Already up to date` on the
+second run, a repair, an uninstall that preserves data, and a reinstall-then-purge.
 
 That harness needs a real host — root, systemd, Docker, Ubuntu — and it exits `77` with
 `BLOCKED_BY_ENVIRONMENT` anywhere else rather than reporting a pass. **It has not been run on a

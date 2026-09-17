@@ -41,7 +41,11 @@ describe('registerLocalAgent', () => {
   it('stores the hash it is given, with no owner and scope=local', async () => {
     queryMock.mockResolvedValue({ rows: [], rowCount: 1 });
 
-    await registerLocalAgent({ agentId: AGENT_ID, label: 'Local host', tokenHash: sha256Hex(TOKEN) });
+    await registerLocalAgent({
+      agentId: AGENT_ID,
+      label: 'Local host',
+      tokenHash: sha256Hex(TOKEN),
+    });
 
     const { sql, params } = lastQuery();
     expect(sql).toContain('INSERT INTO aether.host_agents');
@@ -54,7 +58,11 @@ describe('registerLocalAgent', () => {
   it('upserts instead of failing on a re-run, and clears a revocation', async () => {
     queryMock.mockResolvedValue({ rows: [], rowCount: 1 });
 
-    await registerLocalAgent({ agentId: AGENT_ID, label: 'Local host', tokenHash: sha256Hex(TOKEN) });
+    await registerLocalAgent({
+      agentId: AGENT_ID,
+      label: 'Local host',
+      tokenHash: sha256Hex(TOKEN),
+    });
 
     const { sql } = lastQuery();
     expect(sql).toContain('ON CONFLICT (id) DO UPDATE');

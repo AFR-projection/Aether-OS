@@ -2,10 +2,10 @@
 
 Two WebSocket endpoints, with different authentication because they have different clients.
 
-| Endpoint           | Client         | Authenticates with               | Defined in                          |
-| ------------------ | -------------- | -------------------------------- | ----------------------------------- |
-| `/ws/terminal/:id` | Browser        | One-time ticket (`?ticket=…`)    | `packages/backend/src/ws/terminal.ws.ts` |
-| `/ws/agent`        | Host agent     | Pairing token (`?agentId=&token=`) | `packages/backend/src/ws/agent.ws.ts` |
+| Endpoint           | Client     | Authenticates with                 | Defined in                               |
+| ------------------ | ---------- | ---------------------------------- | ---------------------------------------- |
+| `/ws/terminal/:id` | Browser    | One-time ticket (`?ticket=…`)      | `packages/backend/src/ws/terminal.ws.ts` |
+| `/ws/agent`        | Host agent | Pairing token (`?agentId=&token=`) | `packages/backend/src/ws/agent.ws.ts`    |
 
 Both enforce, per connection:
 
@@ -40,7 +40,7 @@ and redeems it on the socket: `wss://…/ws/terminal/<sessionId>?ticket=<ticket>
 The ticket is bound to the session id, so a ticket for one terminal cannot be used to attach to
 another.
 
-### The ticket is redeemed *after* the handshake
+### The ticket is redeemed _after_ the handshake
 
 `@fastify/websocket` offers no pre-upgrade hook here, so the handshake completes first and the
 ticket is redeemed immediately after. If it fails, the socket is closed with `4001` and **no frame
@@ -77,21 +77,21 @@ have to keep asking whether the socket is alive.
 ### Detaching does not kill the shell
 
 Closing the socket detaches the client; the PTY keeps running. That is what makes "reload the page
-and your session is still there" work. Abandoned sessions are reclaimed by
-`TERMINAL_IDLE_TIMEOUT`, not by the socket closing.
+and your session is still there" work. Abandoned sessions are reclaimed by `TERMINAL_IDLE_TIMEOUT`,
+not by the socket closing.
 
 ### Close codes
 
-| Code   | Name                | Meaning                                            |
-| ------ | ------------------- | -------------------------------------------------- |
-| `1000` | NORMAL              | Session ended cleanly                               |
-| `1003` | UNSUPPORTED_DATA    | Unsupported frame                                   |
-| `1008` | POLICY_VIOLATION    | Missing session id, or frame over the size limit    |
-| `1011` | INTERNAL_ERROR      | Terminal subsystem unavailable on this host         |
-| `4001` | UNAUTHENTICATED     | Missing or invalid ticket                           |
-| `4003` | FORBIDDEN           | Authenticated but not permitted                     |
-| `4004` | SESSION_NOT_FOUND   | Session does not exist or has already exited        |
-| `4029` | RATE_LIMITED        | More than 200 frames in one second                  |
+| Code   | Name              | Meaning                                          |
+| ------ | ----------------- | ------------------------------------------------ |
+| `1000` | NORMAL            | Session ended cleanly                            |
+| `1003` | UNSUPPORTED_DATA  | Unsupported frame                                |
+| `1008` | POLICY_VIOLATION  | Missing session id, or frame over the size limit |
+| `1011` | INTERNAL_ERROR    | Terminal subsystem unavailable on this host      |
+| `4001` | UNAUTHENTICATED   | Missing or invalid ticket                        |
+| `4003` | FORBIDDEN         | Authenticated but not permitted                  |
+| `4004` | SESSION_NOT_FOUND | Session does not exist or has already exited     |
+| `4029` | RATE_LIMITED      | More than 200 frames in one second               |
 
 `4000–4999` is the application-defined range; the rest are standard.
 
@@ -108,8 +108,8 @@ matters when that host is on a network you do not control.
 GET wss://<backend>/ws/agent?agentId=<uuid>&token=<pairing token>
 ```
 
-The backend verifies the token against the SHA-256 hash in `aether.host_agents`. The plaintext
-token is never stored, so it cannot be re-read from the database.
+The backend verifies the token against the SHA-256 hash in `aether.host_agents`. The plaintext token
+is never stored, so it cannot be re-read from the database.
 
 Then the agent sends a `hello` frame carrying its identity and capability list:
 
@@ -149,12 +149,12 @@ The `id` is echoed so replies can be matched to requests — several may be in f
 
 The complete set an agent may advertise and serve:
 
-| Group          | Capabilities                                                    |
-| -------------- | ---------------------------------------------------------------- |
-| System         | `system.info`                                                     |
-| Processes      | `processes.list`, `processes.signal`                              |
-| Files          | `files.list`, `files.read`, `files.write`, `files.delete`, `files.mkdir` |
-| Terminal       | `terminal.create`, `terminal.input`, `terminal.resize`, `terminal.signal`, `terminal.kill`, `terminal.list` |
+| Group     | Capabilities                                                                                                |
+| --------- | ----------------------------------------------------------------------------------------------------------- |
+| System    | `system.info`                                                                                               |
+| Processes | `processes.list`, `processes.signal`                                                                        |
+| Files     | `files.list`, `files.read`, `files.write`, `files.delete`, `files.mkdir`                                    |
+| Terminal  | `terminal.create`, `terminal.input`, `terminal.resize`, `terminal.signal`, `terminal.kill`, `terminal.list` |
 
 This is the **entire** vocabulary. There is no `exec`, no `shell`, no arbitrary command. A
 compromised agent cannot be asked to do anything outside this list, and there is nothing on the list
@@ -163,9 +163,9 @@ that runs a caller-supplied command line: `terminal.create` spawns a shell from
 
 ### Parameter validation
 
-Every capability has a Zod schema in `packages/host-agent/src/protocol.ts`, and
-`parseAgentMessage` validates the envelope and the params **before** the request reaches a
-capability handler. An unknown `type` is rejected outright.
+Every capability has a Zod schema in `packages/host-agent/src/protocol.ts`, and `parseAgentMessage`
+validates the envelope and the params **before** the request reaches a capability handler. An
+unknown `type` is rejected outright.
 
 Path parameters use `relativePathSchema`, and the same workspace sandbox is enforced on the agent
 side — the agent does not assume the backend already checked.

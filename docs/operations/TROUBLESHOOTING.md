@@ -47,17 +47,17 @@ sudo aether logs backend | tail -50
 
 A backend that exits immediately on startup is almost always **configuration**. The usual causes:
 
-| Log line                                             | Cause                                                    |
-| ---------------------------------------------------- | -------------------------------------------------------- |
-| `Invalid environment configuration:` + a var name     | A required variable is missing or malformed               |
-| `JWT_SECRET must be at least 32 characters`           | Truncated secret — the `.env` was edited by hand           |
-| `ECONNREFUSED` connecting to postgres                 | PostgreSQL is not up yet, or the password in `.env` is wrong |
-| `password authentication failed for user`             | `.env` DB password does not match the volume's actual cluster |
+| Log line                                          | Cause                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------- |
+| `Invalid environment configuration:` + a var name | A required variable is missing or malformed                   |
+| `JWT_SECRET must be at least 32 characters`       | Truncated secret — the `.env` was edited by hand              |
+| `ECONNREFUSED` connecting to postgres             | PostgreSQL is not up yet, or the password in `.env` is wrong  |
+| `password authentication failed for user`         | `.env` DB password does not match the volume's actual cluster |
 
 That last one deserves emphasis: **`POSTGRES_PASSWORD` only takes effect when the data volume is
-created.** Changing it in `.env` later does not change the role's password in an existing cluster, so
-the backend and the database disagree and authentication fails. Either restore the original password
-or recreate the volume (which deletes the data — restore from a backup instead).
+created.** Changing it in `.env` later does not change the role's password in an existing cluster,
+so the backend and the database disagree and authentication fails. Either restore the original
+password or recreate the volume (which deletes the data — restore from a backup instead).
 
 ---
 
@@ -88,15 +88,15 @@ That is the access token lifetime. The frontend refreshes silently using the ref
 should be invisible — unless refresh is failing. Check the browser console for a failed
 `POST /api/auth/refresh`, and the backend log for `refresh token reuse detected`.
 
-That message means a **replayed** refresh token was presented, and the whole session was revoked as a
-precaution. Common causes: two tabs racing on the same token, or a client that retried a refresh it
-had already sent. Log in again.
+That message means a **replayed** refresh token was presented, and the whole session was revoked as
+a precaution. Common causes: two tabs racing on the same token, or a client that retried a refresh
+it had already sent. Log in again.
 
 ### "Session has been revoked or has expired" but I just logged in
 
 Revocation propagates within **5 seconds** (the session cache TTL). If you were just logged out
-elsewhere, waiting a moment is the fix. If it persists, the session row is gone — check
-**Settings → Sessions**.
+elsewhere, waiting a moment is the fix. If it persists, the session row is gone — check **Settings →
+Sessions**.
 
 ### Everyone gets rate-limited at once, or the audit log shows one IP for all users
 
@@ -123,8 +123,8 @@ sudo grep '^TRUST_PROXY_HOPS=' /opt/aether/.env
 curl -s localhost:3000/api/terminal/available
 ```
 
-That is a native module; it needs a compiler at install time. In Docker this is baked into the image,
-so a failure here usually means the image was built on an incompatible platform. Rebuild:
+That is a native module; it needs a compiler at install time. In Docker this is baked into the
+image, so a failure here usually means the image was built on an incompatible platform. Rebuild:
 
 ```bash
 sudo aether update --no-pull
@@ -132,25 +132,25 @@ sudo aether update --no-pull
 
 ### The terminal connects then immediately closes
 
-The WebSocket ticket is valid for **30 seconds and single-use**. A clock skew between the browser and
-the server larger than that breaks the handshake. The browser console will show a close code.
+The WebSocket ticket is valid for **30 seconds and single-use**. A clock skew between the browser
+and the server larger than that breaks the handshake. The browser console will show a close code.
 
-| Close code | Meaning                                                     |
-| ---------- | ----------------------------------------------------------- |
-| `1000`     | Normal closure — the backend or agent ended the session      |
-| `1003`     | Unsupported data — a malformed frame was received            |
-| `1008`     | Policy violation                                             |
-| `1011`     | Backend error; check `aether logs backend`                   |
-| `4001`     | Unauthenticated — ticket invalid, expired, or already redeemed |
+| Close code | Meaning                                                                        |
+| ---------- | ------------------------------------------------------------------------------ |
+| `1000`     | Normal closure — the backend or agent ended the session                        |
+| `1003`     | Unsupported data — a malformed frame was received                              |
+| `1008`     | Policy violation                                                               |
+| `1011`     | Backend error; check `aether logs backend`                                     |
+| `4001`     | Unauthenticated — ticket invalid, expired, or already redeemed                 |
 | `4003`     | Forbidden — ticket was issued for a different session, or a missing permission |
-| `4004`     | Session not found — the session was revoked                  |
-| `4029`     | Rate limited — too many connections too quickly              |
+| `4004`     | Session not found — the session was revoked                                    |
+| `4029`     | Rate limited — too many connections too quickly                                |
 
 ### Keystrokes lag or the terminal freezes
 
-The terminal is proxied **backend → agent → PTY**. A slow link between backend and agent adds latency
-to every keystroke. Check the agent's connection state on **Settings → Host agents**; a host showing
-`connected: false` will make any open terminal there appear frozen.
+The terminal is proxied **backend → agent → PTY**. A slow link between backend and agent adds
+latency to every keystroke. Check the agent's connection state on **Settings → Host agents**; a host
+showing `connected: false` will make any open terminal there appear frozen.
 
 ---
 
@@ -169,8 +169,8 @@ sudo aether logs --tail 50 backend | grep 'agent connected'
 sudo aether repair                                        # reinstalls and re-registers it
 ```
 
-`aether doctor` separates the two cases for you: *"service up, not acknowledged by the backend"* is
-the backend side failing (the agent is dialling and being rejected), while *"not running"* is the
+`aether doctor` separates the two cases for you: _"service up, not acknowledged by the backend"_ is
+the backend side failing (the agent is dialling and being rejected), while _"not running"_ is the
 agent side. Either way, `aether repair` is the fix — it reinstalls and re-registers the agent rather
 than making you work out which half broke.
 
@@ -199,13 +199,13 @@ Working as intended. The sandbox rejects absolute paths, `..`, `~`, drive letter
 point outside `AETHER_WORKSPACE_ROOT`.
 
 If a legitimate path is being rejected, the usual cause is a **symlink inside the workspace pointing
-out of it**. `realpath` follows it, the resolved path lands outside the root, and it is refused. Move
-the target inside the workspace, or move the workspace root up.
+out of it**. `realpath` follows it, the resolved path lands outside the root, and it is refused.
+Move the target inside the workspace, or move the workspace root up.
 
 ### "Refusing to write through a symbolic link"
 
-A deliberate refusal: writing through a symlink that points outside the sandbox would escape it. Edit
-the file at its real location, inside the workspace.
+A deliberate refusal: writing through a symlink that points outside the sandbox would escape it.
+Edit the file at its real location, inside the workspace.
 
 ### Upload fails partway through with no clear error
 
@@ -228,8 +228,8 @@ responsive. Download the file to see all of it.
 
 ### "Backup created successfully" but the archive is tiny
 
-It should not be possible any more — the script fails hard if `pg_dump` fails rather than skipping the
-database and reporting success. If you see a small archive, check:
+It should not be possible any more — the script fails hard if `pg_dump` fails rather than skipping
+the database and reporting success. If you see a small archive, check:
 
 ```bash
 sudo aether logs postgres | tail -20
@@ -253,8 +253,8 @@ backup is not one — `aether restore` will tell you which.
 
 ### Restore finished but the data is unchanged
 
-Confirm the archive you restored is the one you meant — restores do not merge, they replace. Check the
-service health after:
+Confirm the archive you restored is the one you meant — restores do not merge, they replace. Check
+the service health after:
 
 ```bash
 sudo aether status
@@ -269,15 +269,15 @@ The archive is corrupt or was truncated in transit. Do not force it. Find an old
 
 Also deliberate. A missing `.sha256` means the archive's completeness is unverifiable, and restoring
 a half-written dump over a healthy database destroys the good copy. If you know the archive is
-intact — you made it by hand, or the checksum file was lost in transit — `AETHER_ALLOW_UNVERIFIED=true
-aether restore <archive>` proceeds. Read the warning it prints first.
+intact — you made it by hand, or the checksum file was lost in transit —
+`AETHER_ALLOW_UNVERIFIED=true aether restore <archive>` proceeds. Read the warning it prints first.
 
 ### Restore exits non-zero but the container is up
 
-`aether restore` fails when the instance is not healthy *after* the data is back: either the database
-check inside the backend never passed, or the local host agent did not reconnect to the backend
-within the timeout. The restore itself is not rolled back — there is nothing left to roll back to —
-so treat the message as "now go look", not "nothing happened".
+`aether restore` fails when the instance is not healthy _after_ the data is back: either the
+database check inside the backend never passed, or the local host agent did not reconnect to the
+backend within the timeout. The restore itself is not rolled back — there is nothing left to roll
+back to — so treat the message as "now go look", not "nothing happened".
 
 ```bash
 sudo aether status
@@ -295,7 +295,6 @@ row, so the two sides agree again without you copying anything.
 sudo aether repair
 ```
 
-
 ---
 
 ## Updates
@@ -303,8 +302,8 @@ sudo aether repair
 ### `aether update` fails with a merge conflict
 
 It should not: it uses `git merge --ff-only` precisely so a deployed instance never lands in a
-conflicted merge with nobody around to resolve it. A failure means the local source has diverged from
-the remote — someone edited files in `/opt/aether/src` directly.
+conflicted merge with nobody around to resolve it. A failure means the local source has diverged
+from the remote — someone edited files in `/opt/aether/src` directly.
 
 ```bash
 cd /opt/aether/src && git status
@@ -401,13 +400,14 @@ unused layers with `docker system prune`, but **not** `--volumes` — that delet
 Include:
 
 1. `sudo aether status` output
-2. The `requestId` from the failing response (`x-request-id` header, or `error.requestId` in the body)
+2. The `requestId` from the failing response (`x-request-id` header, or `error.requestId` in the
+   body)
 3. The matching backend log line
 4. `sudo aether logs backend | grep 'aether backend starting' | head -1 | jq .config`
 
-That last one prints the **shape** of the running configuration — which features are on, which limits
-apply — with secrets redacted. It is usually enough to identify a misconfiguration without anyone
-having to read your `.env`.
+That last one prints the **shape** of the running configuration — which features are on, which
+limits apply — with secrets redacted. It is usually enough to identify a misconfiguration without
+anyone having to read your `.env`.
 
 **Never include** a bootstrap token, a pairing token, or `.env` contents in a report. Redact IP
 addresses and hostnames if the instance is not public.

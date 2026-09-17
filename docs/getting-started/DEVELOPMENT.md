@@ -2,12 +2,12 @@
 
 ## Prerequisites
 
-| Tool           | Version | Notes                                                          |
-| -------------- | ------- | -------------------------------------------------------------- |
-| Node.js        | 20+     | Matches the runtime in the production image.                    |
-| pnpm           | 8+      | The workspace is pnpm-only; npm and yarn will not resolve `workspace:*`. |
-| Docker         | any recent | Runs PostgreSQL (and Redis, if you want it) for local development. |
-| Build toolchain | —      | `node-pty` is a native addon. Linux: `build-essential python3`. macOS: `xcode-select --install`. |
+| Tool            | Version    | Notes                                                                                            |
+| --------------- | ---------- | ------------------------------------------------------------------------------------------------ |
+| Node.js         | 20+        | Matches the runtime in the production image.                                                     |
+| pnpm            | 8+         | The workspace is pnpm-only; npm and yarn will not resolve `workspace:*`.                         |
+| Docker          | any recent | Runs PostgreSQL (and Redis, if you want it) for local development.                               |
+| Build toolchain | —          | `node-pty` is a native addon. Linux: `build-essential python3`. macOS: `xcode-select --install`. |
 
 ---
 
@@ -35,7 +35,7 @@ $bytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
   Set-Content .env
 ```
 
-`ENCRYPTION_KEY` is only *required* when `NODE_ENV=production`, so the development value from
+`ENCRYPTION_KEY` is only _required_ when `NODE_ENV=production`, so the development value from
 `.env.example` is fine locally.
 
 ```bash
@@ -82,24 +82,24 @@ You should see `users`, `sessions`, `audit_events`, `settings`, `host_agents`, a
 
 ## Workspace commands
 
-| Command              | Does                                                             |
-| -------------------- | ---------------------------------------------------------------- |
-| `pnpm dev`           | Every package in parallel (backend + frontend)                    |
-| `pnpm dev:backend`   | Backend only, `tsx watch`                                         |
-| `pnpm dev:frontend`  | Frontend only, Vite                                               |
-| `pnpm build`         | Build every package, in dependency order                          |
-| `pnpm test`          | Vitest across the workspace                                       |
-| `pnpm test:backend`  | Backend tests only                                                |
-| `pnpm lint`          | ESLint                                                            |
-| `pnpm lint:fix`      | ESLint with `--fix`                                               |
-| `pnpm typecheck`     | `tsc` across the workspace                                        |
-| `pnpm format`        | Prettier, write                                                   |
-| `pnpm format:check`  | Prettier, check only — what CI runs                               |
-| `pnpm db:migrate`    | Apply pending migrations without starting the server              |
-| `pnpm clean`         | Remove `dist/`, `coverage/`, `*.tsbuildinfo`                      |
+| Command             | Does                                                 |
+| ------------------- | ---------------------------------------------------- |
+| `pnpm dev`          | Every package in parallel (backend + frontend)       |
+| `pnpm dev:backend`  | Backend only, `tsx watch`                            |
+| `pnpm dev:frontend` | Frontend only, Vite                                  |
+| `pnpm build`        | Build every package, in dependency order             |
+| `pnpm test`         | Vitest across the workspace                          |
+| `pnpm test:backend` | Backend tests only                                   |
+| `pnpm lint`         | ESLint                                               |
+| `pnpm lint:fix`     | ESLint with `--fix`                                  |
+| `pnpm typecheck`    | `tsc` across the workspace                           |
+| `pnpm format`       | Prettier, write                                      |
+| `pnpm format:check` | Prettier, check only — what CI runs                  |
+| `pnpm db:migrate`   | Apply pending migrations without starting the server |
+| `pnpm clean`        | Remove `dist/`, `coverage/`, `*.tsbuildinfo`         |
 
-**`pnpm build` matters even in development.** The frontend and host-agent import `@aether/shared`
-as `workspace:*`, which resolves to its `dist/`. If `shared` has not been built, typecheck and lint
+**`pnpm build` matters even in development.** The frontend and host-agent import `@aether/shared` as
+`workspace:*`, which resolves to its `dist/`. If `shared` has not been built, typecheck and lint
 fail with unresolved-module errors that look like something else entirely. CI builds it first for
 exactly this reason.
 
@@ -161,16 +161,15 @@ To develop against the memory backend, comment `REDIS_URL` out and restart.
 
 ### Work on the host agent
 
-The agent connects *out* to the backend, so it needs a pairing token:
+The agent connects _out_ to the backend, so it needs a pairing token:
 
 1. Run the backend and frontend.
 2. Settings → **Host agents** → **Pair agent**.
-3. Copy the token and agent id into a local `packages/host-agent/.env` as
-   `AETHER_AGENT_ID` / `AETHER_PAIRING_TOKEN`, with `AETHER_BACKEND_URL=ws://localhost:3000`.
+3. Copy the token and agent id into a local `packages/host-agent/.env` as `AETHER_AGENT_ID` /
+   `AETHER_PAIRING_TOKEN`, with `AETHER_BACKEND_URL=ws://localhost:3000`.
 4. `pnpm --filter @aether/host-agent dev`
 
-It appears as connected on the same screen. See
-[HOST-AGENTS.md](../operations/HOST-AGENTS.md).
+It appears as connected on the same screen. See [HOST-AGENTS.md](../operations/HOST-AGENTS.md).
 
 ---
 

@@ -28,28 +28,28 @@ openssl rand -hex 32      # ENCRYPTION_KEY
 
 ## Runtime
 
-| Variable   | Default       | Notes                                                        |
-| ---------- | ------------- | ------------------------------------------------------------ |
+| Variable   | Default       | Notes                                                                                  |
+| ---------- | ------------- | -------------------------------------------------------------------------------------- |
 | `NODE_ENV` | `development` | One of `development`, `test`, `production`. Enables the extra production checks below. |
 
 ## HTTP
 
-| Variable          | Default                                       | Notes                                                              |
-| ----------------- | --------------------------------------------- | ------------------------------------------------------------------ |
-| `PORT`            | `3000`                                        | 1–65535                                                            |
-| `HOST`            | `0.0.0.0`                                     |                                                                    |
-| `BASE_URL`        | `http://localhost:3000`                       | Must parse as a URL. Used for links the backend generates.          |
+| Variable          | Default                                       | Notes                                                                                     |
+| ----------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `PORT`            | `3000`                                        | 1–65535                                                                                   |
+| `HOST`            | `0.0.0.0`                                     |                                                                                           |
+| `BASE_URL`        | `http://localhost:3000`                       | Must parse as a URL. Used for links the backend generates.                                |
 | `ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Comma-separated CORS allowlist. Must include the Vite dev server for local frontend work. |
 
 ## Database
 
 PostgreSQL is **required**; the backend will not start without it.
 
-| Variable                         | Default | Notes                                            |
-| -------------------------------- | ------- | ------------------------------------------------ |
-| `DATABASE_URL`                   | —       | Required. `postgresql://user:pass@host:5432/db`   |
-| `DATABASE_POOL_MAX`              | `10`    | 1–100                                            |
-| `DATABASE_STATEMENT_TIMEOUT_MS`  | `15000` | `0` disables the timeout. Guards against a runaway query holding a connection. |
+| Variable                        | Default | Notes                                                                          |
+| ------------------------------- | ------- | ------------------------------------------------------------------------------ |
+| `DATABASE_URL`                  | —       | Required. `postgresql://user:pass@host:5432/db`                                |
+| `DATABASE_POOL_MAX`             | `10`    | 1–100                                                                          |
+| `DATABASE_STATEMENT_TIMEOUT_MS` | `15000` | `0` disables the timeout. Guards against a runaway query holding a connection. |
 
 The schema is created and migrated by the backend at startup. Never create tables by hand — see
 [DATA-MODEL.md](../architecture/DATA-MODEL.md) for why that specifically has caused a failure
@@ -57,9 +57,9 @@ before.
 
 ## <a id="redis_url"></a>Cache — `REDIS_URL`
 
-| Variable    | Default | Notes                                  |
-| ----------- | ------- | -------------------------------------- |
-| `REDIS_URL` | *unset* | Optional. `redis://[:password@]host:port` |
+| Variable    | Default | Notes                                     |
+| ----------- | ------- | ----------------------------------------- |
+| `REDIS_URL` | _unset_ | Optional. `redis://[:password@]host:port` |
 
 **This is the setting that decides whether you can run more than one replica.**
 
@@ -79,76 +79,76 @@ curl -s localhost:3000/api/health | jq .checks.cache
 
 ## Secrets
 
-| Variable                   | Default | Notes                                                                   |
-| -------------------------- | ------- | ----------------------------------------------------------------------- |
-| `JWT_SECRET`               | —       | **Required**, minimum 32 characters.                                     |
-| `JWT_ACCESS_TOKEN_EXPIRY`  | `15m`   |                                                                          |
-| `JWT_REFRESH_TOKEN_EXPIRY` | `30d`   |                                                                          |
+| Variable                   | Default | Notes                                                                                                                     |
+| -------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`               | —       | **Required**, minimum 32 characters.                                                                                      |
+| `JWT_ACCESS_TOKEN_EXPIRY`  | `15m`   |                                                                                                                           |
+| `JWT_REFRESH_TOKEN_EXPIRY` | `30d`   |                                                                                                                           |
 | `ENCRYPTION_KEY`           | —       | **Required in production.** Rotating it makes existing ciphertext unreadable, so the installer reuses it across upgrades. |
-| `SESSION_SECRET`           | *unset* | Optional.                                                                 |
+| `SESSION_SECRET`           | _unset_ | Optional.                                                                                                                 |
 
 ## Logging
 
-| Variable     | Default | Notes                                                                                          |
-| ------------ | ------- | ---------------------------------------------------------------------------------------------- |
+| Variable     | Default | Notes                                                                                                             |
+| ------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
 | `LOG_LEVEL`  | `info`  | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`. `debug` and `trace` are **rejected in production**. |
-| `LOG_FORMAT` | `json`  | `json` or `pretty`. `pretty` is **rejected in production**.                                      |
+| `LOG_FORMAT` | `json`  | `json` or `pretty`. `pretty` is **rejected in production**.                                                       |
 
 Debug logging in production is refused because verbose request logging writes payloads into log
 storage.
 
 ## Rate limiting
 
-| Variable                   | Default | Notes    |
-| -------------------------- | ------- | -------- |
-| `RATE_LIMIT_ENABLED`       | `true`  | Accepts `1`/`true`/`yes`/`on`. |
-| `RATE_LIMIT_MAX_REQUESTS`  | `100`   |          |
-| `RATE_LIMIT_WINDOW_MS`     | `60000` | Minimum 1000 ms. |
+| Variable                  | Default | Notes                          |
+| ------------------------- | ------- | ------------------------------ |
+| `RATE_LIMIT_ENABLED`      | `true`  | Accepts `1`/`true`/`yes`/`on`. |
+| `RATE_LIMIT_MAX_REQUESTS` | `100`   |                                |
+| `RATE_LIMIT_WINDOW_MS`    | `60000` | Minimum 1000 ms.               |
 
 Counters live in the cache, so they are per-process unless `REDIS_URL` is set.
 
 ## Filesystem sandbox
 
-| Variable                 | Default      | Notes                                                                  |
-| ------------------------ | ------------ | ---------------------------------------------------------------------- |
-| `AETHER_WORKSPACE_ROOT`  | `./workspace` | **The only tree the Files app and the terminal may touch.** Resolved with `fs.realpath` at startup; nothing outside it is reachable, regardless of what the process user can otherwise read. |
-| `MAX_FILE_SIZE`          | `104857600`  | 100 MiB.                                                               |
-| `UPLOAD_DIR`             | `./uploads`  | Where uploads are written.                                             |
+| Variable                | Default       | Notes                                                                                                                                                                                        |
+| ----------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AETHER_WORKSPACE_ROOT` | `./workspace` | **The only tree the Files app and the terminal may touch.** Resolved with `fs.realpath` at startup; nothing outside it is reachable, regardless of what the process user can otherwise read. |
+| `MAX_FILE_SIZE`         | `104857600`   | 100 MiB.                                                                                                                                                                                     |
+| `UPLOAD_DIR`            | `./uploads`   | Where uploads are written.                                                                                                                                                                   |
 
 ## Terminal
 
-| Variable                     | Default             | Notes                                              |
-| ---------------------------- | ------------------- | -------------------------------------------------- |
-| `TERMINAL_ENABLED`           | `true`              |                                                    |
-| `TERMINAL_MAX_SESSIONS`      | `10`                | 1–200.                                              |
-| `TERMINAL_IDLE_TIMEOUT`      | `1800000`           | 30 minutes. Minimum 60 s.                           |
-| `TERMINAL_SCROLLBACK_LINES`  | `10000`             | Minimum 100.                                        |
-| `TERMINAL_ALLOWED_SHELLS`    | `/bin/bash,/bin/sh` | Comma-separated allowlist of shells that may be spawned. |
+| Variable                    | Default             | Notes                                                    |
+| --------------------------- | ------------------- | -------------------------------------------------------- |
+| `TERMINAL_ENABLED`          | `true`              |                                                          |
+| `TERMINAL_MAX_SESSIONS`     | `10`                | 1–200.                                                   |
+| `TERMINAL_IDLE_TIMEOUT`     | `1800000`           | 30 minutes. Minimum 60 s.                                |
+| `TERMINAL_SCROLLBACK_LINES` | `10000`             | Minimum 100.                                             |
+| `TERMINAL_ALLOWED_SHELLS`   | `/bin/bash,/bin/sh` | Comma-separated allowlist of shells that may be spawned. |
 
 ## First-run bootstrap
 
-| Variable                 | Default | Notes                                                                                        |
-| ------------------------ | ------- | -------------------------------------------------------------------------------------------- |
-| `AETHER_BOOTSTRAP_TOKEN` | *unset* | When set, `POST /api/auth/bootstrap` additionally requires this value in the `X-Bootstrap-Token` header. Without it, anyone who can reach a fresh instance can claim the owner account. Bootstrap is refused unconditionally once a user exists. Left unset in development so the first-run screen needs no token; the installer always generates one. |
-| `AETHER_INSTANCE_ID`     | *unset* | Stable identifier, generated by the installer and shown on Settings → About.                  |
+| Variable                 | Default | Notes                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AETHER_BOOTSTRAP_TOKEN` | _unset_ | When set, `POST /api/auth/bootstrap` additionally requires this value in the `X-Bootstrap-Token` header. Without it, anyone who can reach a fresh instance can claim the owner account. Bootstrap is refused unconditionally once a user exists. Left unset in development so the first-run screen needs no token; the installer always generates one. |
+| `AETHER_INSTANCE_ID`     | _unset_ | Stable identifier, generated by the installer and shown on Settings → About.                                                                                                                                                                                                                                                                           |
 
 ## Process management
 
-| Variable                        | Default | Notes                                                                                                        |
-| ------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| Variable                        | Default | Notes                                                                                                                                                                                                                         |
+| ------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AETHER_PROCESS_SIGNAL_ENABLED` | `false` | Whether the Task Manager may signal processes. Defaults off because ending a process is the one API action that can take a host down. Even when enabled, Aether refuses to signal PID 1, itself, or any of its own ancestors. |
 
 ## Static frontend
 
-| Variable            | Default | Notes                                                                              |
-| ------------------- | ------- | ---------------------------------------------------------------------------------- |
-| `AETHER_STATIC_DIR` | *unset* | Directory holding the built frontend, served when it exists. Blank in development — Vite serves the UI and proxies to the backend instead. |
+| Variable            | Default | Notes                                                                                                                                      |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AETHER_STATIC_DIR` | _unset_ | Directory holding the built frontend, served when it exists. Blank in development — Vite serves the UI and proxies to the backend instead. |
 
 ## Trusted proxy
 
-| Variable            | Default | Notes                                                                                          |
-| ------------------- | ------- | ---------------------------------------------------------------------------------------------- |
-| `TRUST_PROXY_HOPS`  | `1`     | Number of reverse proxies in front of the backend (Caddy = 1). **Trusting more hops than are actually present lets a client spoof its IP and bypass rate limits.** Set to `0` if the backend is exposed directly. |
+| Variable           | Default | Notes                                                                                                                                                                                                             |
+| ------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRUST_PROXY_HOPS` | `1`     | Number of reverse proxies in front of the backend (Caddy = 1). **Trusting more hops than are actually present lets a client spoof its IP and bypass rate limits.** Set to `0` if the backend is exposed directly. |
 
 ---
 

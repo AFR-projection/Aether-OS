@@ -23,9 +23,8 @@ Verification at the time of writing: `pnpm typecheck` ✅ (5 packages) · `pnpm 
 
 The script checked for `pg_dump` on the **host**. In the actual deployment PostgreSQL runs in a
 container on an `internal: true` network with no published port, so `pg_dump -h localhost` can never
-work. The check failed, the script printed a warning, *skipped the database*, and reported
-"Backup created successfully" — a backup that could not restore the most important part of the
-system.
+work. The check failed, the script printed a warning, _skipped the database_, and reported "Backup
+created successfully" — a backup that could not restore the most important part of the system.
 
 **Fix:** rewritten to run `pg_dump` inside the postgres container via `docker compose exec -T`,
 validate the dump with `gzip -t`, refuse to produce an empty archive, and fail hard on any step
@@ -38,15 +37,15 @@ It invoked `sudo -u postgres psql` — there is no `postgres` OS user on the hos
 `systemctl restart aether-backend` — the unit is named `aether`. Both commands failed silently under
 the original error handling, so a "successful" restore changed nothing.
 
-**Fix:** rewritten against `docker compose`: brings postgres up first, waits for `pg_isready`,
-drops and recreates the database, streams the dump in, restores volumes with correct ownership
+**Fix:** rewritten against `docker compose`: brings postgres up first, waits for `pg_isready`, drops
+and recreates the database, streams the dump in, restores volumes with correct ownership
 (`1001:1001`), and preserves the current `.env` on purpose — see
 [BACKUP-AND-RESTORE.md](../operations/BACKUP-AND-RESTORE.md).
 
 ### `update.sh` was inoperable
 
-`git pull` in `/opt/aether` (the source actually lives at `/opt/aether/src`), a frontend build from a
-nonexistent path, references to systemd units that do not exist. It died at the first step under
+`git pull` in `/opt/aether` (the source actually lives at `/opt/aether/src`), a frontend build from
+a nonexistent path, references to systemd units that do not exist. It died at the first step under
 `set -e` — `aether update` had never once worked.
 
 **Fix:** rewritten: `--check` / `--no-pull` / `--yes` flags, fast-forward-only source sync,
@@ -74,23 +73,23 @@ without the flag was rejected as "Unknown agent", forever.
 
 ## Verified working
 
-| Area                  | Evidence                                                                            |
-| --------------------- | ----------------------------------------------------------------------------------- |
-| Installer stages      | preflight → dependencies → configure → deploy → finalize, checkpointed via `install.state`, resumable, `--dry-run` supported |
-| Platform gating       | Hard fatal on non-Ubuntu, non-x86_64, and missing systemd; advisory warns below 2 cores / 4 GB / 40 GB |
-| Secrets               | `openssl rand`, per-secret files (`secrets/` 700, files 600), reused on upgrade, never echoed |
-| Firewall              | SSH allowed **before** 80/443, rules backed up first, never disabled                |
-| Post-install check    | Verifies 5432/6379/3000 are not listening on public interfaces                      |
-| Schema                | `001_init.sql`: users, sessions, audit_events, settings, host_agents, schema_migrations; indexes and constraints present |
+| Area                  | Evidence                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Installer stages      | preflight → dependencies → configure → deploy → finalize, checkpointed via `install.state`, resumable, `--dry-run` supported         |
+| Platform gating       | Hard fatal on non-Ubuntu, non-x86_64, and missing systemd; advisory warns below 2 cores / 4 GB / 40 GB                               |
+| Secrets               | `openssl rand`, per-secret files (`secrets/` 700, files 600), reused on upgrade, never echoed                                        |
+| Firewall              | SSH allowed **before** 80/443, rules backed up first, never disabled                                                                 |
+| Post-install check    | Verifies 5432/6379/3000 are not listening on public interfaces                                                                       |
+| Schema                | `001_init.sql`: users, sessions, audit_events, settings, host_agents, schema_migrations; indexes and constraints present             |
 | Auth                  | bcrypt cost 12, dummy-hash timing equalisation, HS256 pinned, opaque refresh tokens stored as SHA-256, rotation with reuse detection |
-| Sessions              | Revocation checked per request (5 s cache TTL); sessions table with `refresh_token_hash` |
-| Files sandbox         | Shape validation → `fs.realpath` containment → write-through-symlink refusal, in both backend and agent |
-| Terminal              | node-pty, single-use 30 s WebSocket tickets, shell allowlist, per-user/global session caps |
-| Rate limiting         | Global 100/60 s per IP; login 10/15 min, bootstrap 10/5 min, password 60/5 min; `TRUST_PROXY_HOPS` pinned |
-| Frontend              | 8 apps in a static registry; xterm.js terminal; CSP without `unsafe-inline` for scripts |
-| Host agent            | Outbound-only connection, constant-time token check, capability allowlist, signal guards, auto-reconnect |
-| Backup/restore/update | All three rewritten and verified as above                                           |
-| Caddy modes           | Domain+HTTPS, domain+HTTP (`--no-https`), IP-only (`:80`)                            |
+| Sessions              | Revocation checked per request (5 s cache TTL); sessions table with `refresh_token_hash`                                             |
+| Files sandbox         | Shape validation → `fs.realpath` containment → write-through-symlink refusal, in both backend and agent                              |
+| Terminal              | node-pty, single-use 30 s WebSocket tickets, shell allowlist, per-user/global session caps                                           |
+| Rate limiting         | Global 100/60 s per IP; login 10/15 min, bootstrap 10/5 min, password 60/5 min; `TRUST_PROXY_HOPS` pinned                            |
+| Frontend              | 8 apps in a static registry; xterm.js terminal; CSP without `unsafe-inline` for scripts                                              |
+| Host agent            | Outbound-only connection, constant-time token check, capability allowlist, signal guards, auto-reconnect                             |
+| Backup/restore/update | All three rewritten and verified as above                                                                                            |
+| Caddy modes           | Domain+HTTPS, domain+HTTP (`--no-https`), IP-only (`:80`)                                                                            |
 
 ---
 
@@ -98,8 +97,8 @@ without the flag was rejected as "Unknown agent", forever.
 
 Documented, not forgotten — see [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md):
 
-- Host-agent UI exists (Settings → Host agents); pairing via the API remains available but is not the
-  documented path.
+- Host-agent UI exists (Settings → Host agents); pairing via the API remains available but is not
+  the documented path.
 - `ENCRYPTION_KEY` is required in production but read by no code — a placeholder, kept for
   compatibility. Documented in [SECURITY-MODEL.md](../security/SECURITY-MODEL.md).
 - Refresh token in `localStorage` (the largest single weakness), no 2FA, per-process rate limiting
@@ -109,8 +108,8 @@ Documented, not forgotten — see [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md):
 
 ## Deployment checklist
 
-1. VPS: Ubuntu 22.04/24.04, x86_64, 2 GB+ RAM, 20 GB+ disk, ports 80/443 free, DNS pointed if using a
-   domain.
+1. VPS: Ubuntu 22.04/24.04, x86_64, 2 GB+ RAM, 20 GB+ disk, ports 80/443 free, DNS pointed if using
+   a domain.
 2. `sudo bash install.sh --domain your-domain --email you@example.com`
 3. Read the bootstrap token from `/opt/aether/.env`, create the owner account
    ([FIRST-RUN.md](../getting-started/FIRST-RUN.md)).

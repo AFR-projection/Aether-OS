@@ -19,9 +19,9 @@ sudo aether status          # is it running?
 curl -sI https://your-domain | head -1
 ```
 
-To add TLS to an existing instance, re-run the installer with `--domain` and `--email`. Caddy's
-ACME HTTP-01 challenge needs port 80 reachable from the internet and the domain's A record pointing
-at this host — check with `dig +short your-domain` before you start.
+To add TLS to an existing instance, re-run the installer with `--domain` and `--email`. Caddy's ACME
+HTTP-01 challenge needs port 80 reachable from the internet and the domain's A record pointing at
+this host — check with `dig +short your-domain` before you start.
 
 ---
 
@@ -38,8 +38,8 @@ history**:
 sudo grep '^AETHER_BOOTSTRAP_TOKEN=' /opt/aether/.env
 ```
 
-Once a user exists, bootstrap is refused unconditionally — the token stops mattering. Do not paste it
-into a chat, a ticket, or a screenshot.
+Once a user exists, bootstrap is refused unconditionally — the token stops mattering. Do not paste
+it into a chat, a ticket, or a screenshot.
 
 Full walkthrough: [FIRST-RUN.md](../getting-started/FIRST-RUN.md).
 
@@ -76,7 +76,8 @@ sudo apt-get install -y fail2ban
 sudo systemctl enable --now fail2ban
 ```
 
-Do this **after** confirming you can still log in. Test in a second session before closing the first.
+Do this **after** confirming you can still log in. Test in a second session before closing the
+first.
 
 ---
 
@@ -87,12 +88,12 @@ Every account is a way in, and `operator` and above have a shell on every manage
 **Settings → Users.** The four roles are described in
 [SECURITY-MODEL.md](SECURITY-MODEL.md#authorization). The short version:
 
-| Role       | Give it to                                             |
-| ---------- | ------------------------------------------------------ |
-| `owner`    | As few people as possible. It is absolute.              |
-| `admin`    | People who administer users and agents                   |
-| `operator` | People who should have a terminal                        |
-| `viewer`   | Anyone who only needs to look                            |
+| Role       | Give it to                                 |
+| ---------- | ------------------------------------------ |
+| `owner`    | As few people as possible. It is absolute. |
+| `admin`    | People who administer users and agents     |
+| `operator` | People who should have a terminal          |
+| `viewer`   | Anyone who only needs to look              |
 
 Deactivating a user takes effect immediately for new requests; existing sessions keep working for up
 to 5 seconds. Revoke their sessions explicitly if that matters:
@@ -103,11 +104,11 @@ to 5 seconds. Revoke their sessions explicitly if that matters:
 
 ## 6. Turn off process signalling unless you need it
 
-`AETHER_PROCESS_SIGNAL_ENABLED` defaults to **false**, including in the agent config the setup script
-writes. Leave it off.
+`AETHER_PROCESS_SIGNAL_ENABLED` defaults to **false**, including in the agent config the setup
+script writes. Leave it off.
 
-When it is on, the Task Manager can end processes on the host — and a careless click on `sshd` or the
-firewall daemon locks you out. If you enable it, do it on a host you can reach by console.
+When it is on, the Task Manager can end processes on the host — and a careless click on `sshd` or
+the firewall daemon locks you out. If you enable it, do it on a host you can reach by console.
 
 ---
 
@@ -138,7 +139,7 @@ Remember that a viewer with a working session can still read files in the worksp
 
 ## 9. Back up, and test the restore
 
-`sudo aether update` takes a backup automatically, but that is not a backup *policy* — it only fires
+`sudo aether update` takes a backup automatically, but that is not a backup _policy_ — it only fires
 when you update.
 
 ```bash
@@ -149,8 +150,8 @@ sudo crontab -e
 The archive contains `.env` and therefore every secret in plaintext. **Treat it like the server
 itself** — if you copy it off-host, encrypt it or put it somewhere access-controlled.
 
-A backup you have never restored is a hypothesis. Restore one into a scratch instance and confirm the
-data is there. See [BACKUP-AND-RESTORE.md](../operations/BACKUP-AND-RESTORE.md).
+A backup you have never restored is a hypothesis. Restore one into a scratch instance and confirm
+the data is there. See [BACKUP-AND-RESTORE.md](../operations/BACKUP-AND-RESTORE.md).
 
 ---
 
@@ -177,16 +178,16 @@ because Aether shipping a fix does you no good if the base image is the vulnerab
 
 **Security Center** shows the audit trail. The entries worth noticing:
 
-| Action                | Means                                                        |
-| --------------------- | ------------------------------------------------------------ |
-| `permission.denied`   | Someone tried something their role does not allow. A few are normal; a pattern is not. |
-| `auth.login.failed`   | Repeated failures on one account is a brute-force attempt.     |
-| `agent.paired`        | A host was added. If you did not do it, someone has an owner or admin session. |
-| `session.revoked`     | Someone was logged out. Investigate unexpected ones.           |
+| Action              | Means                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| `permission.denied` | Someone tried something their role does not allow. A few are normal; a pattern is not. |
+| `auth.login.failed` | Repeated failures on one account is a brute-force attempt.                             |
+| `agent.paired`      | A host was added. If you did not do it, someone has an owner or admin session.         |
+| `session.revoked`   | Someone was logged out. Investigate unexpected ones.                                   |
 
 The API is append-only — there is no endpoint that edits or deletes an event. But the log lives in
-the same database as everything else, so it is not tamper-proof against someone with database access.
-If you need that property, ship the events somewhere else:
+the same database as everything else, so it is not tamper-proof against someone with database
+access. If you need that property, ship the events somewhere else:
 
 ```bash
 sudo aether logs backend | grep '"audit"'
@@ -218,7 +219,7 @@ Do not print this file to a terminal you are screen-sharing, and do not paste it
 - [ ] HTTPS working, certificate renewing
 - [ ] Owner account created; bootstrap token no longer usable
 - [ ] `ufw` enabled, default deny, SSH allowed **before** 80/443
-- [ ] fail2ban installed *and* tested from a second session
+- [ ] fail2ban installed _and_ tested from a second session
 - [ ] User list reviewed; no unnecessary `owner` or `operator` accounts
 - [ ] `AETHER_PROCESS_SIGNAL_ENABLED=false`
 - [ ] `AETHER_WORKSPACE_ROOT` points at a purpose-built directory, not `/`
@@ -239,7 +240,7 @@ Be clear-eyed about the ceiling here:
 - **A stolen password is a full compromise.** There is no second factor.
 - **An `owner` can do anything**, including deleting the audit trail's usefulness by removing users.
 - **A terminal is a root shell on that host.** No firewall rule or role setting changes what someone
-  with `operator` can do *after* they open one.
+  with `operator` can do _after_ they open one.
 - **A compromised agent is a root compromise** of the host it runs on. That is inherent to the
   design, not a misconfiguration.
 

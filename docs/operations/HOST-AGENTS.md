@@ -54,8 +54,8 @@ journalctl -u aether-host-agent -f
 ```
 
 Remote hosts are unaffected by any of this. They use `setup-host.sh` below, run as `root` by default
-because an operator managing a machine they own expects the agent to reach the whole filesystem. Pass
-`--service-user <name>` to run it unprivileged instead, which adds the same hardening.
+because an operator managing a machine they own expects the agent to reach the whole filesystem.
+Pass `--service-user <name>` to run it unprivileged instead, which adds the same hardening.
 
 ---
 
@@ -67,11 +67,11 @@ because an operator managing a machine they own expects the agent to reach the w
 
 The dialog shows three values, **once**:
 
-| Value                  | Goes into                                       |
-| ---------------------- | ----------------------------------------------- |
+| Value                  | Goes into                                               |
+| ---------------------- | ------------------------------------------------------- |
 | `AETHER_BACKEND_URL`   | `wss://your-instance` (derived from the URL you are on) |
-| `AETHER_AGENT_ID`      | The id of the agent row the backend just created |
-| `AETHER_PAIRING_TOKEN` | The shared secret                                |
+| `AETHER_AGENT_ID`      | The id of the agent row the backend just created        |
+| `AETHER_PAIRING_TOKEN` | The shared secret                                       |
 
 **Copy all three now.** Only the SHA-256 hash of the token is stored, and the agent id is the
 primary key of a row that already exists. Neither can be shown again. If you lose them, revoke the
@@ -117,18 +117,18 @@ timestamp.
 
 ## Options
 
-| Flag                 | Effect                                                                 |
-| -------------------- | ---------------------------------------------------------------------- |
-| `--backend-url URL`  | **Required.** `ws://` or `wss://`                                       |
-| `--token TOKEN`      | **Required.** Minimum 16 characters                                     |
-| `--agent-id UUID`    | **Required.** From the same dialog                                      |
-| `--workspace DIR`    | Directory the agent may touch (default `/opt/aether/workspace`)          |
-| `--install-dir DIR`  | Where to install (default `/opt/aether-host-agent`)                      |
-| `--repo-dir DIR`     | Source checkout to install from (default: this checkout)                 |
+| Flag                  | Effect                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| `--backend-url URL`   | **Required.** `ws://` or `wss://`                                                    |
+| `--token TOKEN`       | **Required.** Minimum 16 characters                                                  |
+| `--agent-id UUID`     | **Required.** From the same dialog                                                   |
+| `--workspace DIR`     | Directory the agent may touch (default `/opt/aether/workspace`)                      |
+| `--install-dir DIR`   | Where to install (default `/opt/aether-host-agent`)                                  |
+| `--repo-dir DIR`      | Source checkout to install from (default: this checkout)                             |
 | `--service-user USER` | Run the agent as this user (default `root`). A non-root user gets the hardened unit. |
-| `--no-service`       | Write the config and build, but do not install or start the unit          |
-| `--uninstall`        | Stop the agent and remove its unit, install directory, and config        |
-| `-h`, `--help`       | Usage                                                                    |
+| `--no-service`        | Write the config and build, but do not install or start the unit                     |
+| `--uninstall`         | Stop the agent and remove its unit, install directory, and config                    |
+| `-h`, `--help`        | Usage                                                                                |
 
 Re-running the script is safe: the source copy never deletes `agent.env`, so an agent keeps its
 identity and token across a repair.
@@ -196,16 +196,16 @@ the backend side, because the agent does not assume the backend already checked.
 
 An agent advertises what it can do at handshake time:
 
-| Group     | Capabilities                                                                     |
-| --------- | -------------------------------------------------------------------------------- |
-| System    | `system.info`                                                                      |
-| Processes | `processes.list`, `processes.signal`                                               |
-| Files     | `files.list`, `files.read`, `files.write`, `files.delete`, `files.mkdir`           |
+| Group     | Capabilities                                                                                                |
+| --------- | ----------------------------------------------------------------------------------------------------------- |
+| System    | `system.info`                                                                                               |
+| Processes | `processes.list`, `processes.signal`                                                                        |
+| Files     | `files.list`, `files.read`, `files.write`, `files.delete`, `files.mkdir`                                    |
 | Terminal  | `terminal.create`, `terminal.input`, `terminal.resize`, `terminal.signal`, `terminal.kill`, `terminal.list` |
 
-That list is the entire vocabulary. There is **no `exec` and no arbitrary command**: every capability
-is a named operation with a typed parameter schema validated before it reaches a handler. A
-compromised agent cannot be asked to do anything outside this set.
+That list is the entire vocabulary. There is **no `exec` and no arbitrary command**: every
+capability is a named operation with a typed parameter schema validated before it reaches a handler.
+A compromised agent cannot be asked to do anything outside this set.
 
 ### Process signalling
 
@@ -267,15 +267,15 @@ On the managed host, follow the log:
 sudo journalctl -u aether-host-agent -n 50 --no-pager
 ```
 
-| Log line                          | Cause                                                            |
-| --------------------------------- | ---------------------------------------------------------------- |
-| `Invalid agent credentials`       | The agent id or token does not match the row in the database.      |
-| `Unknown agent`                   | The id is not one the backend created — usually a hand-typed id.   |
-| `Agent has been revoked`          | It was revoked in the UI. Pair a new one.                          |
-| `Invalid hello acknowledgement`   | The backend answered the handshake with a payload the agent rejects. A mismatch between backend and agent versions. |
-| `ECONNREFUSED` / `getaddrinfo`    | The backend URL is wrong or unreachable from that host.             |
-| `websocket error` repeatedly      | A proxy in front of the backend is not passing the upgrade.         |
-| `websocket open, sending hello` with no `paired with backend` after it | The socket opened but the backend never answered. Check the backend log for a rejected handshake. |
+| Log line                                                               | Cause                                                                                                               |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `Invalid agent credentials`                                            | The agent id or token does not match the row in the database.                                                       |
+| `Unknown agent`                                                        | The id is not one the backend created — usually a hand-typed id.                                                    |
+| `Agent has been revoked`                                               | It was revoked in the UI. Pair a new one.                                                                           |
+| `Invalid hello acknowledgement`                                        | The backend answered the handshake with a payload the agent rejects. A mismatch between backend and agent versions. |
+| `ECONNREFUSED` / `getaddrinfo`                                         | The backend URL is wrong or unreachable from that host.                                                             |
+| `websocket error` repeatedly                                           | A proxy in front of the backend is not passing the upgrade.                                                         |
+| `websocket open, sending hello` with no `paired with backend` after it | The socket opened but the backend never answered. Check the backend log for a rejected handshake.                   |
 
 **`Use wss:// or ws:// for the agent socket, not http(s)://`**
 

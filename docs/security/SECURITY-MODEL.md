@@ -1,8 +1,8 @@
 # Security model
 
-What Aether defends against, how, and — more usefully — what it does not defend against. Every
-claim here is traceable to code; where something is configured but does nothing, that is stated
-rather than glossed over.
+What Aether defends against, how, and — more usefully — what it does not defend against. Every claim
+here is traceable to code; where something is configured but does nothing, that is stated rather
+than glossed over.
 
 > **Aether has not been through an external security audit.** This document describes the design
 > intent and the mechanisms that exist. It is not a substitute for a penetration test before
@@ -28,12 +28,12 @@ Conversely, the agent is the most privileged component in the system: it runs as
 it manages, and it is deliberately designed to read files, spawn PTYs, and list processes. Treat the
 pairing token as equivalent to a root credential for that host — because it is.
 
-| Component  | Runs as | Can reach                                  |
-| ---------- | ------- | ------------------------------------------ |
-| Caddy      | root in a container | ports 80/443 only             |
-| Backend    | uid 1001 in a container | PostgreSQL, Redis, outbound WSS |
-| PostgreSQL | uid 999 in a container, `internal: true` network | nothing outside |
-| Host agent | **root on the managed host** | everything on that host, scoped by workspace config |
+| Component  | Runs as                                          | Can reach                                           |
+| ---------- | ------------------------------------------------ | --------------------------------------------------- |
+| Caddy      | root in a container                              | ports 80/443 only                                   |
+| Backend    | uid 1001 in a container                          | PostgreSQL, Redis, outbound WSS                     |
+| PostgreSQL | uid 999 in a container, `internal: true` network | nothing outside                                     |
+| Host agent | **root on the managed host**                     | everything on that host, scoped by workspace config |
 
 ---
 
@@ -41,8 +41,8 @@ pairing token as equivalent to a root credential for that host — because it is
 
 ### Passwords
 
-Hashed with **bcrypt at cost 12** (`packages/backend/src/services/auth.service.ts:16`), roughly 250 ms
-per hash on server hardware.
+Hashed with **bcrypt at cost 12** (`packages/backend/src/services/auth.service.ts:16`), roughly 250
+ms per hash on server hardware.
 
 Login also burns a bcrypt comparison against a fixed dummy hash when the username does not exist
 (`burnPasswordComparison`). Without it, "unknown user" would return in microseconds while "wrong
@@ -59,8 +59,8 @@ Claims: `sub` (user id), `sid` (session id), `username`, `role`. Lifetime is
 
 ### Refresh tokens
 
-**Not JWTs.** An opaque 256-bit random value, stored in the database only as a **SHA-256 digest**, so
-a database dump does not hand an attacker usable session tokens.
+**Not JWTs.** An opaque 256-bit random value, stored in the database only as a **SHA-256 digest**,
+so a database dump does not hand an attacker usable session tokens.
 
 SHA-256 rather than bcrypt is deliberate: the input is already 256 bits of entropy, so there is
 nothing to brute-force and the lookup must be fast.
@@ -81,8 +81,8 @@ working for up to five seconds. This is a deliberate trade-off — without it ev
 database round trip — and it is documented in
 [KNOWN-LIMITATIONS.md](../status/KNOWN-LIMITATIONS.md).
 
-The cache is the `Cache` abstraction, so with a Redis backend this TTL applies across replicas rather
-than per process.
+The cache is the `Cache` abstraction, so with a Redis backend this TTL applies across replicas
+rather than per process.
 
 ### Bootstrap
 
@@ -101,12 +101,12 @@ internet.
 Four roles, 11 permissions, enforced server-side on every request by `requirePermission(...)` as a
 Fastify pre-handler **after** `authenticate`.
 
-| Role       | Permissions granted                                                                     |
-| ---------- | --------------------------------------------------------------------------------------- |
-| `owner`    | **All 11.** The account created at first run.                                            |
+| Role       | Permissions granted                                                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `owner`    | **All 11.** The account created at first run.                                                                                        |
 | `admin`    | files read/write/delete, terminal create/attach, process read/manage, system read, settings, audit read — **but not `users:manage`** |
-| `operator` | files read/write, terminal create/attach, process read, system read — **no delete, no signalling, no audit** |
-| `viewer`   | files read, process read, system read. **No terminal, no audit.**                        |
+| `operator` | files read/write, terminal create/attach, process read, system read — **no delete, no signalling, no audit**                         |
+| `viewer`   | files read, process read, system read. **No terminal, no audit.**                                                                    |
 
 Two things surprise people, so they are worth stating outright:
 
@@ -126,15 +126,16 @@ so a privilege-escalation attempt is visible in the log rather than looking like
 
 ## Rate limiting
 
-Global limit: **100 requests per 60 seconds per IP** (`RATE_LIMIT_MAX_REQUESTS`, `RATE_LIMIT_WINDOW_MS`).
+Global limit: **100 requests per 60 seconds per IP** (`RATE_LIMIT_MAX_REQUESTS`,
+`RATE_LIMIT_WINDOW_MS`).
 
 Tighter limits on the endpoints worth brute-forcing:
 
-| Endpoint                    | Limit               |
-| --------------------------- | ------------------- |
-| `POST /api/auth/login`      | 10 / 15 minutes     |
-| `POST /api/auth/bootstrap`  | 10 / 5 minutes      |
-| `POST /api/auth/password`   | 60 / 5 minutes      |
+| Endpoint                   | Limit           |
+| -------------------------- | --------------- |
+| `POST /api/auth/login`     | 10 / 15 minutes |
+| `POST /api/auth/bootstrap` | 10 / 5 minutes  |
+| `POST /api/auth/password`  | 60 / 5 minutes  |
 
 The key is the client IP, and **the number of trusted proxy hops is pinned** via `TRUST_PROXY_HOPS`
 (default 1, for Caddy). Trusting `X-Forwarded-For` unconditionally would let a direct client spoof
@@ -143,20 +144,20 @@ its own IP and bypass the per-IP limit entirely.
 WebSocket connections are separately rate-limited — a socket that exceeds the limit is closed with
 code `4029`.
 
-**This limiter is per-process and in-memory.** Running more than one backend replica multiplies every
-limit by the number of replicas. See [KNOWN-LIMITATIONS.md](../status/KNOWN-LIMITATIONS.md).
+**This limiter is per-process and in-memory.** Running more than one backend replica multiplies
+every limit by the number of replicas. See [KNOWN-LIMITATIONS.md](../status/KNOWN-LIMITATIONS.md).
 
 ---
 
 ## The filesystem sandbox
 
-`AETHER_WORKSPACE_ROOT` is the only tree the UI can read or write, and
-`security/workspace.ts` enforces it. Three layers:
+`AETHER_WORKSPACE_ROOT` is the only tree the UI can read or write, and `security/workspace.ts`
+enforces it. Three layers:
 
 1. **Shape.** Absolute paths, `~`, Windows drive letters, NUL bytes, and any `..` segment are
    rejected before the disk is touched (`isSafeRelativePath`).
 2. **Reads.** The path is resolved with `fs.realpath` — which follows every symlink — and the
-   *resolved* path must still be inside the root. This defeats `workspace/escape -> /etc`.
+   _resolved_ path must still be inside the root. This defeats `workspace/escape -> /etc`.
 3. **Writes.** The parent directory is resolved with `realpath` and must be inside the root, and the
    final segment must not itself be a symlink (otherwise the write would follow the link out of the
    sandbox).
@@ -177,13 +178,13 @@ truncated, not rejected), 5000 directory entries per listing, 512 MB per upload.
 ## The terminal
 
 A browser cannot set an `Authorization` header on a WebSocket handshake. The two usual workarounds
-are both poor: putting the access token in the query string writes a long-lived credential into every
-reverse-proxy access log, and putting it in a cookie makes it attachable by any page on the origin
-(CSRF against the socket).
+are both poor: putting the access token in the query string writes a long-lived credential into
+every reverse-proxy access log, and putting it in a cookie makes it attachable by any page on the
+origin (CSRF against the socket).
 
-Instead: the client requests a **ticket** over an authenticated HTTP request, then presents it during
-the handshake. A ticket is 256 bits of randomness, valid for **30 seconds**, **single-use**, and bound
-to one session id and one user id (`security/ws-ticket.ts`).
+Instead: the client requests a **ticket** over an authenticated HTTP request, then presents it
+during the handshake. A ticket is 256 bits of randomness, valid for **30 seconds**, **single-use**,
+and bound to one session id and one user id (`security/ws-ticket.ts`).
 
 Redemption always consumes the ticket, whether or not the binding matches, so a mismatched attempt
 cannot be used to probe. A ticket that leaks through a log is useless within seconds and cannot be
@@ -227,9 +228,9 @@ styles only, because xterm.js injects a style element for its renderer — scrip
 **CORS** is an explicit allowlist (`ALLOWED_ORIGINS`), not a wildcard, and only the headers the API
 actually uses are permitted.
 
-**TLS** is terminated by Caddy with automatic Let's Encrypt certificates when a domain is configured.
-The installer supports HTTP-only mode, and in that mode credentials and terminal keystrokes travel in
-the clear — the documentation says so plainly.
+**TLS** is terminated by Caddy with automatic Let's Encrypt certificates when a domain is
+configured. The installer supports HTTP-only mode, and in that mode credentials and terminal
+keystrokes travel in the clear — the documentation says so plainly.
 
 **Internal ports are not published.** PostgreSQL, Redis, and the backend listen only on the internal
 compose network. Only Caddy binds a host port. The installer's final step verifies that 5432, 6379,
@@ -239,9 +240,9 @@ and 3000 are not reachable from outside and reports it if they are.
 
 ## Injection
 
-**Every SQL query is parameterized.** There is exactly one place where SQL is assembled dynamically —
-the audit query's `WHERE` clause (`services/audit.service.ts:75`) — and it joins a fixed set of
-hardcoded column fragments while the *values* remain bound parameters. No user input reaches the
+**Every SQL query is parameterized.** There is exactly one place where SQL is assembled dynamically
+— the audit query's `WHERE` clause (`services/audit.service.ts:75`) — and it joins a fixed set of
+hardcoded column fragments while the _values_ remain bound parameters. No user input reaches the
 query text.
 
 Frontend rendering is React, which escapes by default; there is no `dangerouslySetInnerHTML` in the
@@ -257,7 +258,7 @@ regenerated on upgrade**.
 
 The logger redacts any field whose key matches a known secret name — `password`, `token`,
 `authorization`, `JWT_SECRET`, `ENCRYPTION_KEY`, and others (`utils/logger.ts`). Startup logs the
-*shape* of the configuration (`encryptionKeyConfigured: true`) rather than values.
+_shape_ of the configuration (`encryptionKeyConfigured: true`) rather than values.
 
 A backup archive contains `.env` and therefore every secret in plaintext. It is as sensitive as the
 server itself — see [BACKUP-AND-RESTORE.md](../operations/BACKUP-AND-RESTORE.md).
@@ -267,14 +268,14 @@ server itself — see [BACKUP-AND-RESTORE.md](../operations/BACKUP-AND-RESTORE.m
 Neither of these does anything today. They are listed here so their presence in `.env` is not
 mistaken for a security property the system has.
 
-| Variable         | Status                                                                 |
-| ---------------- | ---------------------------------------------------------------------- |
+| Variable         | Status                                                                                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ENCRYPTION_KEY` | **Required in production** (`config.ts:161`), redacted in logs, **never read by any code**. A placeholder for column-level encryption that has not been built. |
-| `SESSION_SECRET` | Optional, defined at `config.ts:66`, **never read by any code**.          |
+| `SESSION_SECRET` | Optional, defined at `config.ts:66`, **never read by any code**.                                                                                               |
 
 The consequence is that `ENCRYPTION_KEY`'s requirement is misleading: it implies data is encrypted
-at rest when it is not. Removing the requirement is a breaking change for existing deployments, so it
-stays — but **do not take its presence as evidence of encryption**.
+at rest when it is not. Removing the requirement is a breaking change for existing deployments, so
+it stays — but **do not take its presence as evidence of encryption**.
 
 Rotation is harmless precisely because nothing reads them; rotating `JWT_SECRET` is the one that
 matters, and it invalidates every existing token. Documented in
@@ -287,7 +288,8 @@ matters, and it invalidates every existing token. Documented in
 Stated plainly, because a security document that only lists strengths is a sales document:
 
 - **Refresh token in `localStorage`.** Any XSS on the origin can read it. The CSP makes XSS harder
-  and React's escaping makes it harder still, but this is the largest single weakness in the project.
+  and React's escaping makes it harder still, but this is the largest single weakness in the
+  project.
 - **No 2FA.** A stolen password is a full compromise.
 - **No protection against a malicious owner.** The `owner` role is absolute by design.
 - **No external audit trail.** Logs live in the same database an attacker would already have.

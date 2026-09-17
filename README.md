@@ -30,10 +30,9 @@ Every path is confined to `AETHER_WORKSPACE_ROOT`; nothing outside it is reachab
 **System** — CPU, memory, disk, and load from the host's own `/proc`, plus a process list and an
 opt-in signal capability.
 
-**Host agents** — a separate agent process manages each host. The installer pairs one on the
-machine it installs on, running as an unprivileged `aether-agent` user in a hardened systemd unit;
-further hosts are paired from the Settings → Host agents screen. One backend can manage several
-hosts.
+**Host agents** — a separate agent process manages each host. The installer pairs one on the machine
+it installs on, running as an unprivileged `aether-agent` user in a hardened systemd unit; further
+hosts are paired from the Settings → Host agents screen. One backend can manage several hosts.
 
 **Accounts** — first-run bootstrap, JWT access/refresh tokens, revocable sessions, password change,
 and four roles (`owner`, `admin`, `operator`, `viewer`) enforced server-side on every request.
@@ -42,16 +41,16 @@ and four roles (`owner`, `admin`, `operator`, `viewer`) enforced server-side on 
 
 ### Applications
 
-| App               | What it does                                                |
-| ----------------- | ----------------------------------------------------------- |
-| Files             | File manager over the workspace                             |
-| Terminal          | Multi-tab real shell                                        |
-| Code Studio       | Plain-text editor with line numbers and save                |
-| Task Manager      | Process list, memory use, search filter                     |
-| System Monitor    | Live CPU / memory / disk graphs                             |
-| Settings          | Account, sessions, users, host agents, about                |
-| Security Center   | Audit log and session review                                |
-| App Catalog       | The registry of installed apps                              |
+| App             | What it does                                 |
+| --------------- | -------------------------------------------- |
+| Files           | File manager over the workspace              |
+| Terminal        | Multi-tab real shell                         |
+| Code Studio     | Plain-text editor with line numbers and save |
+| Task Manager    | Process list, memory use, search filter      |
+| System Monitor  | Live CPU / memory / disk graphs              |
+| Settings        | Account, sessions, users, host agents, about |
+| Security Center | Audit log and session review                 |
+| App Catalog     | The registry of installed apps               |
 
 ---
 
@@ -77,17 +76,17 @@ and four roles (`owner`, `admin`, `operator`, `viewer`) enforced server-side on 
 ```
 
 The backend never touches the managed host directly. It talks to a **host agent** over a WebSocket,
-and the agent performs the work. That split is what lets one backend manage several machines, and
-it is why the backend can run in a container while the agent runs on the host it manages.
+and the agent performs the work. That split is what lets one backend manage several machines, and it
+is why the backend can run in a container while the agent runs on the host it manages.
 
-| Component         | Stack                                                                    |
-| ----------------- | ------------------------------------------------------------------------ |
-| `backend`         | Node 20, Fastify 4, `pg`, `node-pty`, `ws`, JWT, bcryptjs, Zod, Pino      |
-| `frontend`        | React 18, Vite 5, TypeScript, TanStack Query, Zustand, xterm.js, Tailwind |
-| `host-agent`      | Node 20, `ws`, `node-pty`, Zod, Pino                                      |
-| `shared`          | Types, Zod schemas, permissions, constants — imported by all of the above |
-| `desktop-client`  | Electron wrapper around the same frontend                                |
-| Deployment        | Docker Compose + Caddy, driven by a bash installer in `deploy/`           |
+| Component        | Stack                                                                     |
+| ---------------- | ------------------------------------------------------------------------- |
+| `backend`        | Node 20, Fastify 4, `pg`, `node-pty`, `ws`, JWT, bcryptjs, Zod, Pino      |
+| `frontend`       | React 18, Vite 5, TypeScript, TanStack Query, Zustand, xterm.js, Tailwind |
+| `host-agent`     | Node 20, `ws`, `node-pty`, Zod, Pino                                      |
+| `shared`         | Types, Zod schemas, permissions, constants — imported by all of the above |
+| `desktop-client` | Electron wrapper around the same frontend                                 |
+| Deployment       | Docker Compose + Caddy, driven by a bash installer in `deploy/`           |
 
 Detail: [Architecture overview](docs/architecture/OVERVIEW.md).
 
@@ -150,8 +149,8 @@ aether uninstall       # keeps your data; --purge removes it after confirming
 ```
 
 `aether update` compares the installed checkout with `origin/main`, prints `Already up to date` when
-there is nothing to apply, and rolls back to the previous commit and pre-update archive if the health
-check fails. It never pushes.
+there is nothing to apply, and rolls back to the previous commit and pre-update archive if the
+health check fails. It never pushes.
 
 ### Add another host
 
@@ -164,25 +163,25 @@ to run on the target machine. Guide: [Host agents](docs/operations/HOST-AGENTS.m
 
 Everything lives under [`docs/`](docs/README.md). Quick index:
 
-| Section                                     | For                                                   |
-| ------------------------------------------- | ----------------------------------------------------- |
-| [Getting started](docs/getting-started/)    | Local development, first run, contributing            |
-| [Architecture](docs/architecture/)          | How the pieces fit and why                            |
-| [Operations](docs/operations/)              | Install, host agents, backup, upgrade, troubleshoot   |
-| [Security](docs/security/)                  | Threat model, auth, sandboxing, what is not covered   |
-| [Reference](docs/reference/)                | HTTP API, WebSocket protocol, config, code standards  |
-| [Status](docs/status/)                      | Known limitations, decision log, release audit        |
+| Section                                  | For                                                  |
+| ---------------------------------------- | ---------------------------------------------------- |
+| [Getting started](docs/getting-started/) | Local development, first run, contributing           |
+| [Architecture](docs/architecture/)       | How the pieces fit and why                           |
+| [Operations](docs/operations/)           | Install, host agents, backup, upgrade, troubleshoot  |
+| [Security](docs/security/)               | Threat model, auth, sandboxing, what is not covered  |
+| [Reference](docs/reference/)             | HTTP API, WebSocket protocol, config, code standards |
+| [Status](docs/status/)                   | Known limitations, decision log, release audit       |
 
 ---
 
 ## Requirements
 
-| Target        | Needs                                                                     |
-| ------------- | ------------------------------------------------------------------------- |
-| Backend host  | **Ubuntu 22.04 / 24.04 LTS, x86_64**, with systemd. The installer blocks on anything else. 2 vCPU, 4 GB RAM, 20 GB disk recommended (1 core / 2 GB / 20 GB is the hard floor). |
-| Managed host  | Linux with systemd, Node 20 (the installer provides it), Python 3 + a C++ toolchain for `node-pty` |
-| Browser       | Chrome/Edge 90+, Firefox 88+, Safari 14+                                  |
-| Development   | Node 20+, pnpm 8+, Docker                                                   |
+| Target       | Needs                                                                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend host | **Ubuntu 22.04 / 24.04 LTS, x86_64**, with systemd. The installer blocks on anything else. 2 vCPU, 4 GB RAM, 20 GB disk recommended (1 core / 2 GB / 20 GB is the hard floor). |
+| Managed host | Linux with systemd, Node 20 (the installer provides it), Python 3 + a C++ toolchain for `node-pty`                                                                             |
+| Browser      | Chrome/Edge 90+, Firefox 88+, Safari 14+                                                                                                                                       |
+| Development  | Node 20+, pnpm 8+, Docker                                                                                                                                                      |
 
 Not Ubuntu, or not x86_64? The installer will refuse. You can still deploy by hand — the stack is
 plain Docker Compose and the host agent builds anywhere Node 20 does — but you are off the tested

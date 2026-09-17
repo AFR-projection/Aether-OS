@@ -60,8 +60,8 @@ Aether-cloud-os/
 
 ## The installed layout
 
-`curl … | bash` does not run from a checkout; it ends up as this, under
-`/opt/aether` (see [DEPLOYMENT.md](../operations/DEPLOYMENT.md)):
+`curl … | bash` does not run from a checkout; it ends up as this, under `/opt/aether` (see
+[DEPLOYMENT.md](../operations/DEPLOYMENT.md)):
 
 ```
 /opt/aether/

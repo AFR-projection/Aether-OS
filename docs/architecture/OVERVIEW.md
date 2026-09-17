@@ -63,18 +63,18 @@ payload is.
 
 ### `packages/backend`
 
-| Directory     | Responsibility                                                                   |
-| ------------- | -------------------------------------------------------------------------------- |
-| `routes/`     | HTTP surface. One module per area: auth, files, terminal, system, agents, audit, health. |
+| Directory     | Responsibility                                                                                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routes/`     | HTTP surface. One module per area: auth, files, terminal, system, agents, audit, health.                                                                                     |
 | `services/`   | Domain logic, independent of HTTP. `agent-gateway` tracks live agent connections; `agent-pairing` owns the token registry; `files`, `system`, `terminal` dispatch to agents. |
-| `ws/`         | Two WebSocket endpoints — `terminal.ws` (browser ↔ backend) and `agent.ws` (agent ↔ backend). |
-| `security/`   | The sandbox: path canonicalization and the process-signal guard.                  |
-| `middleware/` | `authenticate` (JWT + session check) and `requirePermission`.                     |
-| `cache/`      | The `Cache` interface with two implementations, selected at startup.              |
-| `db/`         | Connection pool and the forward-only migration runner.                            |
+| `ws/`         | Two WebSocket endpoints — `terminal.ws` (browser ↔ backend) and `agent.ws` (agent ↔ backend).                                                                                |
+| `security/`   | The sandbox: path canonicalization and the process-signal guard.                                                                                                             |
+| `middleware/` | `authenticate` (JWT + session check) and `requirePermission`.                                                                                                                |
+| `cache/`      | The `Cache` interface with two implementations, selected at startup.                                                                                                         |
+| `db/`         | Connection pool and the forward-only migration runner.                                                                                                                       |
 
-Layering rule: **routes never contain business logic and services never touch `request`/`reply`.**
-A route parses and validates input, calls a service, and shapes the response. This is what makes the
+Layering rule: **routes never contain business logic and services never touch `request`/`reply`.** A
+route parses and validates input, calls a service, and shapes the response. This is what makes the
 services unit-testable without an HTTP server.
 
 ### `packages/frontend`
@@ -94,7 +94,7 @@ request. Hiding an icon has never stopped anyone from calling an endpoint.
 
 Runs on the managed host. Owns `capabilities/`: `terminal` (PTY via `node-pty`), `filesystem`,
 `processes`, `system`. Connects out to the backend over `/ws/agent` and authenticates with a pairing
-token. It reaches *out* rather than the backend reaching *in*, which means no inbound port has to be
+token. It reaches _out_ rather than the backend reaching _in_, which means no inbound port has to be
 opened on the managed host — worth a great deal when that host is on someone else's network.
 
 ### `packages/desktop-client`
@@ -160,8 +160,8 @@ agent ── WSS /ws/agent ──▶ backend    token verified against its SHA-2
 
 ## Data
 
-**PostgreSQL owns all durable state.** One migration file, `001_init.sql`, applied by a
-forward-only runner at startup. See [DATA-MODEL.md](DATA-MODEL.md).
+**PostgreSQL owns all durable state.** One migration file, `001_init.sql`, applied by a forward-only
+runner at startup. See [DATA-MODEL.md](DATA-MODEL.md).
 
 **Redis is a cache and only a cache.** Nothing durable lives there. Every read falls back to
 PostgreSQL on a miss, so an empty Redis is a slow Aether, never a broken one.
@@ -173,11 +173,11 @@ PostgreSQL on a miss, so an empty Redis is a slow Aether, never a broken one.
 
 ## Trust boundaries
 
-| Boundary                     | Crossing it means                                                              |
-| ---------------------------- | ------------------------------------------------------------------------------ |
-| Browser → backend            | Untrusted input. Every request is authenticated, authorized, and schema-validated. |
-| Backend → host agent         | Authenticated by pairing token. The agent re-validates every message rather than trusting the backend. |
-| Agent → host OS              | **The real boundary.** The agent runs with whatever privilege its service user has; `AETHER_PROCESS_SIGNAL_ENABLED` and the workspace root exist to constrain it. |
+| Boundary             | Crossing it means                                                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser → backend    | Untrusted input. Every request is authenticated, authorized, and schema-validated.                                                                                |
+| Backend → host agent | Authenticated by pairing token. The agent re-validates every message rather than trusting the backend.                                                            |
+| Agent → host OS      | **The real boundary.** The agent runs with whatever privilege its service user has; `AETHER_PROCESS_SIGNAL_ENABLED` and the workspace root exist to constrain it. |
 
 Detail: [SECURITY-MODEL.md](../security/SECURITY-MODEL.md).
 
@@ -185,9 +185,9 @@ Detail: [SECURITY-MODEL.md](../security/SECURITY-MODEL.md).
 
 ## What is deliberately absent
 
-No ORM — `pg` with parameterized SQL, and one migration file under version control. No message
-queue — the agent WebSocket is the transport. No Kubernetes, no service mesh, no microservices:
-this is a management plane for one or a few hosts, and three containers is the right size for it.
+No ORM — `pg` with parameterized SQL, and one migration file under version control. No message queue
+— the agent WebSocket is the transport. No Kubernetes, no service mesh, no microservices: this is a
+management plane for one or a few hosts, and three containers is the right size for it.
 
 Some of that will need revisiting if Aether is ever asked to manage thousands of hosts. None of it
 is wrong for the scale it targets today.

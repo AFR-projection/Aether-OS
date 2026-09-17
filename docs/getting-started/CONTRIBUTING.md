@@ -33,17 +33,17 @@ git checkout -b feature/your-feature-name
 
 4. **Commit** — [Conventional Commits](https://www.conventionalcommits.org/):
 
-   | Type       | Use for                                    |
-   | ---------- | ------------------------------------------ |
-   | `feat`     | New feature                                |
-   | `fix`      | Bug fix                                    |
-   | `docs`     | Documentation                              |
-   | `style`    | Formatting only                            |
+   | Type       | Use for                                     |
+   | ---------- | ------------------------------------------- |
+   | `feat`     | New feature                                 |
+   | `fix`      | Bug fix                                     |
+   | `docs`     | Documentation                               |
+   | `style`    | Formatting only                             |
    | `refactor` | Code change that is neither fix nor feature |
-   | `test`     | Tests                                      |
-   | `chore`    | Maintenance, dependencies                  |
-   | `perf`     | Performance                                |
-   | `ci`       | CI/CD                                      |
+   | `test`     | Tests                                       |
+   | `chore`    | Maintenance, dependencies                   |
+   | `perf`     | Performance                                 |
+   | `ci`       | CI/CD                                       |
 
 ## Pull requests
 

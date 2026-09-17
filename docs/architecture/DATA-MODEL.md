@@ -10,66 +10,66 @@ uses `pg` with parameterized SQL, and the schema is defined by SQL files under
 
 ### `aether.users`
 
-| Column                  | Type          | Notes                                                            |
-| ----------------------- | ------------- | ---------------------------------------------------------------- |
-| `id`                    | uuid PK       | `gen_random_uuid()`                                              |
-| `username`              | text          | Unique, case-insensitive. `^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$`, 3–32 chars. |
-| `email`                 | text          | Optional. Unique when present.                                    |
-| `password_hash`         | text          | bcrypt                                                           |
-| `role`                  | text          | `owner` \| `admin` \| `operator` \| `viewer`                     |
-| `is_active`             | boolean       | Defaults true.                                                    |
-| `failed_login_attempts` | integer       | Drives lockout.                                                   |
-| `locked_until`          | timestamptz   | Set when the attempt limit is hit.                                |
-| `last_login_at`         | timestamptz   |                                                                  |
-| `password_changed_at`   | timestamptz   |                                                                  |
-| `created_at` / `updated_at` | timestamptz |                                                                 |
+| Column                      | Type        | Notes                                                                       |
+| --------------------------- | ----------- | --------------------------------------------------------------------------- |
+| `id`                        | uuid PK     | `gen_random_uuid()`                                                         |
+| `username`                  | text        | Unique, case-insensitive. `^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$`, 3–32 chars. |
+| `email`                     | text        | Optional. Unique when present.                                              |
+| `password_hash`             | text        | bcrypt                                                                      |
+| `role`                      | text        | `owner` \| `admin` \| `operator` \| `viewer`                                |
+| `is_active`                 | boolean     | Defaults true.                                                              |
+| `failed_login_attempts`     | integer     | Drives lockout.                                                             |
+| `locked_until`              | timestamptz | Set when the attempt limit is hit.                                          |
+| `last_login_at`             | timestamptz |                                                                             |
+| `password_changed_at`       | timestamptz |                                                                             |
+| `created_at` / `updated_at` | timestamptz |                                                                             |
 
 Three indexes carry real weight:
 
 - `users_username_key` on `lower(username)` — uniqueness is case-insensitive, so `Aldo` cannot be
   registered alongside `aldo`.
-- `users_email_key` on `lower(email) WHERE email IS NOT NULL` — a partial index, because
-  `email` is optional and multiple NULLs must be allowed.
+- `users_email_key` on `lower(email) WHERE email IS NOT NULL` — a partial index, because `email` is
+  optional and multiple NULLs must be allowed.
 - `users_single_owner_key` on `(role) WHERE role = 'owner'` — **the database, not the application,
-  enforces that only one owner exists.** Two concurrent bootstrap requests cannot both win; one
-  gets a unique-violation.
+  enforces that only one owner exists.** Two concurrent bootstrap requests cannot both win; one gets
+  a unique-violation.
 
 ### `aether.sessions`
 
 One row per login session, backed by a refresh token.
 
-| Column               | Type        | Notes                                                     |
-| -------------------- | ----------- | --------------------------------------------------------- |
-| `id`                 | uuid PK     |                                                            |
-| `user_id`            | uuid FK     | `ON DELETE CASCADE`                                        |
-| `refresh_token_hash` | text        | Unique. The token itself is never stored.                  |
-| `user_agent`         | text        | Shown on Settings → Sessions so you can recognize a device. |
-| `ip_address`         | text        |                                                            |
-| `created_at` / `last_seen_at` | timestamptz |                                                   |
-| `expires_at`         | timestamptz |                                                            |
-| `revoked_at`         | timestamptz | NULL means live.                                           |
-| `revoked_reason`     | text        |                                                            |
+| Column                        | Type        | Notes                                                       |
+| ----------------------------- | ----------- | ----------------------------------------------------------- |
+| `id`                          | uuid PK     |                                                             |
+| `user_id`                     | uuid FK     | `ON DELETE CASCADE`                                         |
+| `refresh_token_hash`          | text        | Unique. The token itself is never stored.                   |
+| `user_agent`                  | text        | Shown on Settings → Sessions so you can recognize a device. |
+| `ip_address`                  | text        |                                                             |
+| `created_at` / `last_seen_at` | timestamptz |                                                             |
+| `expires_at`                  | timestamptz |                                                             |
+| `revoked_at`                  | timestamptz | NULL means live.                                            |
+| `revoked_reason`              | text        |                                                             |
 
 **Why the table exists at all.** A JWT is stateless and therefore cannot be revoked. Without a
-server-side session row, "log out", "log out everywhere", and "revoke that device" would be
-cosmetic — the token would keep working until it expired. Every authenticated request therefore
-checks that its session is still live. That check is cached for a few seconds, which is why
-revocation is *near*-instant rather than instant — see
+server-side session row, "log out", "log out everywhere", and "revoke that device" would be cosmetic
+— the token would keep working until it expired. Every authenticated request therefore checks that
+its session is still live. That check is cached for a few seconds, which is why revocation is
+_near_-instant rather than instant — see
 [Known limitations](../status/KNOWN-LIMITATIONS.md#2-session-revocation-takes-up-to-five-seconds-to-take-effect).
 
 ### `aether.audit_events`
 
-| Column                         | Type        | Notes                                    |
-| ------------------------------ | ----------- | ---------------------------------------- |
-| `id`                           | uuid PK     |                                          |
-| `at`                           | timestamptz |                                          |
-| `action`                       | text        | e.g. `auth.login`, `files.delete`         |
-| `outcome`                      | text        | `success` \| `failure`                    |
-| `actor_user_id`                | uuid FK     | `ON DELETE SET NULL` — the log outlives the account |
-| `actor_username`               | text        | Denormalized so a deleted user is still identifiable |
-| `session_id`, `ip_address`, `user_agent` |      |                                          |
-| `target`                       | text        | What was acted on                        |
-| `metadata`                     | jsonb       | Extra context                            |
+| Column                                   | Type        | Notes                                                |
+| ---------------------------------------- | ----------- | ---------------------------------------------------- |
+| `id`                                     | uuid PK     |                                                      |
+| `at`                                     | timestamptz |                                                      |
+| `action`                                 | text        | e.g. `auth.login`, `files.delete`                    |
+| `outcome`                                | text        | `success` \| `failure`                               |
+| `actor_user_id`                          | uuid FK     | `ON DELETE SET NULL` — the log outlives the account  |
+| `actor_username`                         | text        | Denormalized so a deleted user is still identifiable |
+| `session_id`, `ip_address`, `user_agent` |             |                                                      |
+| `target`                                 | text        | What was acted on                                    |
+| `metadata`                               | jsonb       | Extra context                                        |
 
 Indexed by `at DESC`, `(action, at DESC)`, and `(actor_user_id, at DESC)` — the three ways the
 Security Center queries it.
@@ -83,14 +83,14 @@ Instance-level key/value store: `key` (PK), `value` (jsonb), `updated_at`, `upda
 
 ### `aether.host_agents`
 
-| Column          | Type        | Notes                                                        |
-| --------------- | ----------- | ------------------------------------------------------------ |
-| `id`            | uuid PK     | Supplied by the application, not generated — the agent id is minted at pair time. |
-| `label`         | text        | Operator-facing name.                                         |
+| Column          | Type        | Notes                                                                                                   |
+| --------------- | ----------- | ------------------------------------------------------------------------------------------------------- |
+| `id`            | uuid PK     | Supplied by the application, not generated — the agent id is minted at pair time.                       |
+| `label`         | text        | Operator-facing name.                                                                                   |
 | `token_hash`    | text        | SHA-256 of the pairing token. **The token is shown once, at pair time, and never stored in the clear.** |
-| `owner_user_id` | uuid FK     | `ON DELETE CASCADE`                                           |
-| `created_at`    | timestamptz |                                                              |
-| `revoked_at`    | timestamptz | Soft revoke.                                                  |
+| `owner_user_id` | uuid FK     | `ON DELETE CASCADE`                                                                                     |
+| `created_at`    | timestamptz |                                                                                                         |
+| `revoked_at`    | timestamptz | Soft revoke.                                                                                            |
 
 Revocation is a **soft** revoke (`UPDATE … SET revoked_at = now()`), not a delete. `listAgents`
 filters `WHERE revoked_at IS NULL`. Keeping the row means the audit trail of what was once paired

@@ -1,9 +1,9 @@
 # Backup and restore
 
 An Aether instance keeps its state in two places: the **PostgreSQL database** and the **data
-directory** (`data/workspace` + `data/uploads`, bind-mounted into the backend). The database lives in
-a Docker named volume; the data directory lives on the host, because the local host agent runs as a
-systemd service on the same machine and must see exactly the tree the backend serves.
+directory** (`data/workspace` + `data/uploads`, bind-mounted into the backend). The database lives
+in a Docker named volume; the data directory lives on the host, because the local host agent runs as
+a systemd service on the same machine and must see exactly the tree the backend serves.
 
 `aether backup` produces one archive containing everything needed to rebuild the instance.
 
@@ -11,11 +11,11 @@ systemd service on the same machine and must see exactly the tree the backend se
 
 ## What is in a backup
 
-| Component     | Source                                        | Why                                                       |
-| ------------- | --------------------------------------------- | --------------------------------------------------------- |
-| Database      | `pg_dump` of the `postgres` service            | Users, sessions, audit log, settings, agent registry        |
-| Data          | `<install>/data/`                              | Workspace files and uploads                                |
-| Configuration | `.env`, `docker-compose.yml`, `caddy/Caddyfile` | Secrets and deployment shape                              |
+| Component     | Source                                                                        | Why                                                                               |
+| ------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Database      | `pg_dump` of the `postgres` service                                           | Users, sessions, audit log, settings, agent registry                              |
+| Data          | `<install>/data/`                                                             | Workspace files and uploads                                                       |
+| Configuration | `.env`, `docker-compose.yml`, `caddy/Caddyfile`                               | Secrets and deployment shape                                                      |
 | Metadata      | `instance.json`, `install.state`, `local-agent.json`, `local-agent/agent.env` | Instance identity, and the local agent's identity so the restored host reconnects |
 
 In the archive those are `database.sql.gz`, `data.tar.gz`, `config/`, and `metadata/`, under one
@@ -26,9 +26,9 @@ all reconstructible, so losing it loses nothing durable. The **frontend bundle**
 rebuilt on restore rather than archived: it is an artifact of one commit, and shipping an old bundle
 to a newer backend is the version skew the docs warn about.
 
-Each step fails hard rather than skipping. An earlier version looked for `pg_dump` on the *host*, and
-on a Docker deployment it could never find it — so it logged a warning, produced an archive with no
-database in it, and still printed "Backup created successfully". A backup that silently omits the
+Each step fails hard rather than skipping. An earlier version looked for `pg_dump` on the _host_,
+and on a Docker deployment it could never find it — so it logged a warning, produced an archive with
+no database in it, and still printed "Backup created successfully". A backup that silently omits the
 data is worse than no backup, because it is trusted.
 
 ### The archive is a secret
@@ -62,9 +62,9 @@ proves the gzip stream is intact, not that the archive finished being written.
 
 Every step is mandatory. If `pg_dump` fails, or the dump comes out empty, or the data archive is
 empty, the script **fails and says so** rather than writing a partial archive. An earlier version
-checked for `pg_dump` on the *host* and, not finding it, logged a warning and continued — producing
-a backup with no database in it while printing "Backup created successfully". A backup that
-silently omits the data is worse than no backup, because you trust it.
+checked for `pg_dump` on the _host_ and, not finding it, logged a warning and continued — producing
+a backup with no database in it while printing "Backup created successfully". A backup that silently
+omits the data is worse than no backup, because you trust it.
 
 ### Scheduling
 
@@ -122,18 +122,18 @@ aether rollback <archive>        # or an archive you name
    than a rollback. Files are then `chown`ed back to the app uid (`1001`), because a root container
    wrote them.
 6. **Preserves your current `.env`** and leaves it in place — see below.
-7. **Restores the local agent's identity** (`local-agent/agent.env`, `local-agent.json`) so the agent
-   matches the `host_agents` rows the restored database contains.
+7. **Restores the local agent's identity** (`local-agent/agent.env`, `local-agent.json`) so the
+   agent matches the `host_agents` rows the restored database contains.
 8. **Rebuilds the frontend bundle if it is missing.** The bundle is not in the archive — it is a
    build artifact of a particular commit, and restoring an old one next to a possibly-newer backend
    is version skew. It is rebuilt at the current commit instead. A restore onto a host that lost
    `/opt/aether/static` otherwise comes back with a working API and no UI, which the `/health` probe
    cannot see.
-9. **Starts the stack, waits for the backend to report healthy *with a reachable database*, then
+9. **Starts the stack, waits for the backend to report healthy _with a reachable database_, then
    waits for the host agent to reconnect.** If either fails, the restore **exits non-zero** and says
    so. A restore that leaves the instance unhealthy has not restored the instance.
 
-`instance.json` and `install.state` are deliberately *not* restored: they describe the installation
+`instance.json` and `install.state` are deliberately _not_ restored: they describe the installation
 that is running now, and the archive's copies are older.
 
 ### Your `.env` is not overwritten
@@ -144,7 +144,7 @@ taken, and applying it would either change `JWT_SECRET` (invalidating every live
 restoring old secrets is a separate, more dangerous operation.
 
 The current `.env` is copied aside as `.env.pre-restore-<timestamp>` so you can compare them. The
-Caddyfile *is* restored, since it carries no secrets and may legitimately need rolling back.
+Caddyfile _is_ restored, since it carries no secrets and may legitimately need rolling back.
 
 ### Restoring onto a fresh host
 
@@ -183,8 +183,8 @@ Test a restore on a throwaway host before you need one. An untested backup is a 
 ## Upgrade safety
 
 `aether update` takes a full backup **before** it touches anything, into the same `backups/`
-directory, and records it in `backups/last-update.json` along with the commit it started from. If the
-new version fails its health check the update rolls back by itself — `git reset --hard` plus
+directory, and records it in `backups/last-update.json` along with the commit it started from. If
+the new version fails its health check the update rolls back by itself — `git reset --hard` plus
 `aether restore` of that archive — and only reports failure if the rollback failed too:
 
 ```bash
@@ -195,24 +195,24 @@ aether rollback        # the archive the last update recorded
 
 ## Troubleshooting
 
-**`No checksum file at …sha256, so the archive cannot be verified`**
-Either the `.sha256` was deleted, or the archive predates checksum support. Re-create the backup if
-the source is still up; otherwise restore with `AETHER_ALLOW_UNVERIFIED=true` and accept that a
-truncated archive will not be detected.
+**`No checksum file at …sha256, so the archive cannot be verified`** Either the `.sha256` was
+deleted, or the archive predates checksum support. Re-create the backup if the source is still up;
+otherwise restore with `AETHER_ALLOW_UNVERIFIED=true` and accept that a truncated archive will not
+be detected.
 
-**`pg_dump failed`**
-The `postgres` container is not running or not healthy. Check `aether status` and `aether logs
-postgres`. This is a hard failure by design — the alternative is an archive with no database in it.
+**`pg_dump failed`** The `postgres` container is not running or not healthy. Check `aether status`
+and `aether logs postgres`. This is a hard failure by design — the alternative is an archive with no
+database in it.
 
-**`Checksum mismatch`**
-The archive is corrupt or was modified in transit. Do not override this. Restore an older archive.
+**`Checksum mismatch`** The archive is corrupt or was modified in transit. Do not override this.
+Restore an older archive.
 
-**`Restore failed: the host agent did not reconnect`**
-The restored database contains a different `host_agents` row than the agent on this host presents.
-Either the archive came from a different installation, or `metadata/agent.env` was not in it. Pair
-the host again from Settings → Host agents, or restore an archive that contains the matching agent.
+**`Restore failed: the host agent did not reconnect`** The restored database contains a different
+`host_agents` row than the agent on this host presents. Either the archive came from a different
+installation, or `metadata/agent.env` was not in it. Pair the host again from Settings → Host
+agents, or restore an archive that contains the matching agent.
 
-**Restore succeeds but the backend never becomes healthy**
-Usually a schema-version mismatch: an old dump against a newer backend. The backend's migration
-runner is forward-only, so it will not downgrade. Restore the archive that matches the version you
-are running, or re-run `aether update` afterwards to bring the schema forward.
+**Restore succeeds but the backend never becomes healthy** Usually a schema-version mismatch: an old
+dump against a newer backend. The backend's migration runner is forward-only, so it will not
+downgrade. Restore the archive that matches the version you are running, or re-run `aether update`
+afterwards to bring the schema forward.

@@ -25,11 +25,12 @@ sudo grep AETHER_BOOTSTRAP_TOKEN /opt/aether/.env
 
 In a development checkout the variable is normally unset and the screen asks for nothing.
 
-**Why it exists.** Bootstrap is necessarily unauthenticated — there is no account yet to authenticate
-with. Without a token, anyone who happens to reach a freshly installed instance before you do can
-claim the owner account, and there is no way to take it back except by wiping the database. The
-token is the only thing standing between "I just installed this" and "someone else owns it". It
-works exactly once: `POST /api/auth/bootstrap` is refused with `409` as soon as one user exists.
+**Why it exists.** Bootstrap is necessarily unauthenticated — there is no account yet to
+authenticate with. Without a token, anyone who happens to reach a freshly installed instance before
+you do can claim the owner account, and there is no way to take it back except by wiping the
+database. The token is the only thing standing between "I just installed this" and "someone else
+owns it". It works exactly once: `POST /api/auth/bootstrap` is refused with `409` as soon as one
+user exists.
 
 > Treat the bootstrap token like a password. Do not paste it into chat, a ticket, or a screenshot.
 
@@ -54,8 +55,8 @@ one.
 
 1. **Settings → Host agents → Pair agent.**
 2. Give it a label (`web-01`).
-3. The dialog shows three values **once**: the backend URL, an agent id, and a pairing token.
-   Copy them now.
+3. The dialog shows three values **once**: the backend URL, an agent id, and a pairing token. Copy
+   them now.
 
 The token is stored only as a SHA-256 hash. There is no way to display it again — if you lose it,
 revoke the agent and pair a new one.
@@ -82,21 +83,22 @@ Full detail, including firing the agent up by hand: [HOST-AGENTS.md](../operatio
 
 ## 3. A tour
 
-| App               | Where to start                                                          |
-| ----------------- | ----------------------------------------------------------------------- |
-| **Terminal**      | A real shell on the paired host. `whoami`, `df -h`. It is not a sandbox. |
-| **Files**         | The workspace only — `AETHER_WORKSPACE_ROOT`, not the whole filesystem.  |
-| **System Monitor** | Live CPU, memory, disk from the host's `/proc`.                         |
-| **Task Manager**  | Processes with memory and state. The CPU column is empty — see below.    |
-| **Code Studio**   | Edit a text file from the Files app. No syntax highlighting, by choice.   |
-| **Security Center** | The audit log of everything that has happened on this instance.        |
-| **Settings**      | Account, sessions, users, host agents.                                   |
+| App                 | Where to start                                                           |
+| ------------------- | ------------------------------------------------------------------------ |
+| **Terminal**        | A real shell on the paired host. `whoami`, `df -h`. It is not a sandbox. |
+| **Files**           | The workspace only — `AETHER_WORKSPACE_ROOT`, not the whole filesystem.  |
+| **System Monitor**  | Live CPU, memory, disk from the host's `/proc`.                          |
+| **Task Manager**    | Processes with memory and state. The CPU column is empty — see below.    |
+| **Code Studio**     | Edit a text file from the Files app. No syntax highlighting, by choice.  |
+| **Security Center** | The audit log of everything that has happened on this instance.          |
+| **Settings**        | Account, sessions, users, host agents.                                   |
 
 Two things that look broken but are not:
 
 - **The Task Manager's CPU column is always `0`.** A per-process percentage needs two samples over
   time; Aether takes one and reports zero rather than inventing a number. System-wide CPU is real.
-  See [Known limitations](../status/KNOWN-LIMITATIONS.md#6-per-process-cpu-usage-is-always-reported-as-0).
+  See
+  [Known limitations](../status/KNOWN-LIMITATIONS.md#6-per-process-cpu-usage-is-always-reported-as-0).
 - **Code Studio has no syntax highlighting.** It is a textarea with a gutter. An honest plain editor
   beat a half-configured code editor component.
 
