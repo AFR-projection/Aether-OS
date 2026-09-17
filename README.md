@@ -92,51 +92,112 @@ Detail: [Architecture overview](docs/architecture/OVERVIEW.md).
 
 ---
 
-## Quick start
+## Quick Start
 
-### Run it locally
+### 🚀 One-Command VPS Installation
 
-```bash
-git clone <your-fork> && cd Aether-cloud-os
-pnpm install
-docker compose up -d          # PostgreSQL + Redis
-cp .env.example .env          # then set JWT_SECRET
-pnpm dev
-```
-
-The UI is at <http://localhost:5173>. On first load it asks you to create the owner account — in
-development `AETHER_BOOTSTRAP_TOKEN` is unset, so no token is needed.
-
-Full instructions: [Development](docs/getting-started/DEVELOPMENT.md).
-
-### Install on a VPS
-
-On a fresh Ubuntu 22.04/24.04 host, one command — no Docker, clone, `.env`, or migration step first:
+Deploy Aether Cloud OS on a fresh Ubuntu 22.04/24.04 VPS in minutes:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh | bash
 ```
 
-It re-runs itself under `sudo` if you are not root, so the command above is the whole thing. With a
-domain pointing at the host:
+**What happens:**
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh | bash -s -- --domain aether.example.com --email you@example.com
+1. **Pre-flight checks** — OS detection, resource validation
+2. **Domain setup** — Interactive prompt with DNS validation (or skip for IP-only HTTP mode)
+3. **Master account** — Create administrator credentials during installation
+4. **Dependencies** — Installs Docker, Docker Compose, and required packages
+5. **Deployment** — Generates secrets, configures services, builds images
+6. **Auto-configuration** — Pairs local Host Agent, sets up systemd, runs health checks
+
+**After installation completes, you'll see:**
+
+```
+═══════════════════════════════════════════════════════════════
+  ✓ AETHER CLOUD OS INSTALLED SUCCESSFULLY
+═══════════════════════════════════════════════════════════════
+
+  Domain:           aether.example.com (or http://<vps-ip>)
+
+  MASTER ACCOUNT
+  ─────────────────────────────────────────────────────────────
+  Username:         admin
+  Password:         <your-secure-password>
+
+  ⚠  IMPORTANT: Save these credentials securely!
+
+  NEXT STEPS
+  ─────────────────────────────────────────────────────────────
+  1. Open your browser: https://aether.example.com
+  2. Login with the master account credentials above
+  3. Start managing your cloud infrastructure
 ```
 
-The installer checks the platform, installs Docker, generates every secret, writes a hardened
-`.env`, brings up the stack behind Caddy (with automatic HTTPS when you supply a domain), installs
-an `aether` management CLI and a systemd unit, and runs a post-install check that no internal port
-is exposed. It also installs a **local host agent** — paired to its own backend automatically — so
-the machine it installs on is manageable out of the box, with no extra pairing step.
+#### With Custom Domain (HTTPS)
 
-Then create the owner account at the URL it prints. Guide:
-[Deployment](docs/operations/DEPLOYMENT.md).
+If you have a domain, **configure DNS first**:
 
-### Manage it
+1. Create an **A record** pointing to your VPS IP
+2. Wait for DNS propagation (5-30 minutes)
+3. Verify: `dig yourdomain.com +short`
+
+Then run the installer — it will validate DNS automatically:
 
 ```bash
-aether status          # docker, containers, HTTP, database, cache, agent, disk, memory, TLS, commit
+curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh | bash
+```
+
+The installer prompts you interactively for:
+- Domain (validates DNS points to VPS)
+- Admin email (for Let's Encrypt certificate notices)
+- Master username (alphanumeric, 3-32 chars)
+- Master password (min 8 chars, must have letter + number)
+
+#### Non-Interactive Mode
+
+For automation or CI/CD:
+
+```bash
+bash scripts/deploy/setup.sh --yes --domain aether.example.com --email admin@example.com
+```
+
+**Note:** Non-interactive mode skips master account creation. You'll use the bootstrap token flow in the UI instead.
+
+---
+
+### 💻 Local Development
+
+```bash
+git clone https://github.com/AFR-projection/Aether-OS.git
+cd Aether-cloud-os
+pnpm install
+docker compose up -d          # PostgreSQL + Redis
+cp .env.example .env          # Set JWT_SECRET and other secrets
+pnpm dev
+```
+
+Open <http://localhost:5173> and create the owner account (no bootstrap token needed in dev mode).
+
+Full guide: [Development](docs/getting-started/DEVELOPMENT.md)
+
+---
+
+### 🛠️ Management Commands
+
+After installation, use the `aether` CLI:
+
+```bash
+aether status          # System health, services, agent status
+aether logs            # View service logs (backend, postgres, redis, caddy)
+aether update          # Update to latest version from GitHub
+aether backup          # Create full backup (database + data)
+aether restore         # Restore from backup
+aether restart         # Restart all services
+aether doctor          # Diagnose problems with fix commands
+```
+
+Full reference: [Deployment Guide](docs/operations/DEPLOYMENT.md)
 aether doctor          # every problem with a cause and the command that fixes it
 aether logs backend    # follow one service: redis | postgres | backend | caddy
 aether backup          # database + data + config + metadata, checksummed

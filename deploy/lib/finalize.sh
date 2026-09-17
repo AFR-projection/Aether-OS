@@ -225,6 +225,12 @@ finalize_installation() {
     stage "Installing the local host agent"
     install_local_agent
 
+    # Create master user in database if credentials provided
+    if [ -n "${AETHER_MASTER_USERNAME:-}" ] && [ -n "${AETHER_MASTER_PASSWORD:-}" ]; then
+        stage "Creating master administrator account"
+        create_master_user "$AETHER_MASTER_USERNAME" "$AETHER_MASTER_PASSWORD"
+    fi
+
     # Write deployment metadata after successful install
     write_initial_deployment_metadata
 
@@ -256,20 +262,59 @@ print_summary() {
     url="$(installation_url)"
 
     printf '\n'
-    printf '  ---------------------------------------------------------------\n'
-    printf '   Aether Cloud OS %s installed\n' "$AETHER_VERSION"
-    printf '  ---------------------------------------------------------------\n'
-    printf '   URL:              %s\n' "$url"
-    printf '   Install dir:      %s\n' "$AETHER_INSTALL_DIR"
-    printf '   Installer log:    %s\n' "$AETHER_LOG_FILE"
-    printf '   Installation ID:  %s\n' "$AETHER_INSTALLATION_ID"
+    printf '═══════════════════════════════════════════════════════════════\n'
+    printf '  ✓ AETHER CLOUD OS INSTALLED SUCCESSFULLY\n'
+    printf '═══════════════════════════════════════════════════════════════\n'
     printf '\n'
-    printf '   First steps:\n'
-    printf '     1. Open %s and create the owner account.\n' "$url"
-    printf '     2. The one-time bootstrap token is in:\n'
-    printf '          grep AETHER_BOOTSTRAP_TOKEN %s/.env\n' "$AETHER_INSTALL_DIR"
+
+    # Domain/URL
+    if [ -n "${AETHER_DOMAIN:-}" ]; then
+        printf '  Domain:           %s\n' "$AETHER_DOMAIN"
+    else
+        printf '  Access URL:       %s\n' "$url"
+    fi
+
     printf '\n'
-    printf '   Management:  aether status | logs | restart | update | backup\n'
-    printf '   Service:     systemctl status aether\n'
+
+    # Master Account
+    if [ -n "${AETHER_MASTER_USERNAME:-}" ]; then
+        printf '  MASTER ACCOUNT\n'
+        printf '  ─────────────────────────────────────────────────────────────\n'
+        printf '  Username:         %s\n' "$AETHER_MASTER_USERNAME"
+        printf '  Password:         %s\n' "$AETHER_MASTER_PASSWORD"
+        printf '\n'
+        printf '  ⚠  IMPORTANT: Save these credentials securely!\n'
+        printf '     This is the only time the password will be displayed.\n'
+        printf '\n'
+    fi
+
+    printf '  NEXT STEPS\n'
+    printf '  ─────────────────────────────────────────────────────────────\n'
+    printf '  1. Open your browser: %s\n' "$url"
+    if [ -n "${AETHER_MASTER_USERNAME:-}" ]; then
+        printf '  2. Login with the master account credentials above\n'
+    else
+        printf '  2. Create the owner account (bootstrap token in .env)\n'
+    fi
+    printf '  3. Start managing your cloud infrastructure\n'
+    printf '\n'
+
+    printf '  MANAGEMENT COMMANDS\n'
+    printf '  ─────────────────────────────────────────────────────────────\n'
+    printf '  aether status      Check system health\n'
+    printf '  aether logs        View service logs\n'
+    printf '  aether update      Update to latest version\n'
+    printf '  aether backup      Create backup\n'
+    printf '  aether restart     Restart services\n'
+    printf '\n'
+
+    printf '  SYSTEM INFO\n'
+    printf '  ─────────────────────────────────────────────────────────────\n'
+    printf '  Install directory: %s\n' "$AETHER_INSTALL_DIR"
+    printf '  Version:           %s\n' "$AETHER_VERSION"
+    printf '  Installation ID:   %s\n' "$AETHER_INSTALLATION_ID"
+    printf '  Log file:          %s\n' "$AETHER_LOG_FILE"
+    printf '\n'
+    printf '═══════════════════════════════════════════════════════════════\n'
     printf '\n'
 }

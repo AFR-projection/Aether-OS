@@ -34,6 +34,10 @@ source "$SCRIPT_DIR/configure.sh"
 source "$SCRIPT_DIR/deploy.sh"
 # shellcheck source=./finalize.sh
 source "$SCRIPT_DIR/finalize.sh"
+# shellcheck source=./interactive-setup.sh
+source "$SCRIPT_DIR/interactive-setup.sh"
+# shellcheck source=./create-master-user.sh
+source "$SCRIPT_DIR/create-master-user.sh"
 
 usage() {
     cat <<EOF
@@ -118,6 +122,13 @@ main() {
     # The stage total covers configure through finalize; preflight and
     # dependencies already called stage() themselves.
     run_stage preflight run_preflight
+
+    # Interactive setup: prompt for domain (with DNS validation) and master account
+    # This runs BEFORE dependencies installation so user knows what will be configured
+    if [ "${AETHER_RESUME:-false}" != "true" ] || ! state_done "interactive_setup"; then
+        run_interactive_setup
+        mark_done "interactive_setup"
+    fi
 
     # Handle existing installation: offer resume / reinstall / abort.
     if [ -n "${EXISTING_STATE:-}" ] && [ "${AETHER_RESUME:-false}" != "true" ]; then
