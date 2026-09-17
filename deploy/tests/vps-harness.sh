@@ -246,6 +246,58 @@ phase_update() {
     run "update --check does not change anything" aether update --check
 }
 
+phase_update_safety() {
+    section "Update safety guards"
+
+    # Dirty tree: must refuse rather than silently discard local edits.
+    printf 'harness edit\n' >> "$INSTALL_DIR/src/README.md"
+    run_expect_failure "dirty tree aborts the update" aether update --yes
+    expect_contains "mentions local modifications" "local modifications"
+    git -C "$INSTALL_DIR/src" checkout README.md
+
+    # Concurrent update: a second invocation must refuse while the first holds the lock.
+    local lock_file="$INSTALL_DIR/state/update.lock"
+    mkdir -p "$(dirname "$lock_file")"
+    echo 99999 > "$lock_file"
+    run_expect_failure "concurrent update is refused" aether update --yes
+    expect_contains "mentions the lock" "Another update is running"
+    rm -f "$lock_file"
+
+    # Stale lock: an old PID must be removed automatically.
+    echo 1 > "$lock_file"
+    run "stale lock is removed automatically" aether update --check
+}
+
+phase_idempotency() {
+    section "Installer idempotency"
+
+    local agent_count_before
+    agent_count_before=$(docker compose -f "$INSTALL_DIR/docker-compose.yml" exec -T postgres \
+        psql -U aether -d aether -tAc "SELECT COUNT(*) FROM aether.host_agents WHERE scope='local'" 2>/dev/null | tr -d ' ' || echo 0)
+
+    run_logged "re-run installer on existing deployment" /tmp/aether-harness-idempotency.log \
+        bash "$REPO_DIR/scripts/deploy/setup.sh" --yes
+
+    run "deployment is still healthy after re-run" aether status
+    expect_contains "agent still connected" "Host Agent:         connected"
+
+    local agent_count_after
+    agent_count_after=$(docker compose -f "$INSTALL_DIR/docker-compose.yml" exec -T postgres \
+        psql -U aether -d aether -tAc "SELECT COUNT(*) FROM aether.host_agents WHERE scope='local'" 2>/dev/null | tr -d ' ' || echo 0)
+
+    if [ "$agent_count_before" = "$agent_count_after" ]; then
+        pass "no duplicate agent registration (count=$agent_count_after)"
+    else
+        fail "no duplicate agent registration (was $agent_count_before, now $agent_count_after)"
+    fi
+
+    if systemctl list-units --type=service --all 2>/dev/null | grep -c '^aether-host-agent.service' | grep -q '^1$'; then
+        pass "no duplicate systemd service"
+    else
+        fail "no duplicate systemd service"
+    fi
+}
+
 phase_repair() {
     section "Repair"
 
@@ -253,6 +305,55 @@ phase_repair() {
 
     run "aether status is still healthy afterwards" aether status
     expect_contains "host agent reconnected" "Host Agent:         connected"
+}
+
+phase_rollback_injection() {
+    section "Rollback on injected failure"
+
+    # Inject a failure by breaking the backend's entrypoint. The update will try
+    # to restart the stack, the backend will fail to start, health check will
+    # timeout, and the rollback should restore the previous working commit.
+
+    local current_commit
+    current_commit=$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD 2>/dev/null || echo unknown)
+
+    # Create a trivial commit that will break startup
+    cd "$INSTALL_DIR/src"
+    echo '#!/bin/sh\nexit 42' > packages/backend/broken-entrypoint.sh
+    chmod +x packages/backend/broken-entrypoint.sh
+    git add packages/backend/broken-entrypoint.sh
+    git commit -m "test: inject startup failure for rollback test" --no-verify 2>/dev/null || true
+
+    # Temporarily break the backend Dockerfile to use the broken entrypoint
+    local dockerfile="$INSTALL_DIR/src/packages/backend/Dockerfile"
+    if [ -f "$dockerfile" ]; then
+        cp "$dockerfile" "${dockerfile}.backup"
+        echo 'ENTRYPOINT ["/app/broken-entrypoint.sh"]' >> "$dockerfile"
+    fi
+
+    run_expect_failure "update with broken backend triggers rollback" aether update --yes --no-pull
+    expect_contains "rollback executed" "rolled back\|Rollback\|previous version"
+
+    # Restore the Dockerfile
+    if [ -f "${dockerfile}.backup" ]; then
+        mv "${dockerfile}.backup" "$dockerfile"
+    fi
+
+    # Verify rollback restored the previous commit
+    local after_rollback
+    after_rollback=$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD 2>/dev/null || echo unknown)
+    if [ "$current_commit" = "$after_rollback" ]; then
+        pass "rollback restored the previous commit ($current_commit)"
+    else
+        fail "rollback restored the previous commit (was $current_commit, now $after_rollback)"
+    fi
+
+    run "instance is healthy after rollback" aether status
+    expect_contains "agent still connected after rollback" "Host Agent:         connected"
+
+    # Clean up the injected commit
+    git -C "$INSTALL_DIR/src" reset --hard HEAD~1 2>/dev/null || true
+    cd /
 }
 
 phase_uninstall() {
@@ -318,6 +419,9 @@ main() {
     phase_status
     phase_backup_restore
     phase_update
+    phase_update_safety
+    phase_idempotency
+    phase_rollback_injection
     phase_repair
     phase_uninstall
 
