@@ -75,18 +75,25 @@ write_caddyfile() {
     mkdir -p "$caddy_dir"
 
     if [ -n "${AETHER_DOMAIN:-}" ] && [ "${AETHER_NO_HTTPS:-false}" != "true" ]; then
+        # HTTPS mode: use main Caddyfile with ACME, HSTS, and email
         cp "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile" "$caddy_dir/Caddyfile"
         info "Caddyfile installed (HTTPS domain mode)"
     else
-        # IP-only and --no-https modes use an explicit HTTP listener. An empty
-        # Caddy site address is invalid and would prevent the proxy starting.
+        # HTTP mode: use HTTP-only template without HSTS or email requirement
+        local site_address
         if [ -n "${AETHER_DOMAIN:-}" ]; then
-            sed 's|^{\$AETHER_DOMAIN} {|http://{\$AETHER_DOMAIN} {|' \
-                "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile" > "$caddy_dir/Caddyfile"
+            site_address="http://\${AETHER_DOMAIN}"
+        else
+            site_address=":80"
+        fi
+
+        # Use HTTP template and substitute site address
+        sed "s|{\$AETHER_SITE_ADDRESS}|$site_address|" \
+            "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile.http" > "$caddy_dir/Caddyfile"
+
+        if [ -n "${AETHER_DOMAIN:-}" ]; then
             info "Caddyfile installed (HTTP-only domain mode)"
         else
-            awk '{ if ($0 == "{$AETHER_DOMAIN} {") print ":80 {"; else print }' \
-                "${AETHER_INSTALL_DIR}/src/deploy/Caddyfile" > "$caddy_dir/Caddyfile"
             info "Caddyfile installed (HTTP IP-only mode)"
         fi
     fi

@@ -18,6 +18,13 @@ apply_permissions() {
     find "$AETHER_SECRETS_DIR" -type f -exec chmod 600 {} \;
     chmod 644 "${AETHER_INSTALL_DIR}/install.state" "${AETHER_INSTALL_DIR}/instance.json" 2>/dev/null || true
 
+    # Static frontend must be readable by the backend container (uid 1001).
+    # Without this, restrictive umask during build/copy leaves files unreadable.
+    if [ -d "${AETHER_INSTALL_DIR}/static" ]; then
+        find "${AETHER_INSTALL_DIR}/static" -type d -exec chmod 755 {} \;
+        find "${AETHER_INSTALL_DIR}/static" -type f -exec chmod 644 {} \;
+    fi
+
     if [ "$(id -u)" -ne 0 ]; then
         $SUDO chown -R "$(id -un):$(id -gn)" "$AETHER_INSTALL_DIR" 2>/dev/null || \
             warn "Could not chown $AETHER_INSTALL_DIR to the invoking user; continue with sudo chown -R $USER $AETHER_INSTALL_DIR"
@@ -177,6 +184,33 @@ health_check() {
     fi
 }
 
+write_initial_deployment_metadata() {
+    local metadata_file="$AETHER_INSTALL_DIR/deployment.json"
+    local src_dir="$AETHER_INSTALL_DIR/src"
+    local revision branch
+
+    if [ -d "$src_dir/.git" ]; then
+        revision=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null || echo "unknown")
+        branch=$(git -C "$src_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    else
+        revision="local-copy"
+        branch="local-copy"
+    fi
+
+    mkdir -p "$(dirname "$metadata_file")"
+    cat > "$metadata_file" <<EOF
+{
+  "revision": "$revision",
+  "revisionShort": "$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || echo "$revision")",
+  "branch": "$branch",
+  "deployedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "deploymentMethod": "fresh-install",
+  "instanceId": "$(sed -n 's/.*"installationId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$AETHER_INSTALL_DIR/instance.json" 2>/dev/null | head -n1)"
+}
+EOF
+    info "Deployment metadata written to $metadata_file"
+}
+
 finalize_installation() {
     stage "Finalizing installation"
     apply_permissions
@@ -190,6 +224,9 @@ finalize_installation() {
     # and confirm the handshake on both sides.
     stage "Installing the local host agent"
     install_local_agent
+
+    # Write deployment metadata after successful install
+    write_initial_deployment_metadata
 
     mark_done finalize
 }

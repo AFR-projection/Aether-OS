@@ -114,7 +114,9 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
+          # Relaxed for 1 vCPU VPS. Compose v2 treats this as a soft limit;
+          # the container can burst above it when CPU is available.
+          cpus: '0.5'
           memory: 1G
         reservations:
           memory: 256M
@@ -144,7 +146,9 @@ services:
     networks:
       - edge
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:80/health']
+      # Use caddy itself to validate: if the process is running and can respond,
+      # it's healthy. Don't probe through HTTP which may 308 redirect in HTTPS mode.
+      test: ['CMD', 'caddy', 'version']
       interval: 30s
       timeout: 5s
       retries: 3

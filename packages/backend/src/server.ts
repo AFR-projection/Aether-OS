@@ -61,6 +61,11 @@ export async function buildServer(): Promise<FastifyInstance> {
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         baseUri: ["'self'"],
+        // Only force HTTPS upgrade in HTTPS mode. In HTTP-only deployments
+        // (--no-https or IP-only), this directive would break the frontend by
+        // forcing browsers to request assets over HTTPS when the server only
+        // listens on HTTP.
+        ...(config.isHttps ? { upgradeInsecureRequests: [] } : {}),
       },
     },
     crossOriginEmbedderPolicy: false,

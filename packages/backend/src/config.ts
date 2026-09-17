@@ -141,6 +141,7 @@ export type AppConfig = z.infer<typeof envSchema> & {
   isProduction: boolean;
   isDevelopment: boolean;
   isTest: boolean;
+  isHttps: boolean;
 };
 
 function loadConfig(): AppConfig {
@@ -179,6 +180,7 @@ function loadConfig(): AppConfig {
     isProduction: config.NODE_ENV === 'production',
     isDevelopment: config.NODE_ENV === 'development',
     isTest: config.NODE_ENV === 'test',
+    isHttps: config.BASE_URL.startsWith('https://'),
   });
 }
 

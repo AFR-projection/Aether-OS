@@ -35,7 +35,7 @@ RUN groupadd --system --gid 1001 aether \
  && chown -R aether:aether /opt/aether
 
 WORKDIR /opt/aether/app
-COPY --from=builder --chown=aether:aether /deploy/agent ./
+COPY --chown=aether:aether --from=builder /deploy/agent ./
 
 USER aether
 VOLUME ["/opt/aether/workspace"]

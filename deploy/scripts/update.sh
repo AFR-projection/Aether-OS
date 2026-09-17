@@ -293,6 +293,23 @@ write_update_record() {
 EOF
 }
 
+write_deployment_metadata() {
+    local revision="$1" branch="$2"
+    local metadata_file="$AETHER_INSTALL_DIR/deployment.json"
+    mkdir -p "$(dirname "$metadata_file")"
+    cat > "$metadata_file" <<EOF
+{
+  "revision": "$revision",
+  "revisionShort": "$(git -C "$AETHER_SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo "$revision")",
+  "branch": "$branch",
+  "deployedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "deploymentMethod": "aether-update",
+  "instanceId": "$(sed -n 's/.*"installationId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$AETHER_INSTALL_DIR/instance.json" 2>/dev/null | head -n1)"
+}
+EOF
+    info "Deployment metadata written to $metadata_file"
+}
+
 roll_back() {
     local prev_revision="$1" prev_short="$2" archive="$3"
 
@@ -379,11 +396,46 @@ update_aether() {
         fi
     fi
 
+    # Regenerate compose file after source update to ensure build context and
+    # mounts match the new source tree structure. Critical: without this, the
+    # update builds from stale configuration and may silently run old code.
+    stage "Regenerating configuration"
+    if [ -f "$AETHER_SRC_DIR/deploy/lib/deploy.sh" ]; then
+        # Source deploy functions for install_compose_file and write_caddyfile
+        # shellcheck source=../lib/deploy.sh
+        source "$AETHER_SRC_DIR/deploy/lib/deploy.sh"
+        install_compose_file
+        write_caddyfile
+    else
+        warn "Could not find deploy/lib/deploy.sh in updated source; keeping existing config"
+    fi
+
     # From here on, any failure is rolled back rather than left half-applied.
     if ! (build_frontend && rebuild_backend && run_migrations && restart_stack && health_check); then
         roll_back "$before" "$before_short" "$archive" || true
         fatal "Update failed and was rolled back. The instance is on $before_short."
     fi
+
+    # Verify the running code matches the target revision. The health check proves
+    # the stack is up, but not that it's running the new code — a stale image or
+    # missed rebuild would pass health while still serving the old version.
+    local after after_short target_short
+    after=$(current_revision)
+    after_short=$(current_revision_short)
+
+    if [ "$AETHER_PULL" = true ] && is_git_checkout; then
+        target_short=$(git -C "$AETHER_SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo "$after_short")
+        if [ "$after_short" != "$target_short" ]; then
+            error "Source was updated but running revision does not match target"
+            error "  Expected: $target_short"
+            error "  Running:  $after_short"
+            roll_back "$before" "$before_short" "$archive" || true
+            fatal "Update verification failed. Rolled back to $before_short."
+        fi
+    fi
+
+    # Record deployment metadata for `aether status` and future updates
+    write_deployment_metadata "$after" "$(current_branch)"
 
     printf '\n'
     info "Update complete: $before_short → $(current_revision_short)"

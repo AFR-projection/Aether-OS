@@ -182,7 +182,15 @@ cmd_status() {
     printf '\n  Disk:               %s\n' "$(df -h / | awk 'NR==2 {print $3" / "$2" ("$5")"}')"
     printf '  Memory:             %s\n' "$(free -m | awk 'NR==2 {printf "%s MB / %s MB", $3, $2}')"
 
-    if [ -d "$INSTALL_DIR/src/.git" ]; then
+    # Read deployment metadata if available
+    local deployment_file="$INSTALL_DIR/deployment.json"
+    if [ -f "$deployment_file" ]; then
+        local deployed_rev deployed_at
+        deployed_rev=$(sed -n 's/.*"revisionShort"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$deployment_file" | head -n1)
+        deployed_at=$(sed -n 's/.*"deployedAt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$deployment_file" | head -n1)
+        printf '  Deployed revision:  %s\n' "${deployed_rev:-unknown}"
+        printf '  Deployed at:        %s\n' "${deployed_at:-unknown}"
+    elif [ -d "$INSTALL_DIR/src/.git" ]; then
         printf '  Git branch:         %s\n' "$(git -C "$INSTALL_DIR/src" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
         printf '  Git commit:         %s\n' "$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     fi

@@ -35,12 +35,12 @@ RUN groupadd --system --gid 1001 aether \
  && chown -R aether:aether /opt/aether
 
 WORKDIR /opt/aether/app
-COPY --from=builder --chown=aether:aether /deploy/backend ./
+COPY --chown=aether:aether --from=builder /deploy/backend ./
 # Migrations are resolved relative to dist/db at runtime:
 #   ../../migrations/  →  /opt/aether/migrations/
 # The installer builds from source, so this path exists on the host too;
 # copy them into the image so a standalone container image also works.
-COPY packages/backend/migrations --chown=aether:aether /opt/aether/migrations
+COPY --chown=aether:aether packages/backend/migrations /opt/aether/migrations
 
 USER aether
 EXPOSE 3000

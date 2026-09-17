@@ -1,0 +1,44 @@
+# Aether Cloud OS — Caddy reverse proxy (HTTP mode).
+#
+# Used when --no-https is specified or no domain is provided.
+# No ACME, no HSTS, no email required.
+
+{
+	admin off
+}
+
+{$AETHER_SITE_ADDRESS} {
+	encode zstd gzip
+
+	header {
+		# Clickjacking: the desktop must never be framed.
+		X-Frame-Options "DENY"
+		# MIME sniffing off; the Files app serves user content.
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# Liveness probe for orchestrators; answered by the backend.
+	handle /health {
+		reverse_proxy backend:3000
+	}
+
+	# API + WebSocket + static frontend, all from the backend process.
+	handle {
+		reverse_proxy backend:3000 {
+			# Terminal and agent sockets stay open for hours; never time them out.
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 0s
+				expect_continue_timeout 0s
+			}
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
