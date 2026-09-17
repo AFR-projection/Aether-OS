@@ -33,7 +33,8 @@ describe('getSystemInfo', () => {
     expect(info.bootTime.length).toBeGreaterThan(0);
     expect(info.cpu.model.length).toBeGreaterThan(0);
     expect(info.cpu.cores).toBeGreaterThan(0);
-    expect(info.cpu.speedMhz).toBeGreaterThan(0);
+    // CPU speed may be 0 in some CI environments (GitHub Actions runners)
+    expect(info.cpu.speedMhz).toBeGreaterThanOrEqual(0);
     expect(info.cpu.usagePercent).toBeGreaterThanOrEqual(0);
     expect(info.cpu.loadAverage.length).toBe(3);
     expect(info.memory.totalBytes).toBeGreaterThan(0);
