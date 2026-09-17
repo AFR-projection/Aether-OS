@@ -60,12 +60,11 @@ db_name() {
     printf '%s' "${value:-aether}"
 }
 
-volume_name_for() {
-    local key="$1" name
-    name=$(docker_cmd volume ls --format '{{.Name}}' 2>/dev/null | grep -E "_${key}\$" | head -n1 || true)
-    [ -n "$name" ] || fatal "Could not find the Docker volume ending in '_${key}'."
-    printf '%s' "$name"
-}
+# The workspace and uploads are host directories bind-mounted into the backend
+# (see docker-compose.prod.yml), because the local host agent runs as a systemd
+# service on this machine and must see the same tree. Restoring writes them back
+# in place, then hands ownership to the uid the backend runs as.
+AETHER_DATA_DIR="${AETHER_DATA_DIR:-$AETHER_INSTALL_DIR/data}"
 
 # ---------------------------------------------------------------------------
 # Steps
@@ -77,16 +76,29 @@ verify_archive() {
     [ -f "$archive" ] || fatal "Backup archive not found: $archive"
     tar -tzf "$archive" >/dev/null 2>&1 || fatal "$archive is not a readable tar.gz archive."
 
-    if [ -f "$archive.sha256" ]; then
-        expected=$(cut -d' ' -f1 < "$archive.sha256")
-        actual=$(sha256sum "$archive" | cut -d' ' -f1)
-        if [ "$expected" != "$actual" ]; then
-            fatal "Checksum mismatch — $archive is corrupt or was modified. Refusing to restore."
+    # `tar -tzf` only proves the gzip stream is intact, not that the archive is
+    # complete — a truncated file can still list. The checksum is what makes
+    # "this is the backup that was taken" a fact rather than a hope, so a
+    # missing one is a failure, not a warning.
+    if [ ! -f "$archive.sha256" ]; then
+        if [ "${AETHER_ALLOW_UNVERIFIED:-false}" = "true" ]; then
+            warn "No .sha256 beside $archive; continuing because AETHER_ALLOW_UNVERIFIED=true."
+            return 0
         fi
-        info "Checksum verified"
-    else
-        warn "No .sha256 beside the archive; integrity not verified."
+        error "No checksum file at $archive.sha256, so the archive cannot be verified."
+        error "Every archive this version writes has one. Either it was deleted, or the"
+        error "file was produced by an older release (which did not write them)."
+        error "To restore it anyway, re-run with: AETHER_ALLOW_UNVERIFIED=true aether restore $archive"
+        exit 1
     fi
+
+    expected=$(cut -d' ' -f1 < "$archive.sha256")
+    actual=$(sha256sum "$archive" | cut -d' ' -f1)
+    if [ "$expected" != "$actual" ]; then
+        fatal "Checksum mismatch — $archive is corrupt or was modified. Refusing to restore."
+    fi
+    info "Checksum verified"
+    return 0
 }
 
 confirm_restore() {
@@ -134,17 +146,16 @@ restore_database() {
     info "Database restored"
 }
 
-restore_volumes() {
-    local archive="$1"
-    local work_dir="$2"
-    local workspace uploads
+restore_data() {
+    local work_dir="$1"
 
-    [ -f "$work_dir/volumes.tar.gz" ] || fatal "Archive contains no volume data."
+    local data_archive="$work_dir/data.tar.gz"
+    [ -f "$data_archive" ] || data_archive="$work_dir/volumes.tar.gz"
+    [ -f "$data_archive" ] || fatal "Archive contains no workspace or uploads data."
 
-    workspace=$(volume_name_for workspace_data)
-    uploads=$(volume_name_for uploads_data)
+    info "Restoring $AETHER_DATA_DIR"
 
-    info "Restoring workspace and uploads"
+    mkdir -p "$AETHER_DATA_DIR"
 
     # Clear before extracting: without this, files deleted since the backup was
     # taken would survive as stale leftovers and the restore would be a merge
@@ -156,16 +167,16 @@ restore_volumes() {
     if ! docker_cmd run --rm \
         -e APP_UID="$AETHER_APP_UID" \
         -e APP_GID="$AETHER_APP_GID" \
-        -v "$workspace":/dst/workspace \
-        -v "$uploads":/dst/uploads \
+        -v "$AETHER_DATA_DIR":/dst \
         -v "$work_dir":/backup:ro \
+        -e DATA_ARCHIVE="$(basename "$data_archive")" \
         "$ARCHIVE_IMAGE" \
         sh -euc '
-            rm -rf /dst/workspace/* /dst/workspace/.[!.]* /dst/uploads/* /dst/uploads/.[!.]* 2>/dev/null || true
-            tar -xzf /backup/volumes.tar.gz -C /dst
-            chown -R "$APP_UID:$APP_GID" /dst/workspace /dst/uploads
+            find /dst -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+            tar -xzf "/backup/$DATA_ARCHIVE" -C /dst
+            chown -R "$APP_UID:$APP_GID" /dst
         '; then
-        fatal "Volume restore failed."
+        fatal "Data restore failed."
     fi
 
     info "Workspace and uploads restored"
@@ -194,23 +205,124 @@ restore_configuration() {
     fi
 }
 
+# The restored database carries the host_agents rows that were live when the
+# backup was taken, so the agent on this host has to be the one those rows
+# describe. Restoring the agent's own configuration is what makes the pair match
+# again; without it the agent presents an id the restored database has never
+# heard of and reconnects forever.
+#
+# instance.json and install.state are deliberately NOT restored: they describe
+# the installation that is running now, and the archive's copies would be older.
+restore_metadata() {
+    local work_dir="$1"
+
+    [ -d "$work_dir/metadata" ] || return 0
+
+    local agent_dir="$AETHER_INSTALL_DIR/local-agent"
+
+    if [ -f "$work_dir/metadata/agent.env" ] && [ -d "$agent_dir" ]; then
+        cp "$work_dir/metadata/agent.env" "$agent_dir/agent.env"
+        chmod 600 "$agent_dir/agent.env"
+        info "Host agent configuration restored"
+
+        if [ -f "$work_dir/metadata/local-agent.json" ]; then
+            cp "$work_dir/metadata/local-agent.json" "$AETHER_INSTALL_DIR/local-agent.json"
+        fi
+    fi
+}
+
+# The frontend bundle is not in the archive: it is a build artifact of a
+# specific commit, and restoring an old one next to a possibly-newer backend is
+# the version skew the docs warn about. Rebuilding it at the current commit is
+# both smaller and more correct — but it has to *happen*, because a restore onto
+# a host that lost /opt/aether/static otherwise comes back with a working API
+# and no UI, which the /health probe cannot see.
+restore_frontend() {
+    local static_dir="$AETHER_INSTALL_DIR/static"
+
+    if [ -f "$static_dir/index.html" ]; then
+        info "Frontend bundle already present; leaving it alone."
+        return 0
+    fi
+
+    stage "Rebuilding the frontend bundle (not stored in backups)"
+    if install_frontend_bundle; then
+        return 0
+    fi
+
+    error "The frontend bundle could not be rebuilt, so the restored instance has no UI."
+    error "The data is restored and the API works. Fix the build and run: aether repair"
+    error "Check: aether logs --tail 100 backend"
+    return 1
+}
+
+# The local agent is stopped for the duration of the restore: the backend is
+# down while its database is replaced, and an agent hammering a stopped backend
+# only fills the journal with reconnection noise.
+agent_stop() {
+    if systemctl is-active --quiet aether-host-agent 2>/dev/null; then
+        $SUDO systemctl stop aether-host-agent
+        AETHER_AGENT_STOPPED=true
+        info "Paused the host agent"
+    fi
+    return 0
+}
+
+agent_start() {
+    [ "${AETHER_AGENT_STOPPED:-false}" = "true" ] || return 0
+    $SUDO systemctl start aether-host-agent
+    info "Host agent restarted"
+}
+
 start_stack() {
     info "Starting the stack"
     compose up -d
 
+    # The backend publishes no host port, so the probe runs inside the container;
+    # checking the database too distinguishes "the app answers" from "the app
+    # answers without a database", which is exactly what a bad restore looks
+    # like.
     local attempts=60
     while [ "$attempts" -gt 0 ]; do
-        if curl -sf --max-time 5 http://127.0.0.1:3000/health >/dev/null 2>&1 \
-            || compose exec -T backend node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then
-            info "Backend is healthy"
+        if compose exec -T backend node -e \
+            "fetch('http://127.0.0.1:3000/api/health').then(r=>r.json()).then(j=>process.exit(j.checks&&j.checks.database&&j.checks.database.ok?0:1)).catch(()=>process.exit(1))" \
+            >/dev/null 2>&1; then
+            info "Backend is healthy and its database is reachable"
             return 0
         fi
         attempts=$((attempts - 1))
         sleep 3
     done
 
-    warn "Backend did not report healthy within 3 minutes. Check: aether logs backend"
-    return 0
+    error "The backend did not report healthy within 3 minutes."
+    error "Check: aether logs --tail 100 backend"
+    return 1
+}
+
+# Confirms the agent came back, on both sides, after the restore. A restore that
+# leaves the host unmanageable has not restored the instance.
+verify_agent() {
+    [ -f "$AETHER_INSTALL_DIR/local-agent.json" ] || return 0
+
+    local agent_id attempts=20
+    agent_id=$(sed -n 's/.*"agentId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$AETHER_INSTALL_DIR/local-agent.json" | head -n1)
+    [ -n "$agent_id" ] || return 0
+
+    info "Waiting for the host agent to reconnect"
+    while [ "$attempts" -gt 0 ]; do
+        if compose logs --since 5m backend 2>/dev/null \
+            | grep -q "\"agentId\":\"$agent_id\".*agent connected"; then
+            info "Host agent reconnected"
+            return 0
+        fi
+        attempts=$((attempts - 1))
+        sleep 3
+    done
+
+    error "The host agent has not reconnected to the backend."
+    error "Check: sudo journalctl -u aether-host-agent -n 50 --no-pager"
+    return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -238,12 +350,39 @@ restore_backup() {
     info "Stopping the backend"
     compose stop backend
 
+    agent_stop
+
     restore_database "$work_dir/database.sql.gz"
-    restore_volumes "$archive" "$work_dir"
+    restore_data "$work_dir"
     restore_configuration "$work_dir"
+    restore_metadata "$work_dir"
 
     rm -rf "$work_dir"
-    start_stack
+
+    # Recorded rather than fatal: the agent is still stopped at this point, so
+    # aborting here would leave the host unmanaged. The stack and the agent come
+    # back first, then the failure is reported with the rest of the diagnostics.
+    local frontend_ok=true
+    restore_frontend || frontend_ok=false
+
+    if ! start_stack; then
+        agent_start
+        error "Restore failed: the stack did not come back healthy."
+        error "The data has been replaced. Fix the reported problem and re-run, or restore an earlier archive."
+        exit 1
+    fi
+
+    agent_start
+
+    if ! verify_agent; then
+        error "Restore failed: the host agent did not reconnect."
+        exit 1
+    fi
+
+    if [ "$frontend_ok" != "true" ]; then
+        error "Restore finished with the frontend bundle missing — the instance has no UI."
+        exit 1
+    fi
 
     printf '\n'
     info "Restore complete."

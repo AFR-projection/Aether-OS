@@ -23,6 +23,8 @@
 #   --workspace DIR     Directory the agent may touch (default: /opt/aether/workspace)
 #   --install-dir DIR   Where to install the agent (default: /opt/aether-host-agent)
 #   --repo-dir DIR      Source checkout to install from (default: this checkout)
+#   --service-user USER Run the agent as this user (default: root). A non-root
+#                       user gets the hardened unit; see the [Service] comments.
 #   --no-service        Configure only; do not install or start the systemd unit
 #   --uninstall         Stop the agent and remove its unit, install dir, and config
 #   -h, --help          Show this help
@@ -57,6 +59,7 @@ AETHER_AGENT_ID="${AETHER_AGENT_ID:-}"
 AETHER_WORKSPACE_ROOT="${AETHER_WORKSPACE_ROOT:-/opt/aether/workspace}"
 AETHER_HOST_INSTALL_DIR="${AETHER_HOST_INSTALL_DIR:-/opt/aether-host-agent}"
 AETHER_REPO_DIR="${AETHER_REPO_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+AETHER_SERVICE_USER="${AETHER_SERVICE_USER:-root}"
 AETHER_INSTALL_SERVICE=true
 AETHER_UNINSTALL=false
 
@@ -64,22 +67,23 @@ AETHER_UNINSTALL=false
 # Argument parsing
 # ---------------------------------------------------------------------------
 usage() {
-    sed -n '3,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '3,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
-            --backend-url) AETHER_BACKEND_URL="${2:-}"; shift 2 ;;
-            --token)       AETHER_PAIRING_TOKEN="${2:-}"; shift 2 ;;
-            --agent-id)    AETHER_AGENT_ID="${2:-}"; shift 2 ;;
-            --workspace)   AETHER_WORKSPACE_ROOT="${2:-}"; shift 2 ;;
-            --install-dir) AETHER_HOST_INSTALL_DIR="${2:-}"; shift 2 ;;
-            --repo-dir)    AETHER_REPO_DIR="${2:-}"; shift 2 ;;
-            --no-service)  AETHER_INSTALL_SERVICE=false; shift ;;
-            --uninstall)   AETHER_UNINSTALL=true; shift ;;
-            -h|--help)     usage; exit 0 ;;
-            *)             error "Unknown option: $1"; usage; exit 2 ;;
+            --backend-url)  AETHER_BACKEND_URL="${2:-}"; shift 2 ;;
+            --token)        AETHER_PAIRING_TOKEN="${2:-}"; shift 2 ;;
+            --agent-id)     AETHER_AGENT_ID="${2:-}"; shift 2 ;;
+            --workspace)    AETHER_WORKSPACE_ROOT="${2:-}"; shift 2 ;;
+            --install-dir)  AETHER_HOST_INSTALL_DIR="${2:-}"; shift 2 ;;
+            --repo-dir)     AETHER_REPO_DIR="${2:-}"; shift 2 ;;
+            --service-user) AETHER_SERVICE_USER="${2:-}"; shift 2 ;;
+            --no-service)   AETHER_INSTALL_SERVICE=false; shift ;;
+            --uninstall)    AETHER_UNINSTALL=true; shift ;;
+            -h|--help)      usage; exit 0 ;;
+            *)              error "Unknown option: $1"; usage; exit 2 ;;
         esac
     done
 }
@@ -159,6 +163,24 @@ validate_agent_id() {
     esac
 }
 
+# The local install runs the agent as an unprivileged user; a remote operator
+# may pass any account. Either way the account has to exist before systemd can
+# start the unit, and the config file has to be readable by it.
+validate_service_user() {
+    [ -n "$AETHER_SERVICE_USER" ] || fatal "--service-user needs a user name."
+
+    if [ "$AETHER_SERVICE_USER" = "root" ]; then
+        AETHER_SERVICE_GROUP="root"
+        return
+    fi
+
+    if ! id -u "$AETHER_SERVICE_USER" >/dev/null 2>&1; then
+        fatal "User '$AETHER_SERVICE_USER' does not exist. Create it first, or omit --service-user to run the agent as root."
+    fi
+
+    AETHER_SERVICE_GROUP="$(id -gn "$AETHER_SERVICE_USER")"
+}
+
 validate_node() {
     if ! command_exists node; then
         info "Node.js is not installed; installing version ${NODE_MAJOR_REQUIRED}"
@@ -204,6 +226,28 @@ ensure_build_tools() {
     $SUDO apt-get install -y "${missing[@]}"
 }
 
+# The repository is a pnpm workspace whose packages depend on each other with
+# `workspace:*`, which npm cannot resolve. Node 20 ships corepack, so pnpm is
+# one command away; without it the fallback build would fail on the workspace
+# protocol rather than on anything the operator could act on.
+ensure_pnpm() {
+    if command_exists pnpm; then
+        info "pnpm $(pnpm --version) present"
+        return
+    fi
+
+    if command_exists corepack; then
+        info "Enabling pnpm through corepack"
+        $SUDO corepack enable pnpm >/dev/null 2>&1 || corepack enable pnpm >/dev/null 2>&1 || true
+        command_exists pnpm && { info "pnpm $(pnpm --version) enabled"; return; }
+    fi
+
+    info "Installing pnpm globally"
+    $SUDO npm install -g pnpm@8.15.1 >/dev/null 2>&1 || npm install -g pnpm@8.15.1 >/dev/null 2>&1 || true
+
+    command_exists pnpm || fatal "Could not install pnpm. Install it manually (npm i -g pnpm@8.15.1) and re-run."
+}
+
 # ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
@@ -222,17 +266,29 @@ install_agent_source() {
 
     info "Copying sources"
     if command_exists rsync; then
+        # `--exclude agent.env` is what keeps a re-run from deleting the live
+        # config: rsync never deletes an excluded file on the receiver.
         rsync -a --delete \
             --exclude node_modules --exclude .git --exclude dist \
-            --exclude '*.tsbuildinfo' \
+            --exclude '*.tsbuildinfo' --exclude agent.env \
             "$AETHER_REPO_DIR/" "$AETHER_HOST_INSTALL_DIR/"
     else
-        # tar fallback for images without rsync.
+        # tar fallback for images without rsync. It cannot exclude, so the
+        # config is set aside and put back.
+        local saved_config=""
+        if [ -f "$AETHER_HOST_INSTALL_DIR/agent.env" ]; then
+            saved_config="$(mktemp)"
+            cp "$AETHER_HOST_INSTALL_DIR/agent.env" "$saved_config"
+        fi
         rm -rf "${AETHER_HOST_INSTALL_DIR:?}/"*
         (cd "$AETHER_REPO_DIR" && tar cf - \
             --exclude=./node_modules --exclude=./.git \
             --exclude=./*/dist --exclude=./*/node_modules .) \
             | (cd "$AETHER_HOST_INSTALL_DIR" && tar xf -)
+        if [ -n "$saved_config" ]; then
+            cp "$saved_config" "$AETHER_HOST_INSTALL_DIR/agent.env"
+            rm -f "$saved_config"
+        fi
     fi
 
     build_agent
@@ -241,31 +297,23 @@ install_agent_source() {
 build_agent() {
     stage_line "Building the agent"
 
-    local package_manager="npm"
-    if command_exists pnpm; then
-        package_manager="pnpm"
-    fi
-
     cd "$AETHER_HOST_INSTALL_DIR"
 
-    info "Installing dependencies with $package_manager"
-    if [ "$package_manager" = "pnpm" ]; then
-        pnpm install --frozen-lockfile --filter "@aether/host-agent..." --filter @aether/shared
-    else
-        npm install --no-audit --no-fund
-    fi
+    info "Installing dependencies with pnpm"
+    pnpm install --frozen-lockfile --filter "@aether/host-agent..." --filter @aether/shared
 
     info "Compiling"
-    if [ "$package_manager" = "pnpm" ]; then
-        pnpm --filter @aether/shared build
-        pnpm --filter @aether/host-agent build
-    else
-        (cd packages/shared && npm run build)
-        (cd packages/host-agent && npm run build)
-    fi
+    pnpm --filter @aether/shared build
+    pnpm --filter @aether/host-agent build
 
     [ -f "$AETHER_HOST_INSTALL_DIR/packages/host-agent/dist/index.js" ] \
         || fatal "The build did not produce packages/host-agent/dist/index.js"
+
+    # systemd reads the EnvironmentFile as the service user, and the unit runs
+    # from this directory; make sure the account can traverse and read them.
+    if [ "$AETHER_SERVICE_USER" != "root" ]; then
+        $SUDO chmod -R a+rX "$AETHER_HOST_INSTALL_DIR/packages" "$AETHER_HOST_INSTALL_DIR/node_modules" 2>/dev/null || true
+    fi
 
     cd - >/dev/null
     info "Agent built successfully"
@@ -279,8 +327,10 @@ write_config() {
     mkdir -p "$AETHER_WORKSPACE_ROOT"
 
     info "Writing $config_file (mode 600)"
-    umask 077
-    cat > "$config_file" <<EOF
+    # umask in a subshell: the file is secret, nothing else this script writes is.
+    (
+        umask 077
+        cat > "$config_file" <<EOF
 # Aether host agent configuration — generated by setup-host.sh.
 # This file contains a pairing token. Keep it mode 600 and do not commit it.
 NODE_ENV=production
@@ -297,7 +347,16 @@ TERMINAL_ENABLED=true
 # down, so enable it deliberately.
 PROCESS_SIGNAL_ENABLED=false
 EOF
+    )
     chmod 600 "$config_file"
+
+    # A non-root unit starts as that user, and systemd opens the EnvironmentFile
+    # as that user — a root-owned 600 file would fail the unit with "Failed to
+    # read environment file" before node ever runs.
+    if [ "$AETHER_SERVICE_USER" != "root" ]; then
+        $SUDO chown "$AETHER_SERVICE_USER:$AETHER_SERVICE_GROUP" "$config_file"
+        $SUDO chmod 700 "$AETHER_HOST_INSTALL_DIR"
+    fi
 }
 
 write_service() {
@@ -308,6 +367,36 @@ write_service() {
 
     stage_line "Installing the systemd unit"
 
+    local hardening=""
+    if [ "$AETHER_SERVICE_USER" = "root" ]; then
+        # Remote hosts are managed by an operator who expects the agent to be
+        # able to reach the whole filesystem, so the root unit stays permissive.
+        hardening="# Running as root: no filesystem sandbox, by design. Restrict the
+# agent by running it with --service-user instead."
+    else
+        # The local agent only ever touches its workspace, so it is confined to
+        # it. ReadWritePaths is what carves the workspace back out of
+        # ProtectSystem=strict, and it is created before the unit starts.
+        hardening="$(cat <<EOF
+User=$AETHER_SERVICE_USER
+Group=$AETHER_SERVICE_GROUP
+# The agent manages its workspace and nothing else.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=$AETHER_WORKSPACE_ROOT
+EOF
+)"
+    fi
+
     $SUDO tee "$SERVICE_FILE" >/dev/null <<EOF
 [Unit]
 Description=Aether Cloud OS Host Agent
@@ -317,10 +406,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# The agent reads files, runs terminals, and manages processes on this host at
-# the operator's request, so it needs real privileges. It is constrained by the
-# workspace root it is configured with, not by an unprivileged uid.
-User=root
+$hardening
 WorkingDirectory=$AETHER_HOST_INSTALL_DIR/packages/host-agent
 EnvironmentFile=$AETHER_HOST_INSTALL_DIR/agent.env
 ExecStart=$(command -v node) $AETHER_HOST_INSTALL_DIR/packages/host-agent/dist/index.js
@@ -378,6 +464,7 @@ EOF
    Agent id:     $AETHER_AGENT_ID
    Config:       $AETHER_HOST_INSTALL_DIR/agent.env
    Workspace:    $AETHER_WORKSPACE_ROOT
+   Runs as:      $AETHER_SERVICE_USER
 $( [ "$AETHER_INSTALL_SERVICE" = "true" ] && printf '   Service:      systemctl status %s\n' "$SERVICE_NAME" )
 
 $connected_hint
@@ -440,7 +527,9 @@ main() {
     validate_backend_url
     validate_token
     validate_agent_id
+    validate_service_user
     validate_node
+    ensure_pnpm
     ensure_build_tools
 
     install_agent_source

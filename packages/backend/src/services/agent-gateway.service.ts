@@ -91,7 +91,11 @@ async function handleRequest(
   const params = (
     typeof frame.params === 'object' && frame.params !== null ? frame.params : {}
   ) as Record<string, unknown>;
-  const ownerUserId = record.ownerUserId;
+  // Local agents are instance-scoped (ownerUserId NULL). Map to a stable
+  // per-agent principal so terminal ownership/limits still apply without
+  // leaking sessions between agents. ponytail: add first-class instance
+  // principal when multi-local-agent support lands.
+  const ownerUserId = record.ownerUserId ?? `agent:${record.agentId}`;
 
   switch (type) {
     case 'system.info':

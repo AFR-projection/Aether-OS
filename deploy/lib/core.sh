@@ -9,8 +9,11 @@ set -euo pipefail
 AETHER_VERSION="${AETHER_VERSION:-0.1.0}"
 AETHER_INSTALL_DIR="${AETHER_INSTALL_DIR:-/opt/aether}"
 AETHER_STATE_DIR="${AETHER_STATE_DIR:-${AETHER_INSTALL_DIR}/state}"
-AETHER_WORKSPACE_DIR="${AETHER_WORKSPACE_DIR:-${AETHER_INSTALL_DIR}/workspace}"
-AETHER_UPLOADS_DIR="${AETHER_UPLOADS_DIR:-${AETHER_INSTALL_DIR}/uploads}"
+# There is deliberately no AETHER_WORKSPACE_DIR/AETHER_UPLOADS_DIR here. The
+# deployed paths are <install>/data/workspace and <install>/data/uploads, set as
+# AETHER_WORKSPACE_ROOT/UPLOAD_DIR in .env and matched by the compose bind
+# mounts; variables naming <install>/workspace would only invite a script to
+# create a second, empty workspace that the backend never serves.
 AETHER_LOG_DIR="${AETHER_LOG_DIR:-${AETHER_INSTALL_DIR}/logs}"
 AETHER_SECRETS_DIR="${AETHER_SECRETS_DIR:-${AETHER_INSTALL_DIR}/secrets}"
 AETHER_LOG_FILE="${AETHER_LOG_FILE:-/tmp/aether-install.log}"
@@ -23,7 +26,16 @@ AETHER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AETHER_REPO_DIR="${AETHER_REPO_DIR:-$(cd "$AETHER_LIB_DIR/../.." && pwd)}"
 
 # Set by preflight: "sudo" for unprivileged users, "" when already root.
-SUDO="${SUDO:-}"
+#
+# The default covers the post-install helper scripts, which are run through the
+# `aether` CLI by an operator who may not be root: without this, `$SUDO cmd`
+# would expand to a bare `cmd` and fail on permissions. preflight overrides it
+# during installation with the same answer it would produce here.
+if [ -z "${SUDO:-}" ] && [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+    SUDO="sudo"
+else
+    SUDO="${SUDO:-}"
+fi
 # Unique id for this run; the root install.sh generates it before staging.
 AETHER_INSTALLATION_ID="${AETHER_INSTALLATION_ID:-unknown}"
 
@@ -106,7 +118,10 @@ mark_done() {
 # ---------------------------------------------------------------------------
 # Progress display
 # ---------------------------------------------------------------------------
-STAGE_TOTAL=4
+# The maximum number of stages a full install prints. A host that already has
+# Docker skips "Installing Docker Engine" and finishes at 6 — the counter never
+# exceeds the total, because a denominator that is too small reads as a bug.
+STAGE_TOTAL=7
 STAGE_CURRENT=0
 
 stage() {

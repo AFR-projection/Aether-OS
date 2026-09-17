@@ -2,7 +2,8 @@
 # Aether Cloud OS — backup.
 #
 # Produces one archive containing a consistent PostgreSQL dump, the workspace
-# and uploads volumes, and the deployment configuration.
+# and uploads directories, the deployment configuration, and the instance
+# metadata.
 #
 #   <install>/backups/aether-backup-YYYYmmdd-HHMMSS.tar.gz
 #   <install>/backups/aether-backup-YYYYmmdd-HHMMSS.tar.gz.sha256
@@ -70,16 +71,11 @@ db_name() {
     printf '%s' "${value:-aether}"
 }
 
-# Resolves a compose volume key (`workspace_data`) to the real Docker volume
-# name. Compose prefixes the key with the project name — `aether_workspace_data`
-# — but resolving it rather than assuming keeps this working if the project is
-# renamed.
-volume_name_for() {
-    local key="$1" name
-    name=$(docker_cmd volume ls --format '{{.Name}}' 2>/dev/null | grep -E "_${key}\$" | head -n1 || true)
-    [ -n "$name" ] || fatal "Could not find the Docker volume ending in '_${key}'. Is the stack deployed?"
-    printf '%s' "$name"
-}
+# The workspace and uploads are host directories bind-mounted into the backend
+# container, not named volumes. They have to be: the local host agent runs as a
+# systemd service on this machine and must see exactly the same tree the
+# backend serves, and a named volume is invisible from the host.
+AETHER_DATA_DIR="$AETHER_INSTALL_DIR/data"
 
 # ---------------------------------------------------------------------------
 # Steps
@@ -109,29 +105,51 @@ backup_database() {
     info "Database dump written: $(du -h "$target" | cut -f1)"
 }
 
-backup_volumes() {
+backup_data() {
     local target="$1"
-    local workspace uploads
 
-    workspace=$(volume_name_for workspace_data)
-    uploads=$(volume_name_for uploads_data)
+    [ -d "$AETHER_DATA_DIR" ] || fatal "No data directory at $AETHER_DATA_DIR. Is the stack deployed?"
 
-    info "Archiving data volumes ($workspace, $uploads)"
+    info "Archiving $AETHER_DATA_DIR (workspace, uploads)"
 
     # A throwaway container rather than `compose exec backend tar`: this works
     # even while the backend is stopped or crash-looping, which is exactly when
-    # someone reaches for a backup.
+    # someone reaches for a backup. tar runs as root inside the container so
+    # every file is readable regardless of the uid that owns it on the host.
     if ! docker_cmd run --rm \
-        -v "$workspace":/src/workspace:ro \
-        -v "$uploads":/src/uploads:ro \
+        -v "$AETHER_DATA_DIR":/src:ro \
         -v "$(dirname "$target")":/backup \
         "$ARCHIVE_IMAGE" \
         tar -czf "/backup/$(basename "$target")" -C /src .; then
-        fatal "Failed to archive the data volumes."
+        fatal "Failed to archive the data directory."
     fi
 
-    [ -s "$target" ] || fatal "The volume archive is empty."
-    info "Volume archive written: $(du -h "$target" | cut -f1)"
+    [ -s "$target" ] || fatal "The data archive is empty."
+    info "Data archive written: $(du -h "$target" | cut -f1)"
+}
+
+# The small files that make a restore reproduce *this* instance rather than a
+# generic one: the instance id, which installer stages had completed, the local
+# agent's record, and the agent's own configuration (which holds its pairing
+# token, so the restored host reconnects without being paired again).
+backup_metadata() {
+    local target="$1"
+
+    info "Copying instance metadata"
+    mkdir -p "$target/metadata"
+
+    local file
+    for file in instance.json install.state local-agent.json; do
+        if [ -f "$AETHER_INSTALL_DIR/$file" ]; then
+            cp "$AETHER_INSTALL_DIR/$file" "$target/metadata/$file"
+        fi
+    done
+
+    if [ -f "$AETHER_INSTALL_DIR/local-agent/agent.env" ]; then
+        cp "$AETHER_INSTALL_DIR/local-agent/agent.env" "$target/metadata/agent.env"
+    fi
+
+    chmod -R go-rwx "$target/metadata"
 }
 
 backup_configuration() {
@@ -192,8 +210,9 @@ create_backup() {
     create_directory "$work_dir"
 
     backup_database "$work_dir/database.sql.gz"
-    backup_volumes "$work_dir/volumes.tar.gz"
+    backup_data "$work_dir/data.tar.gz"
     backup_configuration "$work_dir"
+    backup_metadata "$work_dir"
 
     archive=$(create_archive "$work_dir" "$name")
     clean_old_backups
@@ -205,6 +224,30 @@ create_backup() {
     printf '    aether restore %s\n\n' "$archive"
 }
 
+list_backups() {
+    require_deployment
+
+    [ -d "$AETHER_BACKUP_DIR" ] || fatal "No backup directory at $AETHER_BACKUP_DIR."
+
+    local found=false
+    printf '%-46s %-10s %s\n' 'ARCHIVE' 'SIZE' 'CREATED'
+    while IFS= read -r archive; do
+        [ -n "$archive" ] || continue
+        found=true
+        printf '%-46s %-10s %s\n' "$(basename "$archive")" \
+            "$(du -h "$archive" | cut -f1)" "$(date -r "$archive" '+%Y-%m-%d %H:%M:%S')"
+    done < <(ls -1t "$AETHER_BACKUP_DIR"/aether-backup-*.tar.gz 2>/dev/null || true)
+
+    [ "$found" = true ] || printf '(no archives)\n'
+}
+
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    create_backup
+    case "${1:-create}" in
+        list) list_backups ;;
+        create|'') create_backup ;;
+        -h|--help)
+            printf 'Usage: %s [create|list]\n' "$0"
+            ;;
+        *) fatal "Unknown backup subcommand: $1 (expected 'create' or 'list')" ;;
+    esac
 fi

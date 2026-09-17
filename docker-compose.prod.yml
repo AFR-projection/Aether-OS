@@ -1,6 +1,12 @@
 # Aether Cloud OS — production deployment.
 #
-# Usage:
+# This file is authored for a repo-root checkout: the build context is `.`, with
+# `packages/` and `pnpm-workspace.yaml` beside it. The installer copies it to
+# <install>/docker-compose.yml and rewrites the three paths that differ there
+# (build context → ./src, Caddyfile → ./caddy, bundle → ./static) — see
+# deploy/lib/deploy.sh:install_compose_file. Edit paths here, not there.
+#
+# Usage from a checkout:
 #   1. Copy `.env.example` to `.env`, fill in secrets (the installer does this).
 #   2. `docker compose -f docker-compose.prod.yml up -d --build`
 #
@@ -10,8 +16,10 @@
 # - The backend serves a prebuilt bundle via AETHER_STATIC_DIR. Build it with
 #   `pnpm --filter @aether/frontend build` before `docker compose build`, or
 #   mount it as a volume. (The installer handles this.)
-# - Postgres data and the workspace are named volumes so `down` never deletes
-#   user data. Back them up with `aether backup`; see
+# - The database lives in a named volume so `down` never deletes user data.
+#   The workspace and uploads are bind-mounted from ./data so the local host
+#   agent — a systemd service on this same machine — sees the same files the
+#   backend serves. Back everything up with `aether backup`; see
 #   docs/operations/BACKUP-AND-RESTORE.md.
 # - Only Caddy publishes ports to the host. Postgres is reachable only inside
 #   the compose network.
@@ -83,9 +91,15 @@ services:
       DATABASE_URL: 'postgresql://${POSTGRES_USER:-aether}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-aether}'
       REDIS_URL: 'redis://:${REDIS_PASSWORD}@redis:6379'
       AETHER_STATIC_DIR: /opt/aether/static
+    # Runs as the image's `aether` user (uid/gid 1001, set in the Dockerfile).
+    # The installer chowns ./data to the same uid so the backend and the local
+    # host agent own the workspace without ACLs or group hacks.
     volumes:
-      - workspace_data:/opt/aether/workspace
-      - uploads_data:/opt/aether/uploads
+      # Bind mounts, not named volumes: the host agent is a systemd service on
+      # this machine and must see exactly the tree the backend serves. A named
+      # volume is invisible from the host.
+      - ./data/workspace:/opt/aether/workspace
+      - ./data/uploads:/opt/aether/uploads
       # The installer copies the built frontend here before first start.
       - ./packages/frontend/dist:/opt/aether/static:ro
     networks:
@@ -152,10 +166,6 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
-    driver: local
-  workspace_data:
-    driver: local
-  uploads_data:
     driver: local
   caddy_data:
     driver: local

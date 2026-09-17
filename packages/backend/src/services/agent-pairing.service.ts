@@ -9,7 +9,7 @@ const log = subsystemLogger('agent-pairing');
 export interface AgentRecord {
   agentId: string;
   label: string;
-  ownerUserId: string;
+  ownerUserId: string | null;
   createdAt: string;
 }
 
@@ -61,6 +61,39 @@ export async function pairAgent(
 }
 
 /**
+ * Registers (or re-registers) the host agent running on this same machine.
+ *
+ * The installer generates the agent id and token on the host and passes only
+ * the token's SHA-256 hash here, so the plaintext never enters the backend
+ * process. The row is instance-scoped: `owner_user_id` is NULL and
+ * `scope = 'local'`, which is what lets every owner see it and what the
+ * gateway maps to the `agent:<id>` principal for terminal ownership.
+ *
+ * Upsert rather than insert: re-running the installer, or repairing an agent,
+ * must refresh the existing row instead of failing on the primary key or
+ * leaving a second local agent behind.
+ */
+export async function registerLocalAgent(options: {
+  agentId: string;
+  label: string;
+  tokenHash: string;
+}): Promise<void> {
+  await query(
+    `INSERT INTO aether.host_agents (id, label, token_hash, owner_user_id, scope)
+     VALUES ($1, $2, $3, NULL, 'local')
+     ON CONFLICT (id) DO UPDATE
+        SET label         = EXCLUDED.label,
+            token_hash    = EXCLUDED.token_hash,
+            scope         = 'local',
+            owner_user_id = NULL,
+            revoked_at    = NULL`,
+    [options.agentId, options.label, options.tokenHash]
+  );
+
+  log.info({ agentId: options.agentId, scope: 'local' }, 'local host agent registered');
+}
+
+/**
  * Revokes an agent so its token stops working immediately.
  *
  * This is a soft revoke — `revoked_at` is stamped rather than the row deleted —
@@ -72,7 +105,7 @@ export async function pairAgent(
 export async function revokeAgent(agentId: string, ownerUserId: string): Promise<boolean> {
   const result = await query(
     `UPDATE aether.host_agents SET revoked_at = now()
-     WHERE id = $1 AND owner_user_id = $2 AND revoked_at IS NULL`,
+     WHERE id = $1 AND (owner_user_id = $2 OR owner_user_id IS NULL) AND revoked_at IS NULL`,
     [agentId, ownerUserId]
   );
   const revoked = (result.rowCount ?? 0) > 0;
@@ -80,17 +113,22 @@ export async function revokeAgent(agentId: string, ownerUserId: string): Promise
   return revoked;
 }
 
-/** Lists an owner's active (non-revoked) agents, newest first. */
+/**
+ * Lists an owner's active (non-revoked) agents, newest first.
+ *
+ * Local agents (`owner_user_id IS NULL`) are instance-scoped: they belong to no
+ * single user, so they are listed for every owner rather than hidden from all.
+ */
 export async function listAgents(ownerUserId: string): Promise<AgentRecord[]> {
   const result = await query<{
     id: string;
     label: string;
-    owner_user_id: string;
+    owner_user_id: string | null;
     created_at: string;
   }>(
     `SELECT id, label, owner_user_id, created_at
      FROM aether.host_agents
-     WHERE owner_user_id = $1 AND revoked_at IS NULL
+     WHERE (owner_user_id = $1 OR owner_user_id IS NULL) AND revoked_at IS NULL
      ORDER BY created_at DESC`,
     [ownerUserId]
   );
@@ -112,7 +150,7 @@ export async function authenticateAgent(agentId: string, token: string): Promise
     id: string;
     label: string;
     token_hash: string;
-    owner_user_id: string;
+    owner_user_id: string | null;
     created_at: string;
     revoked_at: string | null;
   }>(

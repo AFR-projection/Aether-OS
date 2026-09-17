@@ -4,7 +4,8 @@ What lives where, and the rule that decides it.
 
 ```
 Aether-cloud-os/
-├── install.sh                  # Entry point: re-execs deploy/lib/install.sh (clones the repo if piped)
+├── install.sh                  # Alternate entry point: re-execs deploy/lib/install.sh (clones if piped)
+├── scripts/deploy/setup.sh     # The advertised one-command entry (the curl | bash URL)
 ├── docker-compose.yml          # Dev: PostgreSQL + Redis only
 ├── docker-compose.prod.yml     # The production stack (copied to /opt/aether/docker-compose.yml)
 ├── .env.example                # Mirrors packages/backend/src/config.ts exactly
@@ -23,9 +24,9 @@ Aether-cloud-os/
 │   │   │   ├── middleware/     # authenticate, requirePermission
 │   │   │   ├── cache/          # index.ts (MemoryCache/RedisCache switch), redis.ts
 │   │   │   ├── db/             # pool.ts, migrate.ts — forward-only checksummed migrations
-│   │   │   ├── scripts/        # CLI entry points (e.g. running migrations)
+│   │   │   ├── scripts/            # CLI entry points (migrations, local-agent pairing)
 │   │   │   └── utils/          # errors, logger (with secret redaction), duration
-│   │   └── migrations/         # 001_init.sql — the schema
+│   │   └── migrations/         # 001_init.sql (schema), 002_local_agent.sql (instance-scoped agents)
 │   ├── frontend/               # React 18 + Vite
 │   │   └── src/
 │   │       ├── apps/           # The 8 compiled-in apps + registry.ts (the static APP_REGISTRY)
@@ -46,13 +47,33 @@ Aether-cloud-os/
 ├── deploy/
 │   ├── Caddyfile               # Template; the installer rewrites it per instance
 │   ├── lib/                    # core.sh, utils.sh, preflight.sh, dependencies.sh,
-│   │                           # secrets.sh, configure.sh, deploy.sh, finalize.sh, install.sh
-│   └── scripts/                # Post-install: backup.sh, restore.sh, update.sh,
-│                               # uninstall.sh, setup-host.sh
+│   │                           # secrets.sh, configure.sh, deploy.sh, local-agent.sh,
+│   │                           # finalize.sh, install.sh
+│   ├── scripts/                # Post-install: the `aether` CLI itself, backup.sh,
+│   │                           # restore.sh, update.sh, uninstall.sh, setup-host.sh
+│   └── tests/vps-harness.sh    # Real install harness (exits 77 = BLOCKED_BY_ENVIRONMENT off-host)
 │
 ├── docs/                       # ALL documentation — see docs/README.md
 ├── scripts/init-db.sql         # Dev-only: creates the aether schema for docker compose postgres
 └── .github/workflows/ci.yml    # typecheck, lint, test, build on every push
+```
+
+## The installed layout
+
+`curl … | bash` does not run from a checkout; it ends up as this, under
+`/opt/aether` (see [DEPLOYMENT.md](../operations/DEPLOYMENT.md)):
+
+```
+/opt/aether/
+├── src/            # full source tree, with .git — this is what `aether update` fast-forwards
+├── static/         # built frontend, served by Caddy
+├── docker-compose.yml, caddy/
+├── scripts/aether  # the CLI, symlinked to /usr/local/bin/aether
+├── .env, secrets/  # mode 600
+├── local-agent.json, local-agent/  # the auto-paired host agent's identity + its agent.env
+├── data/{workspace,uploads}/       # bind-mounted into the backend at /opt/aether/...
+├── backups/, state/, logs/
+└── install.state   # the orchestrator's resume checkpoints
 ```
 
 ## The rule
@@ -73,4 +94,6 @@ Placement follows the layering rule from [OVERVIEW.md](../architecture/OVERVIEW.
 - **No `.env` in git** — `.env.example` is the template; `config.ts` is the authority on what exists
   and what is required.
 - **No app plugin folder** — apps are compiled in; see KNOWN-LIMITATIONS #9.
-- **No root-level scripts beyond `install.sh`** — everything operational is in `deploy/`.
+- **No root-level scripts beyond `install.sh`** — everything operational is in `deploy/` (and the
+  advertised entry point is `scripts/deploy/setup.sh`, which bootstraps a checkout then runs
+  `deploy/lib/install.sh`).

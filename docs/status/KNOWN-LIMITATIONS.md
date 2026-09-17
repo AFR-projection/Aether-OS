@@ -156,22 +156,56 @@ enabled, the backend refuses to signal PID 1, itself, or any of its own ancestor
 
 ### 16. Backups are operator-driven, and unencrypted
 
-The `aether backup` command produces a complete archive (database, volumes, configuration) with a
-SHA-256 checksum, and the script applies a 30-day retention policy. What it does **not** do is run
-itself: there is no scheduler built in, so a nightly backup means one cron line the operator adds —
-and no built-in scheduling means there is no monitoring of whether backups are actually succeeding.
-A failed backup only surfaces when someone looks.
+The `aether backup` command produces a complete archive (database, persistent data, configuration,
+and the host agent's identity) with a SHA-256 checksum, and the script applies a 30-day retention
+policy. Restore **requires** that checksum — an archive without one is refused unless you set
+`AETHER_ALLOW_UNVERIFIED=true`, because restoring a truncated dump over a healthy database is worse
+than not restoring. What `aether backup` does **not** do is run itself: there is no scheduler built
+in, so a nightly backup means one cron line the operator adds — and no built-in scheduling means
+there is no monitoring of whether backups are actually succeeding. A failed backup only surfaces
+when someone looks.
 
 The archive is also **plaintext**, not encrypted: it contains `.env`, so it holds every secret.
 Storing it off-host means encrypting it yourself. See
 [BACKUP-AND-RESTORE.md](../operations/BACKUP-AND-RESTORE.md).
 
-### 17. No horizontal scaling of the WebSocket layer beyond Redis
+### 17. Restore verifies health, and fails the command if the instance is not healthy
+
+`aether restore` stops the stack, restores, starts it again, waits for the database check inside the
+container, and then requires the local host agent to reconnect to the backend. If any of that fails
+it exits non-zero and says so — a restore that "succeeded" but left a broken instance is worse than a
+loud failure. There is no automatic rollback *within* restore: the previous state is gone once the
+data directory is replaced, so the safety net is the archive you still have, not the running
+instance. Take a fresh `aether backup` before restoring an old archive.
+
+### 18. "Host Agent: connected" is a per-replica claim
+
+The local agent connects to one backend process. With `REDIS_URL` set and multiple backend
+replicas, `aether status` asks whichever replica answers its health probe, and the "agent connected"
+line is proved from *that* replica's logs. An agent that is connected to a different replica can
+therefore read as not connected. The install is one replica by default; this only matters if you
+scale the backend, in which case verify with `aether logs backend | grep "agent connected"` on the
+replica you care about. (Related: #19.)
+
+### 19. No horizontal scaling of the WebSocket layer beyond Redis
 
 Redis makes WebSocket *tickets* portable between replicas, so a client can connect to any replica.
 There is no cross-replica fan-out of terminal output or agent events: a terminal session is owned by
 the replica that created it. Sticky sessions at the proxy are therefore still required for terminals
 in a multi-replica deployment.
+
+### 20. The local agent is unprivileged; a remote agent is not
+
+The host agent the installer puts on the same machine as the backend runs as `aether-agent`
+(uid/gid 1001 — the same numeric ids the backend container uses, so both own the workspace), under a
+hardened unit: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp`,
+`RestrictAddressFamilies`, and `ReadWritePaths` limited to the workspace.
+
+Reproduce the remote flow ([HOST-AGENTS.md](../operations/HOST-AGENTS.md)) and you get a **root**
+service instead, because managing an arbitrary remote host — installing packages, restarting system
+services — needs root. That is the deliberate difference: privilege is granted only where the
+operator explicitly opted into running an agent on a host they own, using a token they copied
+themselves. Do not read the local agent's hardening as a property of the product as a whole.
 
 ---
 
@@ -180,3 +214,20 @@ in a multi-replica deployment.
 `AETHER_VERSION` in `packages/shared/src/constants.ts` is `0.1.0`. There is no schema-version
 negotiation between backend and frontend, and no support for a frontend older than the backend it
 talks to. Deploy them together.
+
+---
+
+## What has and has not been verified
+
+The installer, the CLI, and the update path are exercised by
+`deploy/tests/vps-harness.sh`: a full install, `status`/`doctor`/`version`, a backup and restore
+round-trip (including a deliberately corrupted archive that must be refused), an update that must
+report `Already up to date` on the second run, a repair, an uninstall that preserves data, and a
+reinstall-then-purge.
+
+That harness needs a real host — root, systemd, Docker, Ubuntu — and it exits `77` with
+`BLOCKED_BY_ENVIRONMENT` anywhere else rather than reporting a pass. **It has not been run on a
+fresh VPS as of this commit.** Everything that could be checked without Docker was: shell syntax on
+every script, and `pnpm typecheck`, `lint`, `test`, and `build` across the workspace. Treat a first
+production install as something to watch, and run the harness on a throwaway host before trusting
+the update path on one that matters.

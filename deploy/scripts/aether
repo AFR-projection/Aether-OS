@@ -1,0 +1,545 @@
+#!/usr/bin/env bash
+# Aether Cloud OS — management CLI.
+#
+# Installed to <install>/scripts/aether and symlinked to /usr/local/bin/aether.
+# Every command performs a real operation against the deployment; nothing here
+# reports success it did not verify.
+#
+# Usage: aether <command> [options]   (run `aether help`)
+
+set -euo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+INSTALL_DIR="${AETHER_INSTALL_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+export AETHER_INSTALL_DIR="$INSTALL_DIR"
+
+if [ -f "$SCRIPT_DIR/../lib/core.sh" ]; then
+    # shellcheck source=../lib/core.sh
+    source "$SCRIPT_DIR/../lib/core.sh"
+    # shellcheck source=../lib/utils.sh
+    source "$SCRIPT_DIR/../lib/utils.sh"
+else
+    info() { printf '[INFO] %s\n' "$*" >&2; }
+    warn() { printf '[WARN] %s\n' "$*" >&2; }
+    error() { printf '[ERROR] %s\n' "$*" >&2; }
+    fatal() { error "$@"; exit 1; }
+    compose_cmd() { docker compose "$@"; }
+    docker_cmd() { docker "$@"; }
+    env_value() {
+        local key="$1" file="$2" line
+        [ -f "$file" ] || return 1
+        line=$(grep -E "^[[:space:]]*${key}=" "$file" | tail -n1) || return 1
+        printf '%s' "${line#*=}"
+    }
+fi
+
+COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
+ENV_FILE="$INSTALL_DIR/.env"
+BACKUP_DIR="$INSTALL_DIR/backups"
+AGENT_RECORD="$INSTALL_DIR/local-agent.json"
+SERVICE_NAME="aether-host-agent"
+SERVICES="redis postgres backend caddy"
+
+COMPOSE=()
+compose() { compose_cmd -f "$COMPOSE_FILE" "$@"; }
+
+app_version() {
+    local value
+    value=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$INSTALL_DIR/instance.json" 2>/dev/null | head -n1)
+    printf '%s' "${value:-unknown}"
+}
+
+env_or_file() {
+    local key="$1" default="${2:-}"
+    local value
+    value=$(env_value "$key" "$ENV_FILE" 2>/dev/null || true)
+    printf '%s' "${value:-$default}"
+}
+
+instance_url() {
+    local domain no_https
+    domain=$(env_or_file AETHER_DOMAIN)
+    no_https=$(env_or_file AETHER_NO_HTTPS false)
+
+    if [ -z "$domain" ]; then
+        local address
+        address=$(hostname -I 2>/dev/null | awk '{print $1}')
+        printf 'http://%s' "${address:-127.0.0.1}"
+    elif [ "$no_https" = "true" ]; then
+        printf 'http://%s' "$domain"
+    else
+        printf 'https://%s' "$domain"
+    fi
+}
+
+# Backend health through Caddy when a domain is configured, otherwise straight
+# to the container network from the host.
+backend_healthy() {
+    curl -sf --max-time 5 "$(instance_url)/health" >/dev/null 2>&1
+}
+
+agent_running() {
+    systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null
+}
+
+# The agent is only "connected" when the backend has accepted its handshake.
+# The backend's log is the one place that fact is recorded without credentials.
+#
+# Without a local-agent.json there is no agent installed on this host at all, so
+# this reports NOT connected — a remote-only install must not be described as
+# having a working local agent just because the unit is absent rather than dead.
+backend_saw_agent() {
+    local agent_id="$1" since="${2:-15 min ago}"
+    compose logs --since "$since" backend 2>/dev/null \
+        | grep -q "\"agentId\":\"$agent_id\".*agent connected" \
+        || compose logs --since "$since" backend 2>/dev/null \
+            | grep -q "agent connected.*$agent_id"
+}
+
+agent_connected() {
+    [ -f "$AGENT_RECORD" ] || return 1
+    agent_running || return 1
+
+    local agent_id
+    agent_id=$(sed -n 's/.*"agentId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$AGENT_RECORD" | head -n1)
+    [ -n "$agent_id" ] || return 1
+
+    backend_saw_agent "$agent_id"
+}
+
+# Pulls `checks.<name>.ok` out of the /api/health payload. A JSON parser would
+# be nicer, but jq is not part of the install and the payload is server-generated
+# by JSON.stringify, so there is no whitespace to worry about.
+health_flag() {
+    local body="$1" name="$2"
+    printf '%s' "$body" | grep -o "\"$name\":{[^}]*" | grep -o '"ok":[a-z]*' | head -n1 | cut -d: -f2
+}
+
+health_cache_backend() {
+    local body="$1"
+    printf '%s' "$body" | grep -o '"cache":{[^}]*}' | grep -o '"backend":"[a-z]*"' | cut -d'"' -f4
+}
+
+require_deployment() {
+    [ -f "$COMPOSE_FILE" ] || fatal "No deployment at $INSTALL_DIR (missing docker-compose.yml)."
+    command -v docker >/dev/null 2>&1 || fatal "docker is not installed."
+}
+
+cmd_status() {
+    require_deployment
+    local failures=0
+
+    if docker_cmd info >/dev/null 2>&1; then
+        printf '  Docker daemon:      running\n'
+    else
+        printf '  Docker daemon:      NOT RUNNING\n'
+        failures=$((failures + 1))
+    fi
+
+    printf '  Compose project:    %s\n' "$(compose ps --format '{{.Name}}' 2>/dev/null | wc -l | tr -d ' ') container(s) declared"
+
+    printf '\n  Containers:\n'
+    compose ps --format '    {{.Name}}\t{{.State}}\t{{.Status}}' 2>/dev/null || true
+
+    printf '\n'
+    if backend_healthy; then
+        printf '  Backend health:     ok (%s)\n' "$(instance_url)"
+    else
+        printf '  Backend health:     FAILING (%s)\n' "$(instance_url)"
+        failures=$((failures + 1))
+    fi
+
+    # Deeper check: database, cache, terminal.
+    local health db cache terminal
+    health=$(curl -sf --max-time 5 "$(instance_url)/api/health" 2>/dev/null || true)
+    if [ -n "$health" ]; then
+        db=$(health_flag "$health" database)
+        cache=$(health_flag "$health" cache)
+        terminal=$(health_flag "$health" terminal)
+        printf '  Database:           %s\n' "${db:-unknown}"
+        printf '  Cache:              %s (redis: %s)\n' "${cache:-unknown}" "$(health_cache_backend "$health" || true)"
+        printf '  Terminal:           %s\n' "${terminal:-unknown}"
+        [ "$db" = "true" ] || failures=$((failures + 1))
+    else
+        printf '  Database:           unknown (no /api/health response)\n'
+        failures=$((failures + 1))
+    fi
+
+    if agent_connected; then
+        printf '  Host Agent:         connected\n'
+    elif agent_running; then
+        printf '  Host Agent:         service up, backend has not acknowledged it\n'
+        failures=$((failures + 1))
+    elif [ -f "$AGENT_RECORD" ]; then
+        printf '  Host Agent:         NOT CONNECTED\n'
+        failures=$((failures + 1))
+    else
+        printf '  Host Agent:         not installed on this host\n'
+    fi
+
+    printf '\n  Disk:               %s\n' "$(df -h / | awk 'NR==2 {print $3" / "$2" ("$5")"}')"
+    printf '  Memory:             %s\n' "$(free -m | awk 'NR==2 {printf "%s MB / %s MB", $3, $2}')"
+
+    if [ -d "$INSTALL_DIR/src/.git" ]; then
+        printf '  Git branch:         %s\n' "$(git -C "$INSTALL_DIR/src" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+        printf '  Git commit:         %s\n' "$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    fi
+    printf '  App version:        %s\n' "$(app_version)"
+
+    [ "$failures" -eq 0 ] || return 1
+}
+
+cmd_logs() {
+    local follow=false tail_lines="" service=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -f|--follow) follow=true; shift ;;
+            --tail) tail_lines="${2:-}"; shift 2 ;;
+            -*)
+                # Reject anything else rather than passing it to compose, which
+                # would let `aether logs --user root` reach the docker CLI.
+                fatal "Unknown logs option: $1" ;;
+            *)
+                [ -z "$service" ] || fatal "Only one service may be given (got '$service' and '$1')."
+                case " $SERVICES " in
+                    *" $1 "*) service="$1" ;;
+                    *) fatal "Unknown service '$1'. Expected one of: $SERVICES" ;;
+                esac
+                shift ;;
+        esac
+    done
+
+    [ -z "$tail_lines" ] || case "$tail_lines" in
+        ''|*[!0-9]*) fatal "--tail expects a number, got: $tail_lines" ;;
+    esac
+
+    local args=()
+    [ "$follow" = true ] && args+=(--follow)
+    [ -n "$tail_lines" ] && args+=(--tail "$tail_lines")
+    [ -n "$service" ] && args+=("$service")
+
+    compose logs "${args[@]}"
+}
+
+cmd_version() {
+    printf 'Aether Cloud OS %s\n' "$(app_version)"
+    if [ -d "$INSTALL_DIR/src/.git" ]; then
+        printf 'Branch: %s\n' "$(git -C "$INSTALL_DIR/src" rev-parse --abbrev-ref HEAD)"
+        printf 'Commit: %s\n' "$(git -C "$INSTALL_DIR/src" rev-parse HEAD)"
+    else
+        printf 'Branch: unknown (not a git checkout)\nCommit: unknown\n'
+    fi
+    printf 'Install dir: %s\n' "$INSTALL_DIR"
+    printf 'Installation ID: %s\n' "$(sed -n 's/.*"installationId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$INSTALL_DIR/instance.json" 2>/dev/null | head -n1)"
+}
+
+# One diagnostic per line: PASS/FAIL, culprit, cause, and the command that fixes
+# it. Exits non-zero if anything failed.
+cmd_doctor() {
+    require_deployment
+    local failures=0
+
+    report() {
+        local status="$1" name="$2" detail="$3" fix="$4"
+        if [ "$status" = "ok" ]; then
+            printf '  [ ok ]  %-22s %s\n' "$name" "$detail"
+        else
+            printf '  [FAIL]  %-22s %s\n' "$name" "$detail"
+            [ -n "$fix" ] && printf '          fix: %s\n' "$fix"
+            failures=$((failures + 1))
+        fi
+    }
+
+    if docker_cmd info >/dev/null 2>&1; then
+        report ok "docker-daemon" "running" ""
+    else
+        report fail "docker-daemon" "not reachable" "sudo systemctl start docker"
+    fi
+
+    if compose config >/dev/null 2>&1; then
+        report ok "compose-config" "valid" ""
+    else
+        report fail "compose-config" "invalid or missing" "aether repair"
+    fi
+
+    if [ -f "$ENV_FILE" ]; then
+        if [ "$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo 600)" = "600" ]; then
+            report ok "env-permissions" "mode 600" ""
+        else
+            report fail "env-permissions" "not mode 600" "chmod 600 $ENV_FILE"
+        fi
+        for key in JWT_SECRET ENCRYPTION_KEY POSTGRES_PASSWORD; do
+            if [ -n "$(env_or_file "$key")" ]; then
+                report ok "secret:$key" "set" ""
+            else
+                report fail "secret:$key" "missing" "aether install --resume"
+            fi
+        done
+    else
+        report fail "env-file" "$ENV_FILE missing" "aether install --resume"
+    fi
+
+    if backend_healthy; then
+        report ok "backend-http" "200 on /health" ""
+    else
+        report fail "backend-http" "no healthy response" "aether logs --tail 100 backend"
+    fi
+
+    local db_ok
+    db_ok=$(health_flag "$(curl -sf --max-time 5 "$(instance_url)/api/health" 2>/dev/null || true)" database)
+    if [ "$db_ok" = "true" ]; then
+        report ok "database" "reachable" ""
+    else
+        report fail "database" "not reachable" "aether logs --tail 100 postgres"
+    fi
+
+    if agent_connected; then
+        report ok "host-agent" "connected" ""
+    elif [ -f "$AGENT_RECORD" ] && agent_running; then
+        report fail "host-agent" "service up, not acknowledged by the backend" "aether repair"
+    elif [ -f "$AGENT_RECORD" ]; then
+        report fail "host-agent" "not running" "sudo systemctl restart $SERVICE_NAME"
+    elif [ -f "$INSTALL_DIR/local-agent/agent.env" ] || [ -f "/etc/systemd/system/$SERVICE_NAME.service" ]; then
+        # The agent's config or unit survived but the record did not, so this is
+        # not a remote-only deployment — something removed local-agent.json.
+        report fail "host-agent" "installed but its record is missing" "aether repair"
+    else
+        report ok "host-agent" "not installed on this host (remote-only deployment)" ""
+    fi
+
+    local disk_free
+    disk_free=$(df -BG / | awk 'NR==2 {gsub(/G/,"",$4); print $4}')
+    if [ "${disk_free:-0}" -ge 5 ]; then
+        report ok "disk-space" "${disk_free} GB free" ""
+    else
+        report fail "disk-space" "${disk_free:-0} GB free" "free space or expand the volume"
+    fi
+
+    local mem_free
+    mem_free=$(free -m | awk 'NR==2 {print $7}')
+    if [ "${mem_free:-0}" -ge 256 ]; then
+        report ok "memory" "${mem_free} MB available" ""
+    else
+        report fail "memory" "${mem_free:-0} MB available" "stop unnecessary services"
+    fi
+
+    local domain no_https
+    domain=$(env_or_file AETHER_DOMAIN)
+    no_https=$(env_or_file AETHER_NO_HTTPS false)
+    if [ -n "$domain" ] && [ "$no_https" != "true" ]; then
+        local expiry days_left
+        expiry=$(echo | openssl s_client -servername "$domain" -connect "$domain":443 2>/dev/null \
+            | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)
+        if [ -z "$expiry" ]; then
+            report fail "tls-certificate" "could not read the certificate" "aether logs --tail 100 caddy"
+        else
+            days_left=$(( ($(date -d "$expiry" +%s) - $(date +%s)) / 86400 ))
+            if [ "$days_left" -ge 14 ]; then
+                report ok "tls-certificate" "expires in $days_left days" ""
+            else
+                report fail "tls-certificate" "expires in $days_left days" "aether logs --tail 100 caddy"
+            fi
+        fi
+    else
+        report ok "tls-certificate" "not used (HTTP-only instance)" ""
+    fi
+
+    if [ "$failures" -eq 0 ]; then
+        printf '\n  All checks passed.\n'
+    else
+        printf '\n  %d check(s) failed.\n' "$failures"
+        return 1
+    fi
+}
+
+cmd_backup() {
+    bash "$SCRIPT_DIR/backup.sh" "$@"
+}
+
+cmd_backup_list() {
+    [ -d "$BACKUP_DIR" ] || fatal "No backup directory at $BACKUP_DIR."
+    local found=false
+    printf '%-46s %-10s %s\n' "ARCHIVE" "SIZE" "CREATED"
+    while IFS= read -r archive; do
+        [ -n "$archive" ] || continue
+        found=true
+        printf '%-46s %-10s %s\n' "$(basename "$archive")" \
+            "$(du -h "$archive" | cut -f1)" "$(date -r "$archive" '+%Y-%m-%d %H:%M:%S')"
+    done < <(ls -1t "$BACKUP_DIR"/aether-backup-*.tar.gz 2>/dev/null || true)
+    [ "$found" = true ] || printf '(none)\n'
+}
+
+cmd_repair() {
+    require_deployment
+
+    stage "Checking the compose configuration"
+    compose config >/dev/null || fatal "docker-compose.yml is invalid. Restore it from a backup, then retry."
+
+    # Only recreate what is not healthy. A blanket --force-recreate restarts
+    # the database for no reason, which is the opposite of a safe repair.
+    local unhealthy=()
+    local service state health
+    while read -r service state health; do
+        [ -n "$service" ] || continue
+        [ "$state" = "running" ] || { unhealthy+=("$service"); continue; }
+        case "$health" in
+            unhealthy|starting) unhealthy+=("$service") ;;
+        esac
+    done < <(compose ps --format '{{.Service}} {{.State}} {{.Health}}' 2>/dev/null || true)
+
+    if [ ${#unhealthy[@]} -eq 0 ]; then
+        info "Every running service is healthy; recreating nothing."
+    else
+        stage "Recreating unhealthy services: ${unhealthy[*]}"
+        compose up -d --force-recreate --no-deps "${unhealthy[@]}"
+    fi
+
+    # A backend restart re-runs the (forward-only, checksummed) migration
+    # runner, which is the only safe way to apply a missing migration.
+    stage "Restarting the backend so pending migrations apply"
+    compose restart backend
+
+    stage "Verifying health"
+    local attempts=40
+    while [ "$attempts" -gt 0 ]; do
+        backend_healthy && break
+        attempts=$((attempts - 1))
+        sleep 3
+    done
+
+    if backend_healthy; then
+        info "Repair complete: the backend is healthy."
+        repair_local_agent
+    else
+        error "Repair did not restore the backend to health."
+        error "Next: aether logs --tail 200 backend"
+        return 1
+    fi
+}
+
+# Reinstalls the local host agent when it is missing or no longer connected.
+#
+# The case this exists for: a restore from an archive taken before the agent was
+# paired leaves a `host_agents` row whose token hash does not match the agent's
+# config, so the agent reconnects and is rejected — forever, with no hint why.
+# local-agent.sh is idempotent and reuses the identity in agent.env, so this
+# re-registers the same agent id rather than minting a new one.
+repair_local_agent() {
+    local agent_installer="$INSTALL_DIR/src/deploy/lib/local-agent.sh"
+
+    if agent_connected; then
+        info "Host Agent is connected; leaving it alone."
+        return 0
+    fi
+
+    if [ ! -x "$agent_installer" ] && [ ! -f "$agent_installer" ]; then
+        warn "The Host Agent is not connected, and $agent_installer is missing"
+        warn "(it ships inside the source tree that `aether update` maintains)."
+        warn "Restore it with: aether update --yes, then: aether repair"
+        return 1
+    fi
+
+    stage "Reinstalling the local host agent"
+    if bash "$agent_installer"; then
+        info "Host Agent repaired and verified connected."
+        return 0
+    fi
+
+    error "The Host Agent could not be repaired."
+    error "  agent side:   sudo journalctl -u $SERVICE_NAME -n 50 --no-pager"
+    error "  backend side: aether logs --tail 50 backend"
+    return 1
+}
+
+cmd_rollback() {
+    local archive="${1:-}"
+    if [ -z "$archive" ]; then
+        # No argument: use the archive the last update recorded, so a failed
+        # update can be undone without knowing the filename.
+        if [ -f "$BACKUP_DIR/last-update.json" ]; then
+            archive=$(sed -n 's/.*"archive"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                "$BACKUP_DIR/last-update.json" | head -n1)
+        fi
+        if [ -z "$archive" ]; then
+            archive=$(ls -1t "$BACKUP_DIR"/aether-backup-*.tar.gz 2>/dev/null | head -n1 || true)
+        fi
+        [ -n "$archive" ] || fatal "No backup archive to roll back to. Pass one explicitly: aether rollback <archive>"
+        info "No archive given; using $(basename "$archive")"
+    fi
+    [ -f "$archive" ] || fatal "Backup archive not found: $archive"
+    bash "$SCRIPT_DIR/restore.sh" "$archive"
+}
+
+cmd_uninstall() {
+    bash "$SCRIPT_DIR/uninstall.sh" "$@"
+}
+
+usage() {
+    cat <<'EOF'
+Aether Cloud OS management CLI
+
+Usage: aether <command> [options]
+
+  install              Re-run the installer, resuming completed stages
+  update [--check]     Update from Git (backup, migrate, health-check, roll back on failure)
+  status               Report the real state of every component
+  logs [service] [-f] [--tail N]
+                       Show container logs (services: redis postgres backend caddy)
+  start                Start the stack
+  stop                 Stop the stack (containers, not the data)
+  restart              Restart the stack
+  version              App version, Git branch, and commit
+  doctor               Diagnose problems; prints a fix command for each failure
+  backup               Create a backup archive
+  backup list          List backup archives
+  restore <archive>    Restore from a backup archive (destructive)
+  repair               Recreate only unhealthy services and re-run migrations
+  rollback [archive]   Restore the archive from the last update, or a named one
+  uninstall [--purge]  Remove Aether; keeps data unless --purge is given
+  help                 This message
+EOF
+}
+
+main() {
+    local command="${1:-help}"
+    local sub="${2:-}"
+    shift || true
+
+    case "$command" in
+        install)
+            # The installed layout keeps the application source under src/, so
+            # that is where the installer lives. It resumes the stages already
+            # marked done in install.state.
+            local installer="$INSTALL_DIR/src/deploy/lib/install.sh"
+            [ -f "$installer" ] || fatal "Installer not found at $installer. The installation looks incomplete; re-run the one-line installer."
+            exec bash "$installer" --resume "$@" ;;
+        update)   exec bash "$SCRIPT_DIR/update.sh" "$@" ;;
+        status)   cmd_status ;;
+        logs)     cmd_logs "$@" ;;
+        start)    require_deployment; compose up -d ;;
+        stop)     require_deployment; compose stop ;;
+        restart)  require_deployment; compose restart ;;
+        version)  cmd_version ;;
+        doctor)   cmd_doctor ;;
+        backup)
+            if [ "$sub" = "list" ]; then
+                cmd_backup_list
+            else
+                cmd_backup "$@"
+            fi
+            ;;
+        restore)
+            [ -n "$sub" ] || fatal "restore requires a backup archive path. Usage: aether restore <archive>"
+            exec bash "$SCRIPT_DIR/restore.sh" "$sub"
+            ;;
+        repair)    cmd_repair ;;
+        rollback)  cmd_rollback "$sub" ;;
+        uninstall) cmd_uninstall "$@" ;;
+        help|-h|--help) usage ;;
+        *) printf 'Unknown command: %s\n\n' "$command" >&2; usage >&2; exit 2 ;;
+    esac
+}
+
+main "$@"

@@ -45,6 +45,33 @@ export function registerAgentWebSocket(app: FastifyInstance): void {
       log.info({ agentId: record.agentId }, 'agent connected');
       markAgentConnected(record.agentId);
 
+      // Answer the handshake. The agent refuses to dispatch any request until
+      // it has seen `hello_ack` (it would answer UNAUTHENTICATED and give up
+      // after 15s), and the owner id it receives is the principal its terminal
+      // sessions are keyed on. Nothing else in the backend sends this frame —
+      // the gateway deliberately drops `hello` — so without it the agent
+      // reconnects forever and every capability call fails.
+      // The agent validates `ownerUserId` as a UUID, so a local (instance-scoped)
+      // agent is given its own agent id — also a UUID, and stable across
+      // reconnects. The gateway's `agent:<id>` form is a backend-side principal
+      // for terminal ownership and must not be sent here.
+      const ownerUserId = record.ownerUserId ?? record.agentId;
+      try {
+        socket.send(
+          JSON.stringify({
+            id: '__hello__',
+            type: 'hello_ack',
+            ok: true,
+            agentId: record.agentId,
+            ownerUserId,
+          })
+        );
+      } catch (error) {
+        log.warn({ err: error, agentId: record.agentId }, 'failed to send hello acknowledgement');
+        socket.close(WS_CLOSE.INTERNAL_ERROR, 'Handshake failed');
+        return;
+      }
+
       const frameBudget = { count: 0, windowStart: Date.now() };
 
       socket.on('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {

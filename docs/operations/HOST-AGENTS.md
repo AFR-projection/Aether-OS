@@ -7,14 +7,59 @@ terminals — comes through an agent.
 This means:
 
 - one backend can manage **several hosts**;
-- you pair an agent even for the machine Aether itself is installed on (the backend is not an
-  agent, and never acts as one);
+- the machine Aether itself runs on needs an agent too (the backend is not an agent, and never acts
+  as one) — the installer pairs that one automatically, see
+  [The local host agent](#the-local-host-agent);
 - the agent connects **out** to the backend, so **no inbound port is opened on the managed host** —
   which matters when that host is on a network you do not control.
 
 ---
 
-## Pairing
+## The local host agent
+
+A fresh install manages its own machine with no pairing step. The installer:
+
+1. creates the `aether-agent` system user, with the same numeric uid/gid as the backend container
+   (1001) so both can write the workspace bind mount;
+2. generates a UUID and a 256-bit token, and stores **only the SHA-256 hash** in
+   `aether.host_agents` (`scope = 'local'`, no owner);
+3. writes `local-agent/agent.env` (mode 600, owned by `aether-agent`) with the URL, the agent id,
+   and the token — the plaintext token is never printed and never stored anywhere else;
+4. builds and installs the agent, then starts `aether-host-agent.service`;
+5. waits for the connection to be confirmed **on both sides** before reporting success.
+
+That last point is the one to know about: the installer reads the agent's own journal for
+`paired with backend` **and** the backend log for `agent connected` with that agent id. Either one
+alone can be true of a socket that is already dead. If both do not arrive, the install fails —
+`aether status` and `aether doctor` use the same rule.
+
+Its unit is hardened, because the local agent only ever touches its workspace:
+
+```
+User=aether-agent
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=<install>/data/workspace
+```
+
+The agent talks to the backend through Caddy (`wss://your-domain`), never to a container port: the
+backend publishes none.
+
+```bash
+systemctl status aether-host-agent
+journalctl -u aether-host-agent -f
+```
+
+Remote hosts are unaffected by any of this. They use `setup-host.sh` below, run as `root` by default
+because an operator managing a machine they own expects the agent to reach the whole filesystem. Pass
+`--service-user <name>` to run it unprivileged instead, which adds the same hardening.
+
+---
+
+## Pairing a remote host
 
 ### 1. Mint a token — in the UI
 
@@ -80,9 +125,13 @@ timestamp.
 | `--workspace DIR`    | Directory the agent may touch (default `/opt/aether/workspace`)          |
 | `--install-dir DIR`  | Where to install (default `/opt/aether-host-agent`)                      |
 | `--repo-dir DIR`     | Source checkout to install from (default: this checkout)                 |
+| `--service-user USER` | Run the agent as this user (default `root`). A non-root user gets the hardened unit. |
 | `--no-service`       | Write the config and build, but do not install or start the unit          |
 | `--uninstall`        | Stop the agent and remove its unit, install directory, and config        |
 | `-h`, `--help`       | Usage                                                                    |
+
+Re-running the script is safe: the source copy never deletes `agent.env`, so an agent keeps its
+identity and token across a repair.
 
 ### Uninstalling
 
@@ -105,10 +154,21 @@ UI: POST /api/agents/pair
 agent: wss://backend/ws/agent?agentId=…&token=…
     → backend: SELECT … FROM aether.host_agents WHERE id = $1
     → rejects if the row is missing, revoked, or the token hash differs
-    → replies hello_ack
+    → logs "agent connected"
 
-agent: { type: "hello", … capabilities: [...] }
+agent: { type: "hello", id: "__hello__", capabilities: [...] }
+    → backend replies { type: "hello_ack", agentId, ownerUserId }
+    → agent logs "paired with backend" and starts dispatching requests
 ```
+
+The agent dispatches **nothing** until it has seen that acknowledgement: before it arrives every
+request is answered `UNAUTHENTICATED`, and if it never arrives the agent drops the socket after 15
+seconds and reconnects. That is why a backend that accepts the socket but never answers the
+handshake looks like an agent that keeps reconnecting.
+
+For a local agent — which has no owning user — `ownerUserId` is the agent's own id. The gateway keys
+that agent's terminal sessions on `agent:<id>` internally; the agent is never sent that string,
+because it validates the field as a UUID.
 
 Two consequences worth knowing:
 
@@ -212,9 +272,10 @@ sudo journalctl -u aether-host-agent -n 50 --no-pager
 | `Invalid agent credentials`       | The agent id or token does not match the row in the database.      |
 | `Unknown agent`                   | The id is not one the backend created — usually a hand-typed id.   |
 | `Agent has been revoked`          | It was revoked in the UI. Pair a new one.                          |
-| `Timed out waiting for hello`     | The socket opened but the backend never acknowledged. Check the backend log for a rejected handshake. |
+| `Invalid hello acknowledgement`   | The backend answered the handshake with a payload the agent rejects. A mismatch between backend and agent versions. |
 | `ECONNREFUSED` / `getaddrinfo`    | The backend URL is wrong or unreachable from that host.             |
 | `websocket error` repeatedly      | A proxy in front of the backend is not passing the upgrade.         |
+| `websocket open, sending hello` with no `paired with backend` after it | The socket opened but the backend never answered. Check the backend log for a rejected handshake. |
 
 **`Use wss:// or ws:// for the agent socket, not http(s)://`**
 

@@ -5,6 +5,11 @@
 # `aether` management CLI, the systemd unit that keeps compose up across
 # reboots, and a post-install security check (§6.2).
 
+# `install_local_agent` (the local host agent stage) lives in its own file so it
+# can also be run on its own: deploy/lib/local-agent.sh
+# shellcheck source=./local-agent.sh
+source "$SCRIPT_DIR/local-agent.sh"
+
 apply_permissions() {
     info "Hardening permissions"
 
@@ -16,6 +21,13 @@ apply_permissions() {
     if [ "$(id -u)" -ne 0 ]; then
         $SUDO chown -R "$(id -un):$(id -gn)" "$AETHER_INSTALL_DIR" 2>/dev/null || \
             warn "Could not chown $AETHER_INSTALL_DIR to the invoking user; continue with sudo chown -R $USER $AETHER_INSTALL_DIR"
+    fi
+
+    # The recursive chown above also takes the data directory, which the
+    # backend container and the host agent must both own by numeric uid. Put it
+    # back, or the backend loses write access to the workspace.
+    if [ -d "${AETHER_INSTALL_DIR}/data" ]; then
+        $SUDO chown -R "${AETHER_APP_UID:-1001}:${AETHER_APP_GID:-1001}" "${AETHER_INSTALL_DIR}/data"
     fi
 }
 
@@ -60,49 +72,7 @@ install_cli() {
     # Ensure helper scripts resolve the copied libraries, not the deleted source.
     chmod 644 "$lib_dir/core.sh" "$lib_dir/utils.sh"
 
-    cat > "$cli_dir/aether" <<EOF
-#!/usr/bin/env bash
-# Aether Cloud OS management CLI (installed by the installer).
-set -euo pipefail
-INSTALL_DIR="$AETHER_INSTALL_DIR"
-cd "\$INSTALL_DIR"
-compose() {
-    if docker info >/dev/null 2>&1; then docker compose "\$@"; else sudo docker compose "\$@"; fi
-}
-usage() {
-    printf '%s\\n' 'Usage: aether {status|logs [service]|start|stop|restart|update|repair|rollback|backup|restore <archive>|uninstall [--purge]}'
-}
-case "\${1:-help}" in
-    status) compose ps ;;
-    logs) shift; compose logs -f "\$@" ;;
-    start) compose up -d ;;
-    stop) compose stop ;;
-    restart) compose restart ;;
-    update)
-        # Delegated to scripts/update.sh so `aether update` and the script have
-        # exactly one implementation. The CLI used to reimplement it inline,
-        # which is how the two drifted apart.
-        shift
-        bash "\$INSTALL_DIR/scripts/update.sh" "\$@"
-        ;;
-    repair)
-        compose config >/dev/null
-        compose up -d --force-recreate
-        ;;
-    rollback)
-        archive="\${2:-}"
-        [ -n "\$archive" ] || { printf '%s\\n' 'rollback requires a backup archive path' >&2; exit 2; }
-        bash "\$INSTALL_DIR/scripts/restore.sh" "\$archive"
-        ;;
-    backup) bash "\$INSTALL_DIR/scripts/backup.sh" ;;
-    restore)
-        [ -n "\${2:-}" ] || { printf '%s\\n' 'restore requires a backup archive path' >&2; exit 2; }
-        bash "\$INSTALL_DIR/scripts/restore.sh" "\$2"
-        ;;
-    uninstall) bash "\$INSTALL_DIR/scripts/uninstall.sh" "\${2:-}" ;;
-    help|*) usage ;;
-esac
-EOF
+    cp "${AETHER_INSTALL_DIR}/src/deploy/scripts/aether" "$cli_dir/aether"
     chmod 755 "$cli_dir/aether"
 
     if [ -w /usr/local/bin ]; then
@@ -147,19 +117,26 @@ EOF
 health_check() {
     info "Waiting for the stack to become healthy…"
 
-    local attempts=60 health_url
-    if [ -n "${AETHER_DOMAIN:-}" ]; then
-        health_url="http://${AETHER_DOMAIN}/health"
+    local attempts=60 url domain no_https
+    domain="${AETHER_DOMAIN:-}"
+    no_https="${AETHER_NO_HTTPS:-false}"
+
+    # Caddy is the only ingress (the backend publishes no host port), so this
+    # goes through it. With a domain, Caddy matches on Host, hence --resolve:
+    # it pins the name to loopback without needing public DNS to be live yet.
+    if [ -n "$domain" ] && [ "$no_https" != "true" ]; then
+        url="https://${domain}/health"
+        probe() { curl -sf --max-time 5 --resolve "${domain}:443:127.0.0.1" "$url" >/dev/null 2>&1; }
+    elif [ -n "$domain" ]; then
+        url="http://${domain}/health"
+        probe() { curl -sf --max-time 5 --resolve "${domain}:80:127.0.0.1" "$url" >/dev/null 2>&1; }
     else
-        health_url="http://127.0.0.1/health"
+        url="http://127.0.0.1/health"
+        probe() { curl -sf --max-time 5 "$url" >/dev/null 2>&1; }
     fi
+
     while [ $attempts -gt 0 ]; do
-        if [ -n "${AETHER_DOMAIN:-}" ]; then
-            if curl -sf --max-time 5 --resolve "${AETHER_DOMAIN}:80:127.0.0.1" "$health_url" >/dev/null 2>&1; then
-                info "Caddy → backend health check passed"
-                break
-            fi
-        elif curl -sf --max-time 5 "$health_url" >/dev/null 2>&1; then
+        if probe; then
             info "Caddy → backend health check passed"
             break
         fi
@@ -168,10 +145,20 @@ health_check() {
     done
 
     if [ $attempts -eq 0 ]; then
-        warn "Stack is not answering on ${health_url} yet."
-        warn "Recent container status:"
-        compose_cmd ps 2>/dev/null || true
-        warn "Check progress with: aether logs backend"
+        warn "Stack is not answering on ${url}."
+        # Tell the two failures apart: an HTTP answer on port 80 means the
+        # containers are up and only TLS is not ready (ACME still working, or
+        # DNS not pointed here yet).
+        if [ -n "$domain" ] && curl -sf --max-time 5 --resolve "${domain}:80:127.0.0.1" \
+            "http://${domain}/health" >/dev/null 2>&1; then
+            error "The backend is up over HTTP but HTTPS on ${domain} is not serving."
+            error "Cause: Caddy has not obtained a certificate (DNS must point at this host's public IP and port 80 must be reachable)."
+            error "Check: aether logs --tail 100 caddy"
+        else
+            warn "Recent container status:"
+            compose_cmd ps 2>/dev/null || true
+            error "Check progress with: aether logs backend"
+        fi
         fatal "Health check failed. Fix the reported service and rerun with --resume."
     fi
 
@@ -197,6 +184,13 @@ finalize_installation() {
     install_cli
     create_systemd_unit
     health_check
+
+    # Last, and only after the stack is healthy: the installer pairs this host
+    # with its own backend. It fails the install if the agent does not come up
+    # and confirm the handshake on both sides.
+    stage "Installing the local host agent"
+    install_local_agent
+
     mark_done finalize
 }
 

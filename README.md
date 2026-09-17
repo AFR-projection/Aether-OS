@@ -30,8 +30,10 @@ Every path is confined to `AETHER_WORKSPACE_ROOT`; nothing outside it is reachab
 **System** — CPU, memory, disk, and load from the host's own `/proc`, plus a process list and an
 opt-in signal capability.
 
-**Host agents** — a separate agent process runs on any host you want to manage, paired from the
-Settings → Host agents screen. One backend can manage several hosts.
+**Host agents** — a separate agent process manages each host. The installer pairs one on the
+machine it installs on, running as an unprivileged `aether-agent` user in a hardened systemd unit;
+further hosts are paired from the Settings → Host agents screen. One backend can manage several
+hosts.
 
 **Accounts** — first-run bootstrap, JWT access/refresh tokens, revocable sessions, password change,
 and four roles (`owner`, `admin`, `operator`, `viewer`) enforced server-side on every request.
@@ -110,17 +112,46 @@ Full instructions: [Development](docs/getting-started/DEVELOPMENT.md).
 
 ### Install on a VPS
 
+On a fresh Ubuntu 22.04/24.04 host, one command — no Docker, clone, `.env`, or migration step first:
+
 ```bash
-sudo bash install.sh
+curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh | bash
+```
+
+It re-runs itself under `sudo` if you are not root, so the command above is the whole thing. With a
+domain pointing at the host:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh | bash -s -- --domain aether.example.com --email you@example.com
 ```
 
 The installer checks the platform, installs Docker, generates every secret, writes a hardened
 `.env`, brings up the stack behind Caddy (with automatic HTTPS when you supply a domain), installs
 an `aether` management CLI and a systemd unit, and runs a post-install check that no internal port
-is exposed.
+is exposed. It also installs a **local host agent** — paired to its own backend automatically — so
+the machine it installs on is manageable out of the box, with no extra pairing step.
 
 Then create the owner account at the URL it prints. Guide:
 [Deployment](docs/operations/DEPLOYMENT.md).
+
+### Manage it
+
+```bash
+aether status          # docker, containers, HTTP, database, cache, agent, disk, memory, TLS, commit
+aether doctor          # every problem with a cause and the command that fixes it
+aether logs backend    # follow one service: redis | postgres | backend | caddy
+aether backup          # database + data + config + metadata, checksummed
+aether restore <archive>   # verified, then it must come back healthy or it fails
+aether rollback        # undo the last update, using the archive it recorded
+aether update          # git-based: backup → rebuild → migrate → restart → health, auto-rollback
+aether repair          # recreate only what is unhealthy, and re-pair the host agent
+aether version         # app version, branch, exact commit
+aether uninstall       # keeps your data; --purge removes it after confirming
+```
+
+`aether update` compares the installed checkout with `origin/main`, prints `Already up to date` when
+there is nothing to apply, and rolls back to the previous commit and pre-update archive if the health
+check fails. It never pushes.
 
 ### Add another host
 

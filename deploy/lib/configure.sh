@@ -116,8 +116,12 @@ JWT_REFRESH_TOKEN_EXPIRY=30d
 ENCRYPTION_KEY=${SECRET_ENCRYPTION_KEY}
 SESSION_SECRET=${SECRET_SESSION}
 
-AETHER_WORKSPACE_ROOT=/data/workspace
-UPLOAD_DIR=/data/uploads
+# These must match the bind-mount targets in docker-compose.prod.yml and the
+# directories the backend image creates. A different path here would leave the
+# backend writing to its container filesystem — invisible to the host agent,
+# and gone on the next recreate.
+AETHER_WORKSPACE_ROOT=/opt/aether/workspace
+UPLOAD_DIR=/opt/aether/uploads
 AETHER_STATIC_DIR=/opt/aether/static
 TERMINAL_ENABLED=true
 TERMINAL_MAX_SESSIONS=10

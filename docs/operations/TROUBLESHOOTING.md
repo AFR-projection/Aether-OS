@@ -156,8 +156,23 @@ to every keystroke. Check the agent's connection state on **Settings → Host ag
 
 ## Host agents
 
-The full matrix is in [HOST-AGENTS.md](../operations/HOST-AGENTS.md#troubleshooting). The three that
+The full matrix is in [HOST-AGENTS.md](../operations/HOST-AGENTS.md#troubleshooting). The four that
 account for most failures:
+
+**`aether status` says `Host Agent: not connected`.** The installer puts an agent on this machine
+automatically; if it is not connected, the backend never acknowledged its handshake. Check both
+sides, because either one alone can look fine:
+
+```bash
+sudo journalctl -u aether-host-agent -n 50 --no-pager     # does it say "paired with backend"?
+sudo aether logs --tail 50 backend | grep 'agent connected'
+sudo aether repair                                        # reinstalls and re-registers it
+```
+
+`aether doctor` separates the two cases for you: *"service up, not acknowledged by the backend"* is
+the backend side failing (the agent is dialling and being rejected), while *"not running"* is the
+agent side. Either way, `aether repair` is the fix — it reinstalls and re-registers the agent rather
+than making you work out which half broke.
 
 **The row stays grey.** On the managed host:
 
@@ -223,11 +238,18 @@ sudo aether logs postgres | tail -20
 Then verify the archive before trusting it:
 
 ```bash
-sha256sum -c /opt/aether/backups/aether-backup-*.tar.gz.sha256
-tar tzf /opt/aether/backups/aether-backup-*.tar.gz | head -20
+cd /opt/aether/backups
+sha256sum -c aether-backup-<timestamp>.tar.gz.sha256
+tar tzf aether-backup-<timestamp>.tar.gz | head -20
 ```
 
-You should see `database.sql.gz`, `volumes/`, and `configuration/`.
+The checksum file records a bare filename, so `sha256sum -c` only resolves it from inside
+`/opt/aether/backups` — run it from there rather than passing the full path.
+
+An archive holds one top-level directory containing `database.sql.gz`, `data.tar.gz` (the workspace
+and uploads), `config/` (`.env`, `docker-compose.yml`, `caddy/`), and `metadata/` (the instance id,
+the installer's stage checkpoints, and the host agent's identity). If any of those is missing the
+backup is not one — `aether restore` will tell you which.
 
 ### Restore finished but the data is unchanged
 
@@ -242,6 +264,37 @@ sudo aether logs backend | grep 'aether backend starting'
 ### Restore says the checksum does not match
 
 The archive is corrupt or was truncated in transit. Do not force it. Find an older archive.
+
+### Restore refuses an archive with no checksum
+
+Also deliberate. A missing `.sha256` means the archive's completeness is unverifiable, and restoring
+a half-written dump over a healthy database destroys the good copy. If you know the archive is
+intact — you made it by hand, or the checksum file was lost in transit — `AETHER_ALLOW_UNVERIFIED=true
+aether restore <archive>` proceeds. Read the warning it prints first.
+
+### Restore exits non-zero but the container is up
+
+`aether restore` fails when the instance is not healthy *after* the data is back: either the database
+check inside the backend never passed, or the local host agent did not reconnect to the backend
+within the timeout. The restore itself is not rolled back — there is nothing left to roll back to —
+so treat the message as "now go look", not "nothing happened".
+
+```bash
+sudo aether status
+sudo aether logs backend | grep -E 'agent connected|error'
+sudo journalctl -u aether-host-agent -n 50 --no-pager
+```
+
+A restored archive carries the agent's pairing token in `metadata/agent.env`. If the agent does not
+reconnect, its token no longer matches the `host_agents` row the database was restored to — the
+archive predates the pairing, or a later re-pair rotated the token. `aether repair` handles this: it
+reinstalls and re-registers the local agent, reusing the agent id in `agent.env` and upserting the
+row, so the two sides agree again without you copying anything.
+
+```bash
+sudo aether repair
+```
+
 
 ---
 

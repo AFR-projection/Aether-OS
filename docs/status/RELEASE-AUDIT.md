@@ -5,6 +5,13 @@
 This is the record of the last pre-deployment verification pass. It lists what was checked, what was
 found and fixed, and what was deliberately left alone. The next release pass should supersede it.
 
+> **Note added afterwards.** This audit predates the one-command installer, the `aether` CLI, the
+> local host agent, and the git-based update flow. Where it says "named volumes", the data now lives
+> in host directories bind-mounted into the backend (§16 of
+> [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) explains why: the local agent has to see the same
+> tree). Everything else here still describes the code; the current verification status — including
+> what has **not** been run — is at the end of KNOWN-LIMITATIONS.md.
+
 Verification at the time of writing: `pnpm typecheck` ✅ (5 packages) · `pnpm lint` ✅ (0 errors) ·
 `pnpm test` ✅ (159 passed, 6 skipped) · `pnpm build` ✅.
 

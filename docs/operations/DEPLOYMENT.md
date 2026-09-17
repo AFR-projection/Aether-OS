@@ -1,7 +1,7 @@
 # Deployment
 
-The installer takes a fresh Ubuntu host to a running, HTTPS-terminated Aether instance with a
-management CLI and a systemd unit.
+The installer takes a fresh Ubuntu host to a running, HTTPS-terminated Aether instance: containers,
+a management CLI, a systemd unit, and a host agent paired to its own backend.
 
 ---
 
@@ -9,14 +9,14 @@ management CLI and a systemd unit.
 
 **Blocking** — the installer refuses to run without these:
 
-| Requirement | Minimum      |
-| ----------- | ------------ |
-| OS          | **Ubuntu 22.04 / 24.04 LTS.** Non-Ubuntu is a hard failure. 20.04 and other Ubuntu versions warn and continue. |
-| Architecture | **x86_64 / amd64.** Anything else is a hard failure. |
-| CPU         | 1 core       |
-| RAM         | 2 GB         |
-| Disk        | 20 GB        |
-| systemd     | **required** — SysVinit, Upstart and OpenRC are not supported |
+| Requirement  | Minimum                                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| OS           | **Ubuntu 22.04 / 24.04 LTS.** Non-Ubuntu is a hard failure. 20.04 and other Ubuntu versions warn and continue.        |
+| Architecture | **x86_64 / amd64.** Anything else is a hard failure.                                                                  |
+| CPU          | 1 core                                                                                                                |
+| RAM          | 2 GB                                                                                                                  |
+| Disk         | 20 GB                                                                                                                 |
+| systemd      | **required** — SysVinit, Upstart and OpenRC are not supported                                                         |
 
 Between the blocking floor and the recommended figures (2 cores, 4 GB, 20 GB) the installer warns and
 asks for confirmation. Preflight also verifies that ports 80 and 443 are free, that the host has
@@ -24,83 +24,91 @@ network access, and — when a domain is given — that DNS resolves.
 
 > The installer is Ubuntu-and-x86_64-only, and says so rather than half-working. If you are on
 > another distribution the stack is plain Docker Compose and will run; you are simply off the tested
-> path, and `install.sh` will not be the thing that sets it up.
+> path, and this installer will not be the thing that sets it up.
 
-`root` (or `sudo`) is required: the installer installs packages, writes `/etc/systemd/system`, and
-configures the firewall.
+`root` (or `sudo`) is required: the installer installs packages, writes `/etc/systemd/system`,
+creates a service user, and configures the firewall. Run the plain one-liner — it elevates itself.
 
 ---
 
 ## Running it
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh | bash
 ```
 
-Or from a checkout:
+That is the whole installation. Run as a non-root user with `sudo`, the script downloads a copy of
+itself and re-launches under `sudo`; a piped script has no path to hand to `sudo`, so it fetches one.
+You will be prompted for a sudo password if sudo is configured to ask.
+
+From a checkout, the same entry point works and uses the local source:
 
 ```bash
-sudo bash install.sh
+sudo bash scripts/deploy/setup.sh
 ```
-
-Piping works because the root `install.sh` is self-contained: outside a repository checkout it
-clones the source tree to a temporary directory and re-executes `deploy/lib/install.sh` from there.
-A pipe cannot supply the rest of the repository on stdin, so it fetches it over HTTPS instead.
 
 ### With a domain (recommended)
 
 ```bash
-sudo bash install.sh --domain aether.example.com --email you@example.com
+curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh \
+  | bash -s -- --domain aether.example.com --email you@example.com
 ```
 
 Caddy obtains and renews a Let's Encrypt certificate automatically. **Point the domain's DNS at
-this host before you run it**, or the ACME challenge fails.
+this host before you run it**, or the ACME challenge fails. The install still completes: the health
+check reports that HTTP answers but HTTPS does not, and tells you to look at the Caddy log. Fix DNS
+and run `sudo aether repair`.
 
 ### Non-interactive
 
 ```bash
-sudo bash install.sh --domain aether.example.com --email you@example.com --yes
+... | bash -s -- --domain aether.example.com --email you@example.com --yes
 ```
 
 ### Check first, change nothing
 
 ```bash
-sudo bash install.sh --dry-run
+... | bash -s -- --dry-run
 ```
 
 Runs preflight and reports what it would do, touching nothing.
 
 ### Options
 
-| Flag                 | Effect                                                       |
-| -------------------- | ------------------------------------------------------------ |
-| `--domain DOMAIN`    | Public domain for TLS and routing                             |
-| `--email EMAIL`      | Admin email for certificate notices                           |
-| `--dir PATH`         | Install directory (default `/opt/aether`)                     |
-| `--yes`              | Non-interactive; accept defaults                              |
-| `--resume`           | Skip stages already completed in this directory               |
-| `--dry-run`          | Validate everything, change nothing                           |
-| `--no-https`         | Serve HTTP only (domain still optional)                       |
-| `--version`          | Print the installer version                                   |
-| `--help`             | Usage                                                         |
+| Flag              | Effect                                          |
+| ----------------- | ----------------------------------------------- |
+| `--domain DOMAIN` | Public domain for TLS and routing                |
+| `--email EMAIL`   | Admin email for certificate notices              |
+| `--dir PATH`      | Install directory (default `/opt/aether`)        |
+| `--yes`           | Non-interactive; accept defaults                 |
+| `--resume`        | Skip stages already completed in this directory  |
+| `--dry-run`       | Validate everything, change nothing              |
+| `--no-https`      | Serve HTTP only (domain still optional)          |
+| `--version`       | Print the installer version                      |
+| `--help`          | Usage                                            |
 
 Environment overrides: `AETHER_INSTALL_DIR`, `AETHER_DOMAIN`, `AETHER_ADMIN_EMAIL`, `AETHER_YES`,
-`AETHER_RESUME`, `AETHER_FORCE_BUILD`.
+`AETHER_RESUME`, `AETHER_FORCE_BUILD`, `AETHER_REPO_URL`, `AETHER_SETUP_URL`.
 
 ---
 
 ## What it does
 
-Five stages, each checkpointed to `<install>/install.state` so an interrupted run can resume rather
-than redo finished work:
+Seven checkpoints, each recorded in `<install>/install.state`, so an interrupted run resumes rather
+than redoing finished work (`--resume`, or the prompt when it finds an existing installation):
 
-| Stage          | Does                                                                        |
-| -------------- | --------------------------------------------------------------------------- |
+| Stage          | Does                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------- |
 | **preflight**  | Validates OS, architecture, memory, disk, systemd, and that ports 80/443 are free. Blocking, not advisory. |
-| **dependencies** | Installs Docker if missing, plus `curl`, `openssl`, and `ufw` if absent.  |
-| **configure**  | Generates every secret, writes `.env` (mode 600) and the Caddyfile.          |
-| **deploy**     | Copies the source to `<install>/src`, builds the frontend bundle and the backend image, starts the stack. |
-| **finalize**   | Hardens permissions, configures the firewall, installs the `aether` CLI and the systemd unit, then runs a post-install security check. |
+| **dependencies** | Installs Docker if missing, plus `curl`, `openssl`, `git`, and `ufw` if absent.                  |
+| **configure**  | Generates every secret, writes `.env` (mode 600), `instance.json`, and the Caddyfile.              |
+| **deploy**     | Copies the source (git metadata included) to `<install>/src`, creates `data/`, builds the frontend bundle and the backend image, starts the stack. |
+| **finalize**   | Hardens permissions, configures the firewall, installs the `aether` CLI and the `aether.service` unit, and runs a post-install security check. |
+| **local agent** | Creates the `aether-agent` user, installs the host agent, pairs it with this backend, and verifies the connection **on both sides**. |
+| **summary**    | Prints the URL, the install directory, and the first steps.                                        |
+
+The local-agent stage is mandatory: if the agent does not come up and confirm its handshake, the
+install fails rather than reporting success for a host that cannot be managed.
 
 ### Secrets
 
@@ -108,6 +116,28 @@ Generated with `openssl rand` — never `$RANDOM`. Each lives in its own file un
 `<install>/secrets` (directory `700`, files `600`). They are never echoed, never written to the
 install log, and **never regenerated on an upgrade**: rotating `ENCRYPTION_KEY` would make existing
 ciphertext permanently unreadable.
+
+### The host agent
+
+The installer generates a UUID and a 256-bit pairing token for the local agent, stores **only the
+SHA-256 hash** in `aether.host_agents` (scope `local`, no owner), and hands the plaintext to the
+agent through `local-agent/agent.env` (mode 600, owned by the service user). The token is never
+printed.
+
+The agent runs as `aether-agent`, with the same numeric uid/gid as the backend container (1001), so
+both can write the workspace bind mount. Its unit is hardened:
+
+```
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=<install>/data/workspace
+```
+
+"Connected" is only claimed when the agent's journal shows `paired with backend` **and** the backend
+log shows `agent connected` for that agent id. One side alone is a half-open socket.
 
 ### The firewall
 
@@ -117,9 +147,8 @@ rule set that drops an established SSH session locks you out of the host you are
 
 ### The post-install check
 
-The last thing `finalize` does is verify that 5432, 6379, and 3000 are **not** listening on the
-host's public interfaces. Only Caddy publishes ports. If any internal port is exposed, the installer
-says so.
+`finalize` verifies that 5432, 6379, and 3000 are **not** listening on the host's public interfaces.
+Only Caddy publishes ports. If any internal port is exposed, the installer says so.
 
 ---
 
@@ -127,11 +156,11 @@ says so.
 
 `write_caddyfile` picks one of three, depending on the flags:
 
-| Situation                  | Caddy site address      | Result                                    |
-| -------------------------- | ----------------------- | ----------------------------------------- |
-| `--domain`, HTTPS          | `aether.example.com`    | Automatic Let's Encrypt certificate        |
-| `--domain --no-https`      | `http://aether.example.com` | Plain HTTP, no certificate             |
-| No domain                  | `:80`                   | IP-only access, plain HTTP                 |
+| Situation             | Caddy site address          | Result                            |
+| --------------------- | --------------------------- | --------------------------------- |
+| `--domain`, HTTPS     | `aether.example.com`        | Automatic Let's Encrypt certificate |
+| `--domain --no-https` | `http://aether.example.com` | Plain HTTP, no certificate         |
+| No domain             | `:80`                       | IP-only access, plain HTTP         |
 
 The two non-HTTPS modes exist because an empty Caddy site address is invalid and would stop the proxy
 starting — so the file is rewritten to `:80` for IP-only rather than left with an unsubstituted
@@ -148,7 +177,8 @@ The installer prints the URL, the install directory, the installation ID, and wh
 token is. Then:
 
 1. Open the URL and create the owner account — see [FIRST-RUN.md](../getting-started/FIRST-RUN.md).
-2. `sudo aether status` to confirm everything is up.
+2. `aether status` to confirm every component is up (including `Host Agent: connected`).
+3. `aether doctor` exits non-zero and names a fix for anything that is wrong.
 
 ---
 
@@ -159,77 +189,102 @@ token is. Then:
   .env                     mode 600 — every secret
   docker-compose.yml       the production stack
   caddy/Caddyfile          reverse proxy config for this instance
-  deploy/Caddyfile         symlink → ../caddy/Caddyfile
-  packages/frontend/dist   symlink → ../../static
   static/                  the built frontend the backend serves
-  src/                     application source
-  scripts/                 aether CLI + backup/restore/update/uninstall/setup-host
+  src/                     application source, a git checkout (updates fast-forward it)
+  scripts/                 aether CLI + backup/restore/update/uninstall
   lib/                     core.sh, utils.sh — sourced by those scripts
+  data/workspace/          bind-mounted into the backend as /opt/aether/workspace
+  data/uploads/            bind-mounted into the backend as /opt/aether/uploads
+  local-agent/             the host agent install + agent.env (mode 600)
+  local-agent.json         which agent id this installation is paired with
   secrets/                 mode 700
-  backups/
-  state/
+  backups/                 archives + last-update.json
+  state/                   update lock + the frontend builder compose file
   install.state            stage checkpoints
   instance.json            installation id, version, mode
 ```
 
-The two symlinks exist because `docker-compose.prod.yml` mounts `./deploy/Caddyfile` and
-`./packages/frontend/dist` relative to itself, while the installer keeps those files in `caddy/` and
-`static/`.
+`docker-compose.yml` is not a verbatim copy of `docker-compose.prod.yml`. That file is written for a
+repo-root checkout — build context `.`, Caddyfile under `./deploy`, bundle in
+`packages/frontend/dist` — and the installer rewrites those three paths to `./src`, `./caddy`, and
+`./static` as it installs it (`deploy/lib/deploy.sh:install_compose_file` asserts all three
+substitutions landed and that the result passes `docker compose config`). Editing the paths in the
+installed copy will be undone by the next update; edit the source file.
+
+`data/` is a bind mount rather than a named volume on purpose: the host agent runs as a systemd
+service on this machine and must see exactly the tree the backend serves, which a named volume is
+invisible to. Both the backend container and the agent run as uid/gid 1001.
+
+`static.new` and `static.old` appear briefly during a frontend build. The bundle is built into
+`static.new` and swapped in only once it is complete, so a failed build cannot leave a running
+instance with no UI.
 
 ---
 
 ## The `aether` CLI
 
-Installed to `/usr/local/bin/aether`.
+Installed to `<install>/scripts/aether` and symlinked to `/usr/local/bin/aether`.
 
-| Command                     | Does                                                          |
-| --------------------------- | ------------------------------------------------------------- |
-| `aether status`             | Container status                                               |
-| `aether logs [service]`     | Follow logs (all services, or one)                             |
-| `aether start` / `stop` / `restart` | Control the stack                                     |
-| `aether update [--check]`   | Update to the latest source — **backs up first**               |
-| `aether backup`             | Full backup: database, volumes, configuration                  |
-| `aether restore <archive>`  | Restore from a backup archive                                  |
-| `aether rollback <archive>` | Same as `restore`; the name `update` points you at             |
-| `aether repair`             | Validate the compose file and recreate containers              |
-| `aether uninstall [--purge]` | Remove Aether. `--purge` also deletes volumes and backups      |
-
-`update` and `repair` are the two that matter day to day. `update` takes a full backup before it
-touches anything, which is what makes `rollback` meaningful — see
-[BACKUP-AND-RESTORE.md](BACKUP-AND-RESTORE.md).
+| Command                        | Does                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------- |
+| `aether status`                | Docker daemon, containers, HTTP, database, cache, terminal, host agent, disk, memory, TLS expiry, git commit, app version. Exits non-zero if something is wrong. |
+| `aether doctor`                | One line per check: pass/fail, the cause, and the command that fixes it. Exits non-zero when unhealthy. |
+| `aether logs [service] [-f] [--tail N]` | Container logs. Services: `redis`, `postgres`, `backend`, `caddy`.              |
+| `aether start` / `stop` / `restart` | Control the stack (never the data).                                               |
+| `aether update [--check] [--no-pull] [--yes]` | Git-based update with automatic rollback. See below.                     |
+| `aether backup` / `aether backup list` | Create an archive, or list the ones on disk.                                    |
+| `aether restore <archive>`     | Restore database, data and configuration from an archive. Destructive; confirms first. |
+| `aether rollback [archive]`    | Restore the archive recorded by the last update, or a named one.                        |
+| `aether repair`                | Validate the compose file, recreate only unhealthy services, restart the backend so pending migrations apply, and reinstall/re-register the local host agent if it is not connected. Safe to run at any time. |
+| `aether version`               | App version, git branch, full commit, install dir, installation ID.                     |
+| `aether install [--resume]`    | Re-run the installer against this directory, skipping completed stages.                  |
+| `aether uninstall [--purge]`   | Remove the runtime. Keeps data unless `--purge`, which asks first.                       |
+| `aether help`                  | Usage.                                                                                  |
 
 ---
 
 ## Updating
 
 ```bash
-sudo aether update              # check out the latest source, rebuild, restart
-sudo aether update --check      # report whether an update is available, change nothing
-sudo aether update --no-pull    # rebuild the current source without fetching
+aether update              # fetch, compare, back up, apply, verify
+aether update --check      # report whether an update is available; change nothing
+aether update --no-pull    # rebuild the current source without fetching
 ```
 
-It backs up, fast-forwards the source, rebuilds the frontend bundle and the backend image, restarts,
-and waits for the backend to report healthy. If the health check fails it tells you the archive to
-roll back to.
+`aether update`:
 
-The update uses `git merge --ff-only`. A deployed instance must never end up in a conflicted merge
-state with nobody around to resolve it.
+1. Takes the update lock (`<install>/state/update.lock`) and refuses to run a source tree with
+   uncommitted changes to tracked files — untracked build leftovers do not count, but a hand-edited
+   file does.
+2. `git fetch --depth 1 origin main`, then compares `HEAD` with `FETCH_HEAD`. If they match it prints
+   `Already up to date (<short>)` and exits 0 without touching anything.
+3. Takes a full backup (database, data, configuration, metadata) and records the archive and the
+   current commit in `backups/last-update.json`.
+4. Fast-forwards with `git merge --ff-only` — a deployed instance must never end up in a conflicted
+   merge state with nobody around to resolve it.
+5. Rebuilds the frontend bundle and the backend image, runs the migrations explicitly, restarts, and
+   waits for health.
+6. If anything in step 5 fails: `git reset --hard` to the previous commit, restore the pre-update
+   archive, restart, and re-verify. The update then exits non-zero saying which revision it is on.
+
+The update is pull-only. It never pushes to any remote.
 
 ---
 
 ## systemd
 
 ```
-aether.service    Type=oneshot, RemainAfterExit=yes
+aether.service             Type=oneshot, RemainAfterExit=yes — brings the docker compose stack up at boot
+aether-host-agent.service  Type=simple — the local host agent
 ```
 
-The unit does not supervise the application — it asks Docker to bring the stack up at boot. Each
-container's `restart: unless-stopped` handles resilience, so a crashed backend restarts in seconds
-without waiting on systemd.
+The first unit does not supervise the application — it asks Docker to bring the stack up at boot.
+Each container's `restart: unless-stopped` handles resilience, so a crashed backend restarts in
+seconds without waiting on systemd.
 
 ```bash
-systemctl status aether
-journalctl -u aether -n 50
+systemctl status aether aether-host-agent
+journalctl -u aether-host-agent -n 50
 ```
 
 ---
@@ -237,16 +292,21 @@ journalctl -u aether -n 50
 ## Uninstalling
 
 ```bash
-sudo aether uninstall           # stop and remove, keep data, backups, and .env
-sudo aether uninstall --purge   # remove everything, including volumes and backups
+aether uninstall           # remove the runtime; keep data, secrets, and backups
+aether uninstall --purge   # remove everything, after confirming
 ```
 
-The non-purge path preserves `.env`, `secrets/`, `backups/`, and the Docker volumes, and additionally
-snapshots them into `backups/uninstall-<timestamp>/`. Reinstalling into the same directory reuses the
-existing volumes.
+Both stop `aether.service` and `aether-host-agent.service`, run `docker compose down`, and remove the
+CLI symlink. Only the two units and this compose project are touched — nothing else on the host.
 
-**`--purge` deletes the backups too**, since they live under the install directory. If you want the
-data gone but the backups kept, copy `backups/` somewhere else first.
+The default path additionally snapshots `.env` and `secrets/` into `backups/uninstall-<timestamp>/`
+and leaves these in place: `data/`, `backups/`, `secrets/`, `.env`, `instance.json`,
+`local-agent/`, `local-agent.json`. Reinstalling into the same directory picks them up again,
+including the agent's existing identity.
+
+`--purge` removes the install directory (which contains the backups, since they live there), the
+compose volumes, and locally built images. If you want the data gone but the backups kept, copy
+`backups/` somewhere else first.
 
 ---
 
@@ -254,20 +314,26 @@ data gone but the backups kept, copy `backups/` somewhere else first.
 
 **`Ports 80/443 are already in use`**
 Something else is serving HTTP — often a preinstalled nginx or apache. Stop it, or install with
-`--no-https` and a different port mapping.
+`--no-https`.
 
 **Certificate issuance fails**
-DNS for the domain does not yet point at this host, or 80 is not reachable from the internet (ACME
-HTTP-01 needs it). Check with `dig +short your-domain`, then retry `sudo aether repair`.
+DNS for the domain does not yet point at this host, or port 80 is not reachable from the internet
+(ACME HTTP-01 needs it). Check with `dig +short your-domain`, then retry `aether repair`. The install
+itself distinguishes this case and tells you the stack is up on HTTP.
 
 **`docker compose` needs sudo**
-The invoking user is not in the `docker` group. The installer's helper scripts handle this via a
-`docker_cmd` wrapper that falls back to `sudo`, so this only affects commands you type yourself.
+The invoking user is not in the `docker` group. The CLI and helper scripts go through a `docker_cmd`
+wrapper that falls back to `sudo`, so this only affects commands you type yourself.
 
 **Install failed partway**
-Re-run with `--resume` to skip the stages already marked done. The installer logs to
-`/tmp/aether-install.log` and writes an installation ID you can quote in a bug report.
+Re-run the same one-liner with `--resume` (or `aether install --resume`) to skip the stages already
+marked done. The installer logs to `/tmp/aether-install.log` and writes an installation ID you can
+quote in a bug report.
 
 **`aether update` left the stack unhealthy**
-It prints the archive it took before starting. Restore it:
-`sudo aether rollback /opt/aether/backups/aether-backup-<timestamp>.tar.gz`
+It rolls back by itself and says so. If the automatic rollback failed too, it prints the archive:
+`aether rollback /opt/aether/backups/aether-backup-<timestamp>.tar.gz`
+
+**`Host Agent: service up, backend has not acknowledged it`**
+The agent process is running but the handshake did not complete. Check both ends:
+`sudo journalctl -u aether-host-agent -n 50 --no-pager` and `aether logs --tail 50 backend`.

@@ -1,37 +1,49 @@
 # Backup and restore
 
-Aether keeps all of its state in two places: the **PostgreSQL database** and the **data volumes**
-(workspace + uploads). Both live inside Docker named volumes, so they survive `docker compose down`
-— but they do not survive a lost host, and `docker compose down -v` deletes them.
+An Aether instance keeps its state in two places: the **PostgreSQL database** and the **data
+directory** (`data/workspace` + `data/uploads`, bind-mounted into the backend). The database lives in
+a Docker named volume; the data directory lives on the host, because the local host agent runs as a
+systemd service on the same machine and must see exactly the tree the backend serves.
 
-`aether backup` produces a single archive containing everything needed to rebuild an instance.
+`aether backup` produces one archive containing everything needed to rebuild the instance.
 
 ---
 
 ## What is in a backup
 
-| Component       | Source                              | Why                                                   |
-| --------------- | ----------------------------------- | ----------------------------------------------------- |
-| Database        | `pg_dump` of the `postgres` service  | Users, sessions, audit log, settings, agent registry   |
-| Workspace       | `workspace_data` volume              | Every file users created through the Files app         |
-| Uploads         | `uploads_data` volume                | Uploaded files                                        |
-| Configuration   | `.env`, `docker-compose.yml`, Caddyfile | Secrets and deployment shape                       |
+| Component     | Source                                        | Why                                                       |
+| ------------- | --------------------------------------------- | --------------------------------------------------------- |
+| Database      | `pg_dump` of the `postgres` service            | Users, sessions, audit log, settings, agent registry        |
+| Data          | `<install>/data/`                              | Workspace files and uploads                                |
+| Configuration | `.env`, `docker-compose.yml`, `caddy/Caddyfile` | Secrets and deployment shape                              |
+| Metadata      | `instance.json`, `install.state`, `local-agent.json`, `local-agent/agent.env` | Instance identity, and the local agent's identity so the restored host reconnects |
 
-**Redis is not backed up, deliberately.** It holds WebSocket tickets and rate-limit counters, all of
-which are reconstructible. Losing Redis loses nothing durable.
+In the archive those are `database.sql.gz`, `data.tar.gz`, `config/`, and `metadata/`, under one
+top-level directory named after the archive.
+
+Two things are deliberately absent. **Redis** holds only WebSocket tickets and rate-limit counters —
+all reconstructible, so losing it loses nothing durable. The **frontend bundle** (`static/`) is
+rebuilt on restore rather than archived: it is an artifact of one commit, and shipping an old bundle
+to a newer backend is the version skew the docs warn about.
+
+Each step fails hard rather than skipping. An earlier version looked for `pg_dump` on the *host*, and
+on a Docker deployment it could never find it — so it logged a warning, produced an archive with no
+database in it, and still printed "Backup created successfully". A backup that silently omits the
+data is worse than no backup, because it is trusted.
 
 ### The archive is a secret
 
-The archive contains `.env`, which holds `JWT_SECRET` and `ENCRYPTION_KEY`. Anyone with the archive
-can mint valid tokens for your instance and decrypt data written by it. Treat a backup like the
-private key it contains: encrypt it before it leaves the host, and never commit one.
+The archive contains `.env` (`JWT_SECRET`, `ENCRYPTION_KEY`) and the host agent's pairing token in
+`metadata/agent.env`. Anyone with the archive can mint valid tokens for your instance, decrypt data
+written by it, and connect an agent it controls. Treat a backup like the private keys it contains:
+encrypt it before it leaves the host, and never commit one.
 
 ---
 
 ## Taking a backup
 
 ```bash
-sudo aether backup
+aether backup
 ```
 
 Writes:
@@ -41,10 +53,14 @@ Writes:
 /opt/aether/backups/aether-backup-20260917-101500.tar.gz.sha256
 ```
 
+```bash
+aether backup list        # ARCHIVE  SIZE  CREATED
+```
+
 The checksum is what lets a restore tell a truncated archive from a complete one — `tar -tzf` only
 proves the gzip stream is intact, not that the archive finished being written.
 
-Every step is mandatory. If `pg_dump` fails, or the dump comes out empty, or the volume archive is
+Every step is mandatory. If `pg_dump` fails, or the dump comes out empty, or the data archive is
 empty, the script **fails and says so** rather than writing a partial archive. An earlier version
 checked for `pg_dump` on the *host* and, not finding it, logged a warning and continued — producing
 a backup with no database in it while printing "Backup created successfully". A backup that
@@ -82,31 +98,43 @@ scp /opt/aether/backups/aether-backup-*.tar.gz.gpg backup-host:/srv/aether/
 ## Restoring
 
 ```bash
-sudo aether restore /opt/aether/backups/aether-backup-20260917-101500.tar.gz
+aether restore /opt/aether/backups/aether-backup-20260917-101500.tar.gz
 ```
 
-or, equivalently:
+To undo the last `aether update`, you do not need the filename — the update records it:
 
 ```bash
-sudo aether rollback /opt/aether/backups/aether-backup-20260917-101500.tar.gz
+aether rollback                  # uses backups/last-update.json
+aether rollback <archive>        # or an archive you name
 ```
-
-`rollback` and `restore` are the same operation. The name differs because `aether update` tells you
-to roll back when a health check fails.
 
 ### What it does, in order
 
-1. **Verifies the checksum**, if a `.sha256` sits beside the archive. A mismatch aborts.
-2. **Asks for confirmation** — this replaces the database, workspace, and uploads. (`AETHER_YES=true`
-   skips the prompt.)
-3. **Stops the backend**, so nothing is writing while its data is replaced.
+1. **Verifies the checksum.** A missing `.sha256` is a failure, not a warning: `tar -tzf` cannot
+   detect a truncated archive. To force it anyway, `AETHER_ALLOW_UNVERIFIED=true aether restore …`.
+2. **Asks for confirmation** — this replaces the database, the data directory, and the Caddyfile.
+   (`AETHER_YES=true` skips the prompt.)
+3. **Stops the backend and the local host agent**, so nothing is writing while its data is replaced
+   and the journal does not fill with reconnection noise.
 4. **Drops and recreates the database**, then reloads the dump.
-5. **Clears and repopulates the volumes.** Clearing first matters: without it, files deleted since
-   the backup was taken would survive as stale leftovers, making the restore a merge rather than a
-   rollback. Files are then `chown`ed back to the app uid (`1001`), because a root container wrote
-   them.
+5. **Clears and repopulates the data directory.** Clearing first matters: without it, files deleted
+   since the backup was taken would survive as stale leftovers, making the restore a merge rather
+   than a rollback. Files are then `chown`ed back to the app uid (`1001`), because a root container
+   wrote them.
 6. **Preserves your current `.env`** and leaves it in place — see below.
-7. **Starts the stack** and waits for the backend to report healthy.
+7. **Restores the local agent's identity** (`local-agent/agent.env`, `local-agent.json`) so the agent
+   matches the `host_agents` rows the restored database contains.
+8. **Rebuilds the frontend bundle if it is missing.** The bundle is not in the archive — it is a
+   build artifact of a particular commit, and restoring an old one next to a possibly-newer backend
+   is version skew. It is rebuilt at the current commit instead. A restore onto a host that lost
+   `/opt/aether/static` otherwise comes back with a working API and no UI, which the `/health` probe
+   cannot see.
+9. **Starts the stack, waits for the backend to report healthy *with a reachable database*, then
+   waits for the host agent to reconnect.** If either fails, the restore **exits non-zero** and says
+   so. A restore that leaves the instance unhealthy has not restored the instance.
+
+`instance.json` and `install.state` are deliberately *not* restored: they describe the installation
+that is running now, and the archive's copies are older.
 
 ### Your `.env` is not overwritten
 
@@ -121,11 +149,11 @@ Caddyfile *is* restored, since it carries no secrets and may legitimately need r
 ### Restoring onto a fresh host
 
 ```bash
-# 1. Install Aether normally — this creates the volumes and the layout.
-sudo bash install.sh
+# 1. Install Aether normally — this creates the layout, the volumes, and the agent.
+curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh | bash
 
 # 2. Copy the archive over and restore it.
-sudo aether restore /root/aether-backup-20260917-101500.tar.gz
+aether restore /root/aether-backup-20260917-101500.tar.gz
 ```
 
 You do **not** need to recreate the `.env` by hand. Restoring onto a new host keeps the new host's
@@ -154,29 +182,35 @@ Test a restore on a throwaway host before you need one. An untested backup is a 
 
 ## Upgrade safety
 
-`aether update` takes a full backup **before** it touches anything, into the same
-`backups/` directory. If the new version fails its health check, the update says so and points at
-that archive. That is the intended rollback path:
+`aether update` takes a full backup **before** it touches anything, into the same `backups/`
+directory, and records it in `backups/last-update.json` along with the commit it started from. If the
+new version fails its health check the update rolls back by itself — `git reset --hard` plus
+`aether restore` of that archive — and only reports failure if the rollback failed too:
 
 ```bash
-sudo aether rollback /opt/aether/backups/aether-backup-<the one update just made>.tar.gz
+aether rollback        # the archive the last update recorded
 ```
 
 ---
 
 ## Troubleshooting
 
-**`Could not find the Docker volume ending in '_workspace_data'`**
-The stack has never been started, or the volumes were removed with `down -v`. Bring it up with
-`aether start` first.
+**`No checksum file at …sha256, so the archive cannot be verified`**
+Either the `.sha256` was deleted, or the archive predates checksum support. Re-create the backup if
+the source is still up; otherwise restore with `AETHER_ALLOW_UNVERIFIED=true` and accept that a
+truncated archive will not be detected.
 
 **`pg_dump failed`**
 The `postgres` container is not running or not healthy. Check `aether status` and `aether logs
-postgres`. Note that this is a hard failure by design — the alternative is an archive with no
-database in it.
+postgres`. This is a hard failure by design — the alternative is an archive with no database in it.
 
 **`Checksum mismatch`**
 The archive is corrupt or was modified in transit. Do not override this. Restore an older archive.
+
+**`Restore failed: the host agent did not reconnect`**
+The restored database contains a different `host_agents` row than the agent on this host presents.
+Either the archive came from a different installation, or `metadata/agent.env` was not in it. Pair
+the host again from Settings → Host agents, or restore an archive that contains the matching agent.
 
 **Restore succeeds but the backend never becomes healthy**
 Usually a schema-version mismatch: an old dump against a newer backend. The backend's migration

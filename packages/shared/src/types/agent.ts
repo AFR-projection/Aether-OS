@@ -17,8 +17,14 @@
 export interface HostAgent {
   agentId: string;
   label: string;
-  /** User who created the pairing; only they can list or revoke it. */
-  ownerUserId: string;
+  /**
+   * User who created the pairing; only they can list or revoke it.
+   *
+   * `null` for an instance-scoped agent — the one the installer pairs on the
+   * machine the backend itself runs on, which every user of that instance can
+   * see and use. Distinguished in `host_agents` by `scope = 'local'`.
+   */
+  ownerUserId: string | null;
   createdAt: string;
   /** Whether the agent currently holds an open `/ws/agent` connection. */
   connected: boolean;
