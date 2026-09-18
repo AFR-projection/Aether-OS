@@ -87,15 +87,29 @@ agent_running() {
 # The agent is only "connected" when the backend has accepted its handshake.
 # The backend's log is the one place that fact is recorded without credentials.
 #
+# The backend logs "agent connected" on handshake and "agent disconnected" on
+# close, both tagged with the agent id. A connection that has been up for a
+# while therefore has no *recent* line — so a narrow time window reports a
+# perfectly healthy long-lived agent as "not acknowledged" (the API's live
+# registry still says connected). Instead of a window, read the whole backend
+# log for this agent and let the LAST connect/disconnect event decide: that is
+# the current state, however long ago it changed. Connect/disconnect are rare,
+# so the filtered set is tiny, and docker keeps the log for the container's
+# lifetime (and the agent re-handshakes after any backend restart).
+#
 # Without a local-agent.json there is no agent installed on this host at all, so
 # this reports NOT connected — a remote-only install must not be described as
 # having a working local agent just because the unit is absent rather than dead.
 backend_saw_agent() {
-    local agent_id="$1" since="${2:-15 min ago}"
-    compose logs --since "$since" backend 2>/dev/null \
-        | grep -q "\"agentId\":\"$agent_id\".*agent connected" \
-        || compose logs --since "$since" backend 2>/dev/null \
-            | grep -q "agent connected.*$agent_id"
+    local agent_id="$1"
+    local last_event
+    last_event=$(compose logs backend 2>/dev/null \
+        | grep -aE "\"agentId\":\"$agent_id\".*agent (connected|disconnected)" \
+        | tail -n1)
+    case "$last_event" in
+        *"agent connected"*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 agent_connected() {

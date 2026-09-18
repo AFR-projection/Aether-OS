@@ -293,6 +293,16 @@ install_local_agent() {
     ensure_agent_identity
     pair_local_agent "$agent_id" "$token_hash"
 
+    # Write the record as soon as the identity is paired, BEFORE the runtime
+    # install that can fail. The record ("a local agent is paired on this host")
+    # is true the moment pair_local_agent commits its DB row; it does not depend
+    # on the build succeeding. Writing it after setup-host.sh meant a failed
+    # build (e.g. the CHDIR permission bug) left a paired agent with no
+    # local-agent.json, so `aether doctor`/`status`/`repair` could not even tell
+    # an agent existed here — reporting "record is missing" instead of guiding a
+    # retry. Recording it first makes the failure recoverable.
+    write_agent_record "$agent_id"
+
     # setup-host.sh owns one implementation of: copy the source, build the
     # agent, write agent.env (600), install the unit, start it. Passing the
     # service user is what makes this the unprivileged local agent rather than
@@ -306,8 +316,6 @@ install_local_agent() {
         --install-dir "$AETHER_AGENT_DIR" \
         --repo-dir "$AETHER_SRC_DIR" \
         --service-user "$AETHER_AGENT_USER"
-
-    write_agent_record "$agent_id"
 
     verify_agent_connection "$agent_id" \
         || fatal "Local host agent installation failed: the connection was not confirmed on both sides."
