@@ -110,7 +110,15 @@ resolve_repo() {
     git clone --quiet --depth=1 "$AETHER_REPO_URL" "$tmp" \
         || fatal "Could not clone $AETHER_REPO_URL. Check the network and the URL, then try again."
 
-    find_checkout "$tmp" >/dev/null || fatal "The downloaded repository does not look like Aether Cloud OS (no deploy/lib/install.sh)."
+    # Verify clone succeeded and has expected structure
+    if ! find_checkout "$tmp" >/dev/null; then
+        error "Clone completed but required files are missing."
+        error "Contents of $tmp:"
+        ls -la "$tmp" 2>&1 | head -20 >&2 || true
+        error "Contents of $tmp/deploy:"
+        ls -la "$tmp/deploy" 2>&1 | head -20 >&2 || true
+        fatal "The downloaded repository does not look like Aether Cloud OS (no deploy/lib/install.sh)."
+    fi
     printf '%s' "$tmp"
 }
 
