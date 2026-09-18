@@ -355,6 +355,13 @@ EOF
     # read environment file" before node ever runs.
     if [ "$AETHER_SERVICE_USER" != "root" ]; then
         $SUDO chown "$AETHER_SERVICE_USER:$AETHER_SERVICE_GROUP" "$config_file"
+        # The install dir was created by this root-run script, so it is
+        # root-owned. chmod 700 without chowning it first would lock the service
+        # user out of its own WorkingDirectory — systemd could not chdir into
+        # $AETHER_HOST_INSTALL_DIR/packages/host-agent and the unit would fail
+        # with status=200/CHDIR (Permission denied). Own it, then restrict it,
+        # so 700 keeps the token private while still letting the agent traverse.
+        $SUDO chown "$AETHER_SERVICE_USER:$AETHER_SERVICE_GROUP" "$AETHER_HOST_INSTALL_DIR"
         $SUDO chmod 700 "$AETHER_HOST_INSTALL_DIR"
     fi
 }
