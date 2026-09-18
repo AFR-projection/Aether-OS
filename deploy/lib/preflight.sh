@@ -7,13 +7,17 @@
 # partial installs that would need to be rolled back.
 
 # Blocking thresholds — below these the installer refuses to run at all.
+# RAM is deliberately NOT here: a machine 81 MB short of 2 GB installs and runs
+# fine (Docker's memory pressure is soft, and swap covers a build-time spike),
+# so a hard RAM floor turned working VPSes away for nothing. It is advisory
+# instead — see MIN_RECOMMENDED_RAM_MB below.
 MIN_BLOCK_CPU_CORES=1
-MIN_BLOCK_RAM_MB=2048
 MIN_BLOCK_DISK_GB=20
 
-# Recommended minimums — below these the installer warns and asks.
+# Recommended minimums — below these the installer warns and suggests, but
+# never blocks.
 MIN_RECOMMENDED_CPU_CORES=2
-MIN_RECOMMENDED_RAM_MB=4096
+MIN_RECOMMENDED_RAM_MB=2048
 MIN_RECOMMENDED_DISK_GB=40
 
 check_platform() {
@@ -59,20 +63,26 @@ check_resources() {
 
     info "CPU: ${cpu_cores} cores | RAM: ${ram_mb} MB | Disk: ${disk_gb} GB free"
 
-    # Hard blocks first.
+    # Hard blocks first. RAM is not among them — see below.
     if [ "$cpu_cores" -lt "$MIN_BLOCK_CPU_CORES" ]; then
         fatal "CPU has ${cpu_cores} cores; Aether requires at least ${MIN_BLOCK_CPU_CORES}."
-    fi
-    if [ "$ram_mb" -lt "$MIN_BLOCK_RAM_MB" ]; then
-        fatal "RAM is ${ram_mb} MB; Aether requires at least ${MIN_BLOCK_RAM_MB} MB."
     fi
     if [ "$disk_gb" -lt "$MIN_BLOCK_DISK_GB" ]; then
         fatal "Free disk is ${disk_gb} GB; Aether requires at least ${MIN_BLOCK_DISK_GB} GB."
     fi
 
     # Advisory minimums.
-    [ "$cpu_cores" -ge "$MIN_RECOMMENDED_CPU_CORES" ] || warn "CPU has fewer than ${MIN_RECOMMENDED_CPU_CORES} cores (recommended minimum)."
-    [ "$ram_mb" -ge "$MIN_RECOMMENDED_RAM_MB" ] || warn "RAM is less than 4 GB (recommended minimum)."
+    [ "$cpu_cores" -ge "$MIN_RECOMMENDED_CPU_CORES" ] || warn "CPU has fewer than ${MIN_RECOMMENDED_CPU_CORES} cores (recommended minimum). Builds and concurrent sessions will be slower."
+
+    # RAM is advisory: warn and recommend, never block. Below ~2 GB the
+    # backend still runs, but the frontend build and Docker image builds can be
+    # tight, so point the operator at swap rather than turning them away.
+    if [ "$ram_mb" -lt "$MIN_RECOMMENDED_RAM_MB" ]; then
+        warn "RAM is ${ram_mb} MB, below the recommended ${MIN_RECOMMENDED_RAM_MB} MB. Proceeding."
+        warn "  On a low-memory host, add swap so builds don't get OOM-killed, e.g.:"
+        warn "    fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile"
+        warn "  Make it permanent by adding '/swapfile none swap sw 0 0' to /etc/fstab."
+    fi
     if [ "$disk_gb" -lt "$MIN_RECOMMENDED_DISK_GB" ]; then
         # Warn, do not ask. A 20-40 GB disk is the common VPS size and is above
         # the hard floor, so it installs fine; prompting here turned a healthy

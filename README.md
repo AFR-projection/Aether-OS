@@ -240,7 +240,7 @@ Everything lives under [`docs/`](docs/README.md). Quick index:
 
 | Target       | Needs                                                                                                                                                                          |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Backend host | **Ubuntu 22.04 / 24.04 LTS, x86_64**, with systemd. The installer blocks on anything else. 2 vCPU, 4 GB RAM, 20 GB disk recommended (1 core / 2 GB / 20 GB is the hard floor). |
+| Backend host | **Ubuntu 22.04 / 24.04 LTS, x86_64**, with systemd. The installer blocks on anything else. 2 vCPU, 4 GB RAM, 40 GB disk recommended. Hard floor: 1 core and 20 GB disk. RAM below ~2 GB only warns and suggests adding swap — it does not block. |
 | Managed host | Linux with systemd, Node 20 (the installer provides it), Python 3 + a C++ toolchain for `node-pty`                                                                             |
 | Browser      | Chrome/Edge 90+, Firefox 88+, Safari 14+                                                                                                                                       |
 | Development  | Node 20+, pnpm 8+, Docker                                                                                                                                                      |
