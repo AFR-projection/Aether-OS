@@ -23,6 +23,31 @@ const log = subsystemLogger('migrate');
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/', import.meta.url));
 
+/**
+ * The directory above is derived from this file's location and differs between
+ * a source checkout (`src/db/` → `packages/backend/migrations/`) and the
+ * production image (`dist/db/` → `/opt/aether/app/migrations`). A readdir() on
+ * a path that does not exist throws a bare ENOENT, which reads as a database
+ * problem when it is really a packaging one — so say which it is.
+ */
+async function listMigrationFiles(): Promise<string[]> {
+  try {
+    return (await readdir(MIGRATIONS_DIR, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.sql'))
+      .map((entry) => entry.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(
+        `Migration directory not found at ${MIGRATIONS_DIR}. The application ` +
+          'files and the migrations directory are out of step — in the ' +
+          'production image the Dockerfile must copy packages/backend/migrations ' +
+          'to the directory this path resolves to.'
+      );
+    }
+    throw error;
+  }
+}
+
 interface MigrationFile {
   id: string;
   absolutePath: string;
@@ -48,11 +73,7 @@ async function ensureMigrationsTable(): Promise<void> {
 }
 
 async function loadMigrationFiles(): Promise<MigrationFile[]> {
-  const entries = await readdir(MIGRATIONS_DIR, { withFileTypes: true });
-  const sqlFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.sql'))
-    .map((entry) => entry.name)
-    .sort((a, b) => a.localeCompare(b));
+  const sqlFiles = (await listMigrationFiles()).sort((a, b) => a.localeCompare(b));
 
   const files: MigrationFile[] = [];
   for (const name of sqlFiles) {

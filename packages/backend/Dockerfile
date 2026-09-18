@@ -36,11 +36,14 @@ RUN groupadd --system --gid 1001 aether \
 
 WORKDIR /opt/aether/app
 COPY --chown=aether:aether --from=builder /deploy/backend ./
-# Migrations are resolved relative to dist/db at runtime:
-#   ../../migrations/  →  /opt/aether/migrations/
-# The installer builds from source, so this path exists on the host too;
-# copy them into the image so a standalone container image also works.
-COPY --chown=aether:aether packages/backend/migrations /opt/aether/migrations
+# The migration runner resolves its directory as
+#   new URL('../../migrations/', import.meta.url)
+# and it runs as /opt/aether/app/dist/db/migrate.js, so that URL resolves to
+# /opt/aether/app/migrations — NOT /opt/aether/migrations. Copying them
+# elsewhere leaves readdir() with ENOENT, which runMigrations() turns into
+# process.exit(1): the container crash-loops and the stack never reports
+# healthy. Keep this destination in step with src/db/migrate.ts.
+COPY --chown=aether:aether packages/backend/migrations /opt/aether/app/migrations
 
 USER aether
 EXPOSE 3000
