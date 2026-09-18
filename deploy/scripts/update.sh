@@ -159,7 +159,14 @@ reset_to_revision() {
 }
 
 sync_from_repo_dir() {
-    if [ -n "${AETHER_REPO_DIR:-}" ] && [ -d "$AETHER_REPO_DIR" ] && [ "$AETHER_REPO_DIR" != "$AETHER_INSTALL_DIR" ]; then
+    # The rsync below uses --delete, so a wrong AETHER_REPO_DIR would not merely
+    # fail — it would replace the source tree with whatever that directory
+    # happens to hold. Require the directory to actually look like the
+    # repository before pointing anything destructive at it.
+    if [ -n "${AETHER_REPO_DIR:-}" ] &&
+        [ -f "$AETHER_REPO_DIR/package.json" ] &&
+        [ -f "$AETHER_REPO_DIR/deploy/lib/install.sh" ] &&
+        [ "$AETHER_REPO_DIR" != "$AETHER_INSTALL_DIR" ]; then
         info "Re-syncing source from $AETHER_REPO_DIR"
         if command_exists rsync; then
             rsync -a --delete \
@@ -401,6 +408,18 @@ update_aether() {
     # update builds from stale configuration and may silently run old code.
     stage "Regenerating configuration"
     if [ -f "$AETHER_SRC_DIR/deploy/lib/deploy.sh" ]; then
+        # Load this instance's domain settings before regenerating the
+        # Caddyfile. write_caddyfile picks HTTPS when AETHER_DOMAIN is non-empty
+        # and HTTP otherwise, so an unset domain here rewrites an ACME
+        # deployment's Caddyfile to the HTTP-only template on :80 — a silent
+        # downgrade to plain HTTP that the update's own health check cannot see,
+        # because it probes the container rather than through Caddy.
+        AETHER_DOMAIN="$(env_value AETHER_DOMAIN "$AETHER_INSTALL_DIR/.env" || true)"
+        AETHER_ADMIN_EMAIL="$(env_value AETHER_ADMIN_EMAIL "$AETHER_INSTALL_DIR/.env" || true)"
+        AETHER_NO_HTTPS="$(env_value AETHER_NO_HTTPS "$AETHER_INSTALL_DIR/.env" || true)"
+        AETHER_NO_HTTPS="${AETHER_NO_HTTPS:-false}"
+        export AETHER_DOMAIN AETHER_ADMIN_EMAIL AETHER_NO_HTTPS
+
         # Source deploy functions for install_compose_file and write_caddyfile
         # shellcheck source=../lib/deploy.sh
         source "$AETHER_SRC_DIR/deploy/lib/deploy.sh"

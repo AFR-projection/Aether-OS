@@ -153,6 +153,11 @@ AETHER_INSTANCE_ID=${SECRET_INSTANCE_ID}
 
 AETHER_DOMAIN=${AETHER_DOMAIN}
 AETHER_ADMIN_EMAIL=${AETHER_ADMIN_EMAIL}
+# Read back by local-agent.sh (to choose ws:// vs wss:// for the agent's
+# backend URL) and by the `aether` CLI (for the URLs it prints). Without this
+# key both fall back to assuming HTTPS, so a --no-https install dials wss://
+# against a Caddy serving plain HTTP and the local agent never connects.
+AETHER_NO_HTTPS=${AETHER_NO_HTTPS:-false}
 AETHER_VERSION=${AETHER_VERSION}
 EOF
     chmod 600 "$env_file"

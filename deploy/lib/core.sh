@@ -15,6 +15,13 @@ AETHER_STATE_DIR="${AETHER_STATE_DIR:-${AETHER_INSTALL_DIR}/state}"
 # mounts; variables naming <install>/workspace would only invite a script to
 # create a second, empty workspace that the backend never serves.
 AETHER_LOG_DIR="${AETHER_LOG_DIR:-${AETHER_INSTALL_DIR}/logs}"
+# Whether this path was derived here or supplied by the caller. These defaults
+# are computed before install.sh parses --dir, so a moved install root would
+# otherwise generate secrets under the *default* root — and a later install
+# with a different --dir would silently reuse them. install.sh recomputes this
+# one when --dir was given, but only if it was not set explicitly.
+AETHER_SECRETS_DIR_DEFAULTED=false
+[ -n "${AETHER_SECRETS_DIR:-}" ] || AETHER_SECRETS_DIR_DEFAULTED=true
 AETHER_SECRETS_DIR="${AETHER_SECRETS_DIR:-${AETHER_INSTALL_DIR}/secrets}"
 AETHER_LOG_FILE="${AETHER_LOG_FILE:-/tmp/aether-install.log}"
 AETHER_LOCK_FILE="${AETHER_LOCK_FILE:-/tmp/aether-install.lock}"
@@ -23,7 +30,24 @@ AETHER_LOCK_FILE="${AETHER_LOCK_FILE:-/tmp/aether-install.lock}"
 AETHER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # The repository the installer deploys from (set by the root install.sh).
-AETHER_REPO_DIR="${AETHER_REPO_DIR:-$(cd "$AETHER_LIB_DIR/../.." && pwd)}"
+#
+# The fallback assumes this file sits at <repo>/deploy/lib, which is true in a
+# checkout but NOT once core.sh has been copied into an installation at
+# <install>/lib — there "../.." is the install directory's *parent*, i.e. /opt
+# for the default /opt/aether. update.sh rsyncs from this path with --delete,
+# so a wrong value would replace the source tree with a copy of /opt. The guess
+# is therefore accepted only when the directory actually looks like the
+# repository; otherwise it stays empty and callers take their safe branch.
+if [ -z "${AETHER_REPO_DIR:-}" ]; then
+    _aether_repo_candidate="$(cd "$AETHER_LIB_DIR/../.." 2>/dev/null && pwd || true)"
+    if [ -n "$_aether_repo_candidate" ] &&
+        [ -f "$_aether_repo_candidate/package.json" ] &&
+        [ -f "$_aether_repo_candidate/deploy/lib/install.sh" ]; then
+        AETHER_REPO_DIR="$_aether_repo_candidate"
+    fi
+    unset _aether_repo_candidate
+fi
+AETHER_REPO_DIR="${AETHER_REPO_DIR:-}"
 
 # Set by preflight: "sudo" for unprivileged users, "" when already root.
 #

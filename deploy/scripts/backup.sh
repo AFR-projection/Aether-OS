@@ -182,8 +182,6 @@ create_archive() {
     # A checksum so a restore can tell a truncated archive from a good one —
     # `tar -tzf` only proves the gzip stream is intact, not that it is complete.
     ( cd "$AETHER_BACKUP_DIR" && sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256" )
-
-    printf '%s' "$archive"
 }
 
 clean_old_backups() {
@@ -214,7 +212,12 @@ create_backup() {
     backup_configuration "$work_dir"
     backup_metadata "$work_dir"
 
-    archive=$(create_archive "$work_dir" "$name")
+    # Derived from the name rather than captured from create_archive's stdout:
+    # info() logs through `tee` to stdout, so a command substitution would fold
+    # the log line into the path and print a two-line "restore" command that
+    # cannot be copied and pasted.
+    create_archive "$work_dir" "$name"
+    archive="$AETHER_BACKUP_DIR/$name.tar.gz"
     clean_old_backups
 
     printf '\n'

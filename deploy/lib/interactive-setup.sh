@@ -194,9 +194,13 @@ prompt_domain() {
                     # Remembered so the configure stage's own DNS check honours
                     # this choice instead of aborting the install the operator
                     # just told us to continue past.
+                    #
+                    # Deliberately no `break`: break leaves the `while`, not the
+                    # `case`, which would skip the email prompt and the
+                    # AETHER_DOMAIN assignment below and return with nothing set
+                    # — turning an accepted domain into an IP-only install.
                     AETHER_SKIP_DNS_CHECK="true"
                     export AETHER_SKIP_DNS_CHECK
-                    break
                     ;;
                 c|C) continue ;;
                 i|I)
@@ -302,6 +306,15 @@ run_interactive_setup() {
         return 0
     fi
 
-    prompt_domain
+    # A domain supplied through --domain, or through the environment, is a
+    # decision already made. Re-prompting would let a bare Enter silently
+    # replace a requested HTTPS install with IP-only HTTP — which is exactly
+    # what configure.sh promises not to do.
+    if [ -n "${AETHER_DOMAIN:-}" ]; then
+        info "Domain already configured (${AETHER_DOMAIN}); skipping the domain prompt."
+    else
+        prompt_domain
+    fi
+
     prompt_master_account
 }

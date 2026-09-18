@@ -61,11 +61,13 @@ EOF
 }
 
 parse_args() {
+    local dir_overridden=false
+
     while [ $# -gt 0 ]; do
         case "$1" in
             --domain) AETHER_DOMAIN="$2"; shift 2 ;;
             --email) AETHER_ADMIN_EMAIL="$2"; shift 2 ;;
-            --dir) AETHER_INSTALL_DIR="$2"; shift 2 ;;
+            --dir) AETHER_INSTALL_DIR="$2"; dir_overridden=true; shift 2 ;;
             --yes) AETHER_YES=true; shift ;;
             --resume) AETHER_RESUME=true; shift ;;
             --dry-run) AETHER_DRY_RUN=true; shift ;;
@@ -75,11 +77,19 @@ parse_args() {
             *) printf 'Unknown option: %s\n\n' "$1" >&2; usage; exit 2 ;;
         esac
     done
+
+    # core.sh derived the secrets directory from the default install root before
+    # --dir was parsed. Move it with the root, unless the caller set it
+    # explicitly, so a --dir install keeps its secrets under --dir.
+    if [ "$dir_overridden" = true ] && [ "${AETHER_SECRETS_DIR_DEFAULTED:-false}" = "true" ]; then
+        AETHER_SECRETS_DIR="$AETHER_INSTALL_DIR/secrets"
+    fi
+
     export AETHER_DOMAIN="${AETHER_DOMAIN:-}" AETHER_ADMIN_EMAIL="${AETHER_ADMIN_EMAIL:-}" \
         AETHER_YES="${AETHER_YES:-false}" AETHER_RESUME="${AETHER_RESUME:-false}" \
         AETHER_DRY_RUN="${AETHER_DRY_RUN:-false}" \
         AETHER_NO_HTTPS="${AETHER_NO_HTTPS:-false}" \
-        AETHER_INSTALL_DIR
+        AETHER_INSTALL_DIR AETHER_SECRETS_DIR
 }
 
 run_stage() {
