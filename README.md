@@ -149,6 +149,7 @@ curl -fsSL https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scrip
 ```
 
 The installer prompts you interactively for:
+
 - Domain (validates DNS points to VPS)
 - Admin email (for Let's Encrypt certificate notices)
 - Master username (alphanumeric, 3-32 chars)
@@ -162,7 +163,8 @@ For automation or CI/CD:
 bash scripts/deploy/setup.sh --yes --domain aether.example.com --email admin@example.com
 ```
 
-**Note:** Non-interactive mode skips master account creation. You'll use the bootstrap token flow in the UI instead.
+**Note:** Non-interactive mode skips master account creation. You'll use the bootstrap token flow in
+the UI instead.
 
 ---
 
@@ -197,16 +199,15 @@ aether restart         # Restart all services
 aether doctor          # Diagnose problems with fix commands
 ```
 
-Full reference: [Deployment Guide](docs/operations/DEPLOYMENT.md)
-aether doctor          # every problem with a cause and the command that fixes it
-aether logs backend    # follow one service: redis | postgres | backend | caddy
-aether backup          # database + data + config + metadata, checksummed
-aether restore <archive>   # verified, then it must come back healthy or it fails
-aether rollback        # undo the last update, using the archive it recorded
-aether update          # git-based: backup → rebuild → migrate → restart → health, auto-rollback
-aether repair          # recreate only what is unhealthy, and re-pair the host agent
-aether version         # app version, branch, exact commit
-aether uninstall       # keeps your data; --purge removes it after confirming
+Full reference: [Deployment Guide](docs/operations/DEPLOYMENT.md) aether doctor # every problem with
+a cause and the command that fixes it aether logs backend # follow one service: redis | postgres |
+backend | caddy aether backup # database + data + config + metadata, checksummed aether restore
+<archive> # verified, then it must come back healthy or it fails aether rollback # undo the last
+update, using the archive it recorded aether update # git-based: backup → rebuild → migrate →
+restart → health, auto-rollback aether repair # recreate only what is unhealthy, and re-pair the
+host agent aether version # app version, branch, exact commit aether uninstall # keeps your data;
+--purge removes it after confirming
+
 ```
 
 `aether update` compares the installed checkout with `origin/main`, prints `Already up to date` when
@@ -253,3 +254,4 @@ path and the installer's checks will not help you.
 ## License
 
 Not yet chosen — see [`package.json`](package.json) (`"license": "PENDING"`).
+```
