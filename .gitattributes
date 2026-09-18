@@ -1,0 +1,13 @@
+# Line endings for files that are executed or parsed on the Linux host.
+#
+# A CRLF checkout makes bash fail with `$'\r': command not found`, and the
+# one-command installer runs these files directly on the VPS. Pinning LF here
+# keeps that true regardless of any contributor's core.autocrlf setting.
+*.sh text eol=lf
+
+# Consumed by Linux tooling (docker build, compose, Caddy, postgres).
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+Caddyfile text eol=lf
+Caddyfile.* text eol=lf
+*.sql text eol=lf

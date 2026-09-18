@@ -25,13 +25,36 @@ validate_dns_points_to_vps() {
     info "Detected VPS IP: $vps_ip"
     info "Checking if $domain resolves to $vps_ip..."
 
-    # Resolve domain to IP
-    local resolved_ip
-    resolved_ip=$(dig +short "$domain" A 2>/dev/null | head -n1 || \
-                  host "$domain" 2>/dev/null | grep "has address" | awk '{print $NF}' | head -n1 || true)
+    # Resolve the domain with whichever tool this host has. The prompts run
+    # before the dependency stage installs dnsutils, so `dig` and `host` are
+    # typically absent on a fresh VPS; `getent ahostsv4` ships with glibc and is
+    # therefore the one that actually works here. Without this fallback every
+    # domain entry would be reported as a DNS failure on a clean machine.
+    local resolved_ip="" resolver=""
+    if command -v dig >/dev/null 2>&1; then
+        resolver="dig"
+        resolved_ip=$(dig +short "$domain" A 2>/dev/null | head -n1 || true)
+    fi
+    if [ -z "$resolved_ip" ] && command -v host >/dev/null 2>&1; then
+        resolver="host"
+        resolved_ip=$(host "$domain" 2>/dev/null | grep "has address" | awk '{print $NF}' | head -n1 || true)
+    fi
+    if [ -z "$resolved_ip" ] && command -v getent >/dev/null 2>&1; then
+        resolver="getent"
+        resolved_ip=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | head -n1 || true)
+    fi
 
+    if [ -z "$resolver" ]; then
+        warn "No DNS lookup tool is available yet (dig/host/getent). Skipping DNS validation."
+        warn "If TLS fails later, confirm the A record for $domain points to $vps_ip."
+        return 0
+    fi
+
+    # A resolver that ran but returned nothing is a genuine "not found": the
+    # domain has no A record. Distinguish it from "no tool", which is not the
+    # user's fault and must not block the install.
     if [ -z "$resolved_ip" ]; then
-        error "DNS lookup failed for $domain"
+        error "DNS lookup failed for $domain (checked with $resolver)"
         error ""
         error "Please ensure:"
         error "  1. DNS A record for $domain points to $vps_ip"
@@ -41,18 +64,17 @@ validate_dns_points_to_vps() {
         return 1
     fi
 
+    # A domain behind Cloudflare (or any proxy) resolves to the proxy's address,
+    # not this VPS. That is a working setup for TLS — the proxy terminates and
+    # forwards — so treat "resolves to something else" as a warning the operator
+    # can accept, not a hard failure.
     if [ "$resolved_ip" = "$vps_ip" ]; then
         info "✓ DNS validation passed: $domain → $vps_ip"
         return 0
-    else
-        error "DNS mismatch!"
-        error "  Domain $domain resolves to: $resolved_ip"
-        error "  But VPS IP is: $vps_ip"
-        error ""
-        error "Please update your DNS A record to point to $vps_ip"
-        error "Then wait for DNS propagation (5-30 minutes typically)"
-        return 1
     fi
+
+    warn "DNS check: $domain resolves to $resolved_ip, but this VPS is $vps_ip"
+    return 1
 }
 
 # Validate username: alphanumeric, underscore, dash, 3-32 chars
@@ -79,8 +101,11 @@ validate_username() {
         return 1
     fi
 
-    if [[ "$username" =~ ^[0-9] ]]; then
-        echo "Username cannot start with a number"
+    # Must start and end with a letter or number. The database stores usernames
+    # lowercase and enforces this same shape (users_username_format); rejecting
+    # it here gives a clear message instead of a database error mid-install.
+    if [[ ! "$username" =~ ^[a-zA-Z0-9].*[a-zA-Z0-9]$ ]] && [[ ! "$username" =~ ^[a-zA-Z0-9]$ ]]; then
+        echo "Username must start and end with a letter or number"
         return 1
     fi
 
@@ -166,6 +191,11 @@ prompt_domain() {
                 r|R) continue ;;
                 s|S)
                     warn "Skipping DNS validation. HTTPS may fail if DNS is not configured correctly."
+                    # Remembered so the configure stage's own DNS check honours
+                    # this choice instead of aborting the install the operator
+                    # just told us to continue past.
+                    AETHER_SKIP_DNS_CHECK="true"
+                    export AETHER_SKIP_DNS_CHECK
                     break
                     ;;
                 c|C) continue ;;

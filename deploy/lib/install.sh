@@ -110,6 +110,25 @@ main() {
     info "Aether Cloud OS install ${AETHER_VERSION} (id ${AETHER_INSTALLATION_ID})"
     info "Install dir: ${AETHER_INSTALL_DIR} | Log: ${AETHER_LOG_FILE}"
 
+    # Reconnect to the terminal for the interactive prompts. Invoked through
+    # `curl … | bash`, this process inherits the download pipe as stdin, so
+    # `[ -t 0 ]` is false and prompt_domain / prompt_master_account would be
+    # skipped without asking anything — the installer would silently deploy with
+    # no domain and no admin account. The controlling terminal is still reachable
+    # at /dev/tty, so point stdin at it. If opening /dev/tty fails — a CI runner,
+    # a detached service, a genuinely headless boot — stdin is left as-is and the
+    # prompts fall back to non-interactive defaults. This is safe because this
+    # script is read from a file, not from stdin, so moving stdin cannot truncate
+    # it. --yes opts out entirely.
+    if [ ! -t 0 ] && [ "${AETHER_YES:-false}" != "true" ]; then
+        if { exec 3</dev/tty; } 2>/dev/null; then
+            exec <&3 3<&-
+            info "Connected to the terminal for interactive setup."
+        else
+            info "No terminal available; interactive prompts will be skipped."
+        fi
+    fi
+
     if [ "${AETHER_DRY_RUN:-false}" = "true" ]; then
         info "=== DRY RUN MODE — no changes will be made ==="
         run_preflight

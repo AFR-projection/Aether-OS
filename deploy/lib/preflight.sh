@@ -74,8 +74,12 @@ check_resources() {
     [ "$cpu_cores" -ge "$MIN_RECOMMENDED_CPU_CORES" ] || warn "CPU has fewer than ${MIN_RECOMMENDED_CPU_CORES} cores (recommended minimum)."
     [ "$ram_mb" -ge "$MIN_RECOMMENDED_RAM_MB" ] || warn "RAM is less than 4 GB (recommended minimum)."
     if [ "$disk_gb" -lt "$MIN_RECOMMENDED_DISK_GB" ]; then
-        warn "Free disk is less than ${MIN_RECOMMENDED_DISK_GB} GB (recommended). Proceeding with ${disk_gb} GB."
-        confirm "Continue with less than the recommended free disk space?" || fatal "Aborted by operator."
+        # Warn, do not ask. A 20-40 GB disk is the common VPS size and is above
+        # the hard floor, so it installs fine; prompting here turned a healthy
+        # machine into an aborted install whenever the operator pressed Enter or
+        # ran without a terminal to answer on.
+        warn "Free disk is ${disk_gb} GB, below the recommended ${MIN_RECOMMENDED_DISK_GB} GB. Proceeding."
+        warn "Keep an eye on usage: aether backup archives accumulate under ${AETHER_INSTALL_DIR}/backups."
     fi
 }
 
@@ -164,10 +168,21 @@ check_network() {
 
 check_dns_resolution() {
     # Verify the configured domain resolves to this server's public IP.
-    # Failing here means Caddy's ACME challenge will also fail, so abort early.
+    #
+    # This warns rather than aborts. A mismatch is not proof the install cannot
+    # work: a domain behind Cloudflare (or any proxy/CDN) correctly resolves to
+    # the proxy's address, and split-horizon DNS resolves differently inside the
+    # network. Aborting here would strand exactly those operators mid-install,
+    # after the interactive prompt already gave them the choice to skip this
+    # check. Caddy reports a genuine ACME failure clearly at deploy time, which
+    # is the honest place to surface it.
     local domain="${AETHER_DOMAIN:-}"
     [ -n "$domain" ] || return 0  # domain not yet set; configure stage handles it
     [ "${AETHER_NO_HTTPS:-false}" = "true" ] && return 0 # HTTP-only mode
+    [ "${AETHER_SKIP_DNS_CHECK:-false}" = "true" ] && {
+        info "DNS check skipped at the operator's request."
+        return 0
+    }
 
     local public_ip
     public_ip=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || true)
@@ -176,27 +191,36 @@ check_dns_resolution() {
         return 0
     fi
 
-    # Resolve domain IP; try dig (dnsutils), then nslookup, then host.
+    # Resolve the domain with the first tool that yields an answer. The chain
+    # falls through on an empty result, not just on a missing binary: `dig` is
+    # installed yet returns nothing for a name that only the system resolver
+    # (e.g. an /etc/hosts entry) can resolve, and getent covers that case.
     local server_ip=""
     if command_exists dig; then
         server_ip=$(dig +short "$domain" A 2>/dev/null | head -1 || true)
-    elif command_exists nslookup; then
+    fi
+    if [ -z "$server_ip" ] && command_exists nslookup; then
         server_ip=$(nslookup "$domain" 2>/dev/null | awk '/^Address: / {print $2; exit}' || true)
-    elif command_exists host; then
+    fi
+    if [ -z "$server_ip" ] && command_exists host; then
         server_ip=$(host "$domain" 2>/dev/null | awk '/has address/ {print $NF; exit}' || true)
-    else
-        warn "No DNS resolver found (dig/nslookup/host). Install dnsutils. Skipping DNS check."
-        return 0
+    fi
+    if [ -z "$server_ip" ] && command_exists getent; then
+        server_ip=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1; exit}' || true)
     fi
 
     if [ -z "$server_ip" ]; then
-        fatal "Domain $domain does not resolve to any IP address. Create an A record pointing to $public_ip before retrying."
+        warn "Domain $domain does not resolve to any IP address."
+        warn "Create an A record pointing to $public_ip, or HTTPS will fail."
+        return 0
     fi
 
     if [ "$server_ip" = "$public_ip" ]; then
         info "DNS check passed: $domain → $server_ip (matches this server)"
     else
-        fatal "Domain $domain resolves to $server_ip, but this server's public IP is $public_ip. Update your DNS A record to $public_ip."
+        warn "Domain $domain resolves to $server_ip, but this server's public IP is $public_ip."
+        warn "This is expected behind a proxy/CDN (e.g. Cloudflare), and HTTPS still works there."
+        warn "If it is not intentional, point the A record at $public_ip."
     fi
 }
 

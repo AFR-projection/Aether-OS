@@ -53,7 +53,12 @@ prompt_for_settings() {
     local email="${AETHER_ADMIN_EMAIL:-}"
 
     if [ -z "$domain" ]; then
-        if [ "${AETHER_YES:-false}" = "true" ] || [ ! -t 0 ]; then
+        # IP-only mode was already chosen interactively (AETHER_NO_HTTPS=true
+        # with no domain): asking again would re-open a decision the operator
+        # just made.
+        if [ "${AETHER_NO_HTTPS:-false}" = "true" ]; then
+            info "IP-only mode selected earlier; keeping HTTP-only configuration."
+        elif [ "${AETHER_YES:-false}" = "true" ] || [ ! -t 0 ]; then
             domain="$AETHER_DOMAIN_TEMPLATE"
         else
             printf 'Domain for this instance (leave blank for IP-only HTTP): '
@@ -62,7 +67,12 @@ prompt_for_settings() {
     fi
 
     if [ -z "$email" ]; then
-        if [ "${AETHER_YES:-false}" = "true" ] || [ ! -t 0 ]; then
+        if [ "${AETHER_NO_HTTPS:-false}" = "true" ] || [ -z "$domain" ]; then
+            # No ACME certificate is requested, so there is no expiry notice to
+            # address. Leave it empty rather than prompting for a value nothing
+            # will consume.
+            email=""
+        elif [ "${AETHER_YES:-false}" = "true" ] || [ ! -t 0 ]; then
             email="$AETHER_ADMIN_EMAIL_TEMPLATE"
         else
             printf 'Admin email for certificate notices: '
@@ -74,6 +84,16 @@ prompt_for_settings() {
     # did not, preserve an empty value for supported IP-only mode.
     [[ "$domain" != *'{{'* ]] || domain=""
     [[ "$email" != *'{{'* ]] || email=""
+
+    # HTTPS mode needs an email for Caddy's certificate notices. Compose passes
+    # AETHER_ADMIN_EMAIL through even when it is empty, and Caddy's `{$VAR:default}`
+    # only applies its default to an *unset* variable — an empty one reaches the
+    # directive as a blank argument. Derive one from the domain rather than let
+    # that happen (e.g. `--domain x --yes`, which never reaches the prompt).
+    if [ -n "$domain" ] && [ "${AETHER_NO_HTTPS:-false}" != "true" ] && [ -z "$email" ]; then
+        email="admin@$domain"
+        info "No admin email given; using $email for certificate notices."
+    fi
 
     validate_domain "$domain"
     validate_email "$email"

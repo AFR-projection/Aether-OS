@@ -85,6 +85,14 @@ find_checkout() {
     return 1
 }
 
+# Set to the temp directory when (and only when) resolve_repo clones one, so
+# main() can remove it after the install and leave an existing checkout alone.
+AETHER_CLONE_DIR=""
+
+cleanup_clone() {
+    [ -n "$AETHER_CLONE_DIR" ] && rm -rf "$AETHER_CLONE_DIR"
+}
+
 resolve_repo() {
     local candidate="${BASH_SOURCE[0]:-}"
     if [ -n "$candidate" ]; then
@@ -102,9 +110,6 @@ resolve_repo() {
 
     local tmp
     tmp="$(mktemp -d)"
-    # Removed when the install finishes either way.
-    # shellcheck disable=SC2064
-    trap "rm -rf '$tmp'" EXIT
 
     info "Downloading Aether Cloud OS"
     git clone --quiet --depth=1 "$AETHER_REPO_URL" "$tmp" \
@@ -117,16 +122,35 @@ resolve_repo() {
         ls -la "$tmp" 2>&1 | head -20 >&2 || true
         error "Contents of $tmp/deploy:"
         ls -la "$tmp/deploy" 2>&1 | head -20 >&2 || true
+        rm -rf "$tmp"
         fatal "The downloaded repository does not look like Aether Cloud OS (no deploy/lib/install.sh)."
     fi
+
+    # Record the clone for cleanup by main(). This assignment is why resolve_repo
+    # must NOT run in a command-substitution subshell (see main): a value set in a
+    # subshell would not survive, and — the bug this replaced — an EXIT trap set
+    # here would fire when that subshell returned, deleting the clone before the
+    # installer ever ran.
+    AETHER_CLONE_DIR="$tmp"
     printf '%s' "$tmp"
 }
 
 main() {
     require_root
 
-    local repo
-    repo="$(resolve_repo)"
+    # resolve_repo prints the path on fd 1 and, when it clones, records the temp
+    # dir in AETHER_CLONE_DIR. Capturing its stdout with `$(...)` would run it in
+    # a subshell, so that assignment would be lost and the clone never cleaned
+    # up. Instead it writes the resolved path to a temp file we read back here,
+    # keeping the function in this shell.
+    local pathfile repo
+    pathfile="$(mktemp)"
+    resolve_repo >"$pathfile"
+    repo="$(cat "$pathfile")"
+    rm -f "$pathfile"
+
+    # Remove the clone (if any) whenever main's shell exits, success or failure.
+    trap cleanup_clone EXIT
 
     # The installer reads this for the source tree it deploys.
     export AETHER_REPO_DIR="$repo"

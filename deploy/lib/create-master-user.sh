@@ -15,6 +15,12 @@ create_master_user() {
         return 1
     fi
 
+    # The database stores usernames lowercase: the format check constraint
+    # (users_username_format) rejects uppercase, and login matches on
+    # lower(username). Normalise here so what we insert satisfies the constraint
+    # and what we record in master-credentials.json is what the user logs in with.
+    username="$(printf '%s' "$username" | tr '[:upper:]' '[:lower:]')"
+
     info "Creating master user in database: $username"
 
     # Verify docker compose is available
@@ -90,13 +96,16 @@ if (!username || !password || !userId) {
     const passwordHash = await bcrypt.hash(password, 10);
 
     // Insert user into database
+    // ON CONFLICT targets the lower(username) expression index
+    // (users_username_key) — there is no plain unique constraint on the
+    // username column, so naming the column here would fail to match the index.
     const result = await pool.query(
       \`INSERT INTO aether.users (id, username, password_hash, role, created_at, updated_at)
        VALUES (\\\$1, \\\$2, \\\$3, \\\$4, NOW(), NOW())
-       ON CONFLICT (username) DO UPDATE
+       ON CONFLICT (lower(username)) DO UPDATE
        SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, updated_at = NOW()
        RETURNING id, username, role\`,
-      [userId, username, passwordHash, 'admin']
+      [userId, username, passwordHash, 'owner']
     );
 
     console.log('SUCCESS: Master user created -', result.rows[0].username, '- role:', result.rows[0].role);
@@ -125,7 +134,7 @@ if (!username || !password || !userId) {
 {
   "username": "$username",
   "userId": "$user_id",
-  "role": "admin",
+  "role": "owner",
   "createdAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
   "method": "installer"
 }
