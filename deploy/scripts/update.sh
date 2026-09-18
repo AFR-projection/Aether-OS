@@ -125,11 +125,30 @@ require_clean_tree() {
     fatal "Refusing to update. Commit or discard them in $AETHER_SRC_DIR first."
 }
 
+# Fetches origin/<branch> in a way that leaves ancestry intact.
+#
+# A `--depth 1` fetch onto the installer's shallow clone leaves the local HEAD
+# and the fetched commit as two independent grafted roots with no shared
+# ancestor. Git then reports "refusing to merge unrelated histories" and blocks
+# even a legitimate fast-forward. Deepening the history (--unshallow on a shallow
+# repo) makes the real parent chain visible so the fast-forward succeeds.
+fetch_origin() {
+    local branch="$1"
+    command_exists git || fatal "git is required to update a git-based install."
+    local git_dir
+    git_dir=$(git -C "$AETHER_SRC_DIR" rev-parse --git-dir 2>/dev/null || echo "$AETHER_SRC_DIR/.git")
+    if [ -f "$git_dir/shallow" ]; then
+        git -C "$AETHER_SRC_DIR" fetch --quiet --unshallow origin "$branch" 2>/dev/null \
+            || git -C "$AETHER_SRC_DIR" fetch --quiet origin "$branch"
+    else
+        git -C "$AETHER_SRC_DIR" fetch --quiet origin "$branch"
+    fi
+}
+
 # Compares with origin/<branch> and prints the decision: "same" or "ahead".
 fetch_and_compare() {
     local branch="$1"
-    command_exists git || fatal "git is required to update a git-based install."
-    git -C "$AETHER_SRC_DIR" fetch --quiet --depth 1 origin "$branch"
+    fetch_origin "$branch"
     local local_rev remote_rev
     local_rev=$(git -C "$AETHER_SRC_DIR" rev-parse HEAD)
     remote_rev=$(git -C "$AETHER_SRC_DIR" rev-parse FETCH_HEAD)
@@ -143,10 +162,21 @@ fetch_and_compare() {
 
 fast_forward() {
     local branch="$1"
-    # --ff-only on purpose: a deployed instance must never end up in a
-    # conflicted merge state with nobody around to resolve it.
-    git -C "$AETHER_SRC_DIR" merge --ff-only FETCH_HEAD \
-        || fatal "Cannot fast-forward to origin/$branch — local history has diverged. Resolve it manually."
+    # --ff-only first: a deployed instance must never end up in a conflicted
+    # merge state with nobody around to resolve it.
+    if git -C "$AETHER_SRC_DIR" merge --ff-only FETCH_HEAD 2>/dev/null; then
+        info "Source is now at $(current_revision_short)"
+        return 0
+    fi
+    # The fast-forward was refused. On a deploy target this is not a real
+    # divergence to preserve: require_clean_tree already proved there is no
+    # uncommitted tracked work to lose, and the tree only ever tracks
+    # origin/<branch>. The usual cause is a shallow clone whose graft boundary
+    # hides the shared ancestor. Resetting hard to the fetched revision is the
+    # correct non-interactive resolution — the deployment mirrors origin exactly.
+    warn "Fast-forward was refused (diverged or shallow history); resetting the deployment to origin/$branch."
+    git -C "$AETHER_SRC_DIR" reset --hard FETCH_HEAD \
+        || fatal "Could not align the source tree with origin/$branch. Resolve it manually in $AETHER_SRC_DIR."
     info "Source is now at $(current_revision_short)"
 }
 
