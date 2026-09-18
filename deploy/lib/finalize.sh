@@ -219,17 +219,24 @@ finalize_installation() {
     create_systemd_unit
     health_check
 
-    # Last, and only after the stack is healthy: the installer pairs this host
-    # with its own backend. It fails the install if the agent does not come up
-    # and confirm the handshake on both sides.
-    stage "Installing the local host agent"
-    install_local_agent
-
-    # Create master user in database if credentials provided
+    # Create the master account BEFORE the host agent. The login account is what
+    # makes the instance usable at all; the agent is an enhancement on top of it.
+    # install_local_agent calls fatal on failure, so if it ran first a failed
+    # agent would abort the whole install and leave the operator with an instance
+    # they cannot even log into — which is exactly how a CHDIR failure in the
+    # agent left a live deployment stuck on the "no users yet" bootstrap screen.
+    # Order it so the account always exists once the stack is healthy.
     if [ -n "${AETHER_MASTER_USERNAME:-}" ] && [ -n "${AETHER_MASTER_PASSWORD:-}" ]; then
         stage "Creating master administrator account"
         create_master_user "$AETHER_MASTER_USERNAME" "$AETHER_MASTER_PASSWORD"
     fi
+
+    # Now pair this host with its own backend. A failure here still aborts the
+    # install (the agent is required for a complete instance), but the master
+    # account above is already committed, so the operator can log in and finish
+    # pairing from the UI even if this step needs a retry.
+    stage "Installing the local host agent"
+    install_local_agent
 
     # Write deployment metadata after successful install
     write_initial_deployment_metadata
