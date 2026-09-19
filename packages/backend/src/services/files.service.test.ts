@@ -8,6 +8,7 @@ import {
   createDirectory,
   deletePath,
   listDirectory,
+  looksTextual,
   readFile,
   renamePath,
   searchEntries,
@@ -369,5 +370,101 @@ describe('streamToFile', () => {
     await expect(
       streamToFile(sandboxRelative, '../escape.txt', Readable.from(['x']), 1024)
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * Where the file is on a real machine, the name often says nothing: `/etc/hostname`,
+ * `.env`, `Dockerfile`, `id_rsa`. Reading those back as base64 made the editor
+ * treat them as binary and refuse to open them, so these pin the content check
+ * that replaced the extension-only rule.
+ */
+describe('text and binary classification', () => {
+  it('reads a text file with no extension as UTF-8', async () => {
+    const target = `${sandboxRelative}/hostname`;
+    await writeFile({
+      relative: target,
+      content: 'vps3583883\n',
+      encoding: 'utf8',
+      createOnly: false,
+    });
+
+    const read = await readFile(target);
+    expect(read.encoding).toBe('utf8');
+    expect(read.content).toBe('vps3583883\n');
+    // The name gives nothing away, so the type is reported from the contents.
+    expect(read.mimeType).toBe('text/plain');
+  });
+
+  it('reads a dotfile with no known extension as UTF-8', async () => {
+    const target = `${sandboxRelative}/.env`;
+    await writeFile({
+      relative: target,
+      content: 'PORT=3000\n',
+      encoding: 'utf8',
+      createOnly: false,
+    });
+
+    const read = await readFile(target);
+    expect(read.encoding).toBe('utf8');
+    expect(read.content).toBe('PORT=3000\n');
+  });
+
+  it('still reports a real binary as base64', async () => {
+    const target = `${sandboxRelative}/pixels`;
+    // PNG magic number plus a NUL byte: not text by either signal.
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+    await writeFile({
+      relative: target,
+      content: png.toString('base64'),
+      encoding: 'base64',
+      createOnly: false,
+    });
+
+    const read = await readFile(target);
+    expect(read.encoding).toBe('base64');
+  });
+
+  it('never demotes a known text extension whose bytes are not valid UTF-8', async () => {
+    const target = `${sandboxRelative}/latin1.txt`;
+    // 0xE9 is 'é' in Latin-1 and an invalid UTF-8 sequence on its own.
+    const latin1 = Buffer.from([0x63, 0x61, 0x66, 0xe9]);
+    await writeFile({
+      relative: target,
+      content: latin1.toString('base64'),
+      encoding: 'base64',
+      createOnly: false,
+    });
+
+    // The extension said text and the contents could not demote it.
+    expect((await readFile(target)).encoding).toBe('utf8');
+  });
+
+  it('honours an explicit encoding request over the content check', async () => {
+    const target = `${sandboxRelative}/forced.txt`;
+    await writeFile({
+      relative: target,
+      content: 'plain text',
+      encoding: 'utf8',
+      createOnly: false,
+    });
+
+    expect((await readFile(target, 'base64')).encoding).toBe('base64');
+  });
+
+  it('treats a sample cut mid-sequence as text', () => {
+    // The sample boundary falls inside a three-byte character, so the sample
+    // ends on a replacement character the file itself never contained.
+    const cut = Buffer.concat([Buffer.alloc(8191, 0x61), Buffer.from([0xe2, 0x82, 0xac])]);
+    expect(looksTextual(cut)).toBe(true);
+  });
+
+  it('treats a truncated sequence at the end of a whole file as binary', () => {
+    // Same bytes, but nothing was cut: the file itself is not valid UTF-8.
+    expect(looksTextual(Buffer.from([0x61, 0xe2, 0x82]))).toBe(false);
+  });
+
+  it('treats a NUL byte as binary', () => {
+    expect(looksTextual(Buffer.from([0x74, 0x65, 0x00, 0x78, 0x74]))).toBe(false);
   });
 });

@@ -104,6 +104,81 @@ export function getMimeType(filePath: string): string {
   return MIME_TYPES[extension] ?? 'application/octet-stream';
 }
 
+/**
+ * How much of a file is sampled when deciding whether it is text.
+ *
+ * Large enough to cross a NUL byte in any realistic binary, small enough to
+ * stay free next to a read that may already be several megabytes.
+ */
+const TEXT_SNIFF_BYTES = 8 * 1024;
+
+/**
+ * Decides whether a file's *contents* are text, rather than trusting its name.
+ *
+ * The extension map knows a few dozen suffixes, so on a real machine most
+ * editable files fall straight through it: `hostname`, `.env`, `Dockerfile`,
+ * `Makefile`, `nginx.conf`, `.gitignore`, `id_rsa`, every file under
+ * `/etc` with no suffix at all. Those were reported as
+ * `application/octet-stream` and base64, which made Code Studio open them
+ * read-only behind a "Binary file" notice — the editor looked broken when the
+ * real fault was a missing extension.
+ *
+ * Two signals, the same ones git uses: a NUL byte means binary, and bytes that
+ * do not decode as UTF-8 mean binary. A UTF-8 sequence split by the sample
+ * boundary decodes as a replacement character, so that one case is forgiven
+ * when the sample was actually cut short.
+ *
+ * Deliberately one-directional: this can promote a file to text, never demote
+ * one. A Latin-1 `.txt` is not valid UTF-8, and calling it binary because of
+ * that would be a regression, so the caller ORs this with the extension guess
+ * instead of letting it override.
+ */
+export function looksTextual(buffer: Buffer): boolean {
+  const sample = buffer.subarray(0, TEXT_SNIFF_BYTES);
+  if (sample.includes(0)) return false;
+
+  const decoded = sample.toString('utf8');
+  if (!decoded.includes('�')) return true;
+
+  // Only the trailing character may be an artifact of cutting the sample.
+  return buffer.length > sample.length && decoded.indexOf('�') === decoded.length - 1;
+}
+
+/**
+ * The MIME type to report for content that has already been read.
+ *
+ * When the name says nothing useful but the bytes are plainly text,
+ * `text/plain` is a truer answer than `application/octet-stream`, and it is
+ * what both the editor and the browser's own viewers key off.
+ */
+function mimeForContent(filePath: string, isText: boolean): string {
+  const mime = getMimeType(filePath);
+  return isText && mime === 'application/octet-stream' ? 'text/plain' : mime;
+}
+
+/**
+ * The single place the text/binary decision is made.
+ *
+ * Both readers call this — the workspace one and the host-agent proxy — so the
+ * two cannot drift into disagreeing about the same file, which is exactly how
+ * the extension-only rule survived as long as it did.
+ *
+ * The extension and the contents can each promote a file to text; neither can
+ * demote one. `forceEncoding` is applied by the caller, because a caller that
+ * asks for base64 explicitly has a reason the content check cannot know.
+ */
+export function classifyContent(
+  filePath: string,
+  sample: Buffer
+): { encoding: 'utf8' | 'base64'; mimeType: string } {
+  const isText = TEXT_EXTENSIONS.has(path.extname(filePath).toLowerCase()) || looksTextual(sample);
+
+  return {
+    encoding: isText ? 'utf8' : 'base64',
+    mimeType: mimeForContent(filePath, isText),
+  };
+}
+
 function classify(stats: Stats): FileEntryType {
   if (stats.isSymbolicLink()) return 'symlink';
   if (stats.isDirectory()) return 'directory';
@@ -258,11 +333,6 @@ export async function readFile(
   forceEncoding?: 'utf8' | 'base64'
 ): Promise<ReadFileResponse> {
   const { absolute, size } = await assertReadableFile(relative);
-  const mimeType = getMimeType(absolute);
-  const extension = path.extname(absolute).toLowerCase();
-
-  const looksTextual = TEXT_EXTENSIONS.has(extension) || mimeType.startsWith('text/');
-  const encoding = forceEncoding ?? (looksTextual ? 'utf8' : 'base64');
 
   const readLimit = Math.min(size, LIMITS.MAX_FILE_READ_BYTES);
   const truncated = size > readLimit;
@@ -273,13 +343,18 @@ export async function readFile(
     const { bytesRead } = await handle.read(buffer, 0, readLimit, 0);
     const slice = buffer.subarray(0, bytesRead);
 
+    // The bytes have to be read before this can be decided, which is why the
+    // encoding is chosen here rather than from the name alone.
+    const classification = classifyContent(absolute, slice);
+    const encoding = forceEncoding ?? classification.encoding;
+
     return {
       path: relative,
       encoding,
       content: slice.toString(encoding === 'utf8' ? 'utf8' : 'base64'),
       size,
       truncated,
-      mimeType,
+      mimeType: classification.mimeType,
     };
   } finally {
     await handle.close();

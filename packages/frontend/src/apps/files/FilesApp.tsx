@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, ArrowUp, HardDrive, Home, RefreshCw, ShieldAlert, Upload } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 
 import { iconForEntry } from './file-icons.js';
 import {
@@ -101,6 +101,21 @@ export function FilesApp({ windowId, props }: AppProps) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  /**
+   * The right-click menu, and what it was opened on.
+   *
+   * `entry` is null when the click landed on empty space, where the useful
+   * actions are the ones that create something rather than act on a row. Delete
+   * already existed but only as a toolbar button that stays disabled until a
+   * row is selected, which reads as "there is no delete" to anyone who expects
+   * the right-click every other file manager has had for thirty years.
+   */
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    entry: FileEntry | null;
+  } | null>(null);
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -243,6 +258,40 @@ export function FilesApp({ windowId, props }: AppProps) {
   const openSelected = () => {
     if (selectedEntry !== null) openEntry(selectedEntry);
   };
+
+  /** Opens the context menu at the pointer, selecting what it was opened on. */
+  const showContextMenu = (event: MouseEvent, entry: FileEntry | null) => {
+    event.preventDefault();
+    if (entry !== null) setSelectedPath(entry.path);
+    setContextMenu({ x: event.clientX, y: event.clientY, entry });
+  };
+
+  // A menu that survives a click elsewhere — or a listing that reloads
+  // underneath it — would act on something the user is no longer looking at.
+  useEffect(() => {
+    if (contextMenu === null) return;
+
+    const close = () => setContextMenu(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+
+    window.addEventListener('click', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('blur', close);
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('blur', close);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextMenu]);
+
+  // Read once into a const: TypeScript keeps a null check's narrowing inside
+  // the handlers below for a const, but not for a property access.
+  const menuEntry: FileEntry | null = contextMenu?.entry ?? null;
 
   return (
     <div className="flex h-full flex-col bg-surface-800">
@@ -501,7 +550,15 @@ export function FilesApp({ windowId, props }: AppProps) {
       ) : null}
 
       {/* Listing */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div
+        className="min-h-0 flex-1 overflow-auto"
+        onContextMenu={(event) => {
+          // Rows handle their own. This is the menu for the space around them,
+          // which is where a file manager puts its "new" and "refresh".
+          if ((event.target as HTMLElement).closest('tr') !== null) return;
+          showContextMenu(event, null);
+        }}
+      >
         {activeQuery.isPending ? (
           <LoadingState label="Reading directory…" />
         ) : activeQuery.isError ? (
@@ -536,8 +593,16 @@ export function FilesApp({ windowId, props }: AppProps) {
                     aria-selected={selected}
                     onClick={() => setSelectedPath(entry.path)}
                     onDoubleClick={() => openEntry(entry)}
+                    onContextMenu={(event) => showContextMenu(event, entry)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') openEntry(entry);
+                      // Delete acts on the focused row, as it does in a file
+                      // manager. It only fires for a row that already has focus,
+                      // so a dialog's own inputs are never affected.
+                      if (event.key === 'Delete') {
+                        setSelectedPath(entry.path);
+                        setConfirmDeleteOpen(true);
+                      }
                     }}
                     className={[
                       'cursor-default border-b border-white/5 outline-none',
@@ -717,6 +782,65 @@ export function FilesApp({ windowId, props }: AppProps) {
         </Field>
       </Dialog>
 
+      {contextMenu !== null ? (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} emptySpace={menuEntry === null}>
+          {menuEntry === null ? (
+            <>
+              <MenuItem
+                label="New folder"
+                onSelect={() => {
+                  setNewFolderName('');
+                  setNewFolderOpen(true);
+                }}
+              />
+              <MenuItem
+                label="New file"
+                onSelect={() => {
+                  setNewFileName('');
+                  setNewFileOpen(true);
+                }}
+              />
+              <MenuItem
+                label="Upload files"
+                disabled={uploading}
+                onSelect={() => uploadInputRef.current?.click()}
+              />
+              <MenuItem label="Refresh" onSelect={handleRefresh} />
+            </>
+          ) : (
+            <>
+              <MenuItem
+                label={menuEntry.type === 'directory' ? 'Open' : 'Open in Code Studio'}
+                disabled={menuEntry.escapesWorkspace}
+                title={
+                  menuEntry.escapesWorkspace
+                    ? 'This link points outside the workspace, so Aether will not follow it.'
+                    : undefined
+                }
+                onSelect={() => openEntry(menuEntry)}
+              />
+              <MenuItem
+                label="Rename"
+                disabled={host}
+                title={host ? 'Renaming on a host agent is not available yet' : undefined}
+                onSelect={() => {
+                  setRenameValue(menuEntry.name);
+                  setRenameOpen(true);
+                }}
+              />
+              <MenuItem
+                label="Download"
+                disabled={host || menuEntry.type !== 'file'}
+                title={host ? 'Downloading from a host agent is not available yet' : undefined}
+                onSelect={() => void downloadPath(menuEntry.path).catch(reportError)}
+              />
+              <div className="my-1 h-px bg-white/10" />
+              <MenuItem label="Delete" danger onSelect={() => setConfirmDeleteOpen(true)} />
+            </>
+          )}
+        </ContextMenu>
+      ) : null}
+
       <ConfirmDialog
         open={confirmDeleteOpen}
         title={selectedEntry?.type === 'directory' ? 'Delete folder' : 'Delete file'}
@@ -751,5 +875,65 @@ export function FilesApp({ windowId, props }: AppProps) {
         }}
       />
     </div>
+  );
+}
+
+/** The panel a context menu's items sit in, positioned at the pointer. */
+function ContextMenu({
+  x,
+  y,
+  emptySpace,
+  children,
+}: {
+  x: number;
+  y: number;
+  /** True when the menu was opened on the space around the rows, not on one. */
+  emptySpace: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="menu"
+      aria-label={emptySpace ? 'Folder actions' : 'File actions'}
+      style={{ left: x, top: y }}
+      className="fixed z-50 min-w-44 overflow-hidden rounded-md border border-white/10 bg-surface-800 py-1 shadow-2xl"
+    >
+      {children}
+    </div>
+  );
+}
+
+/** One action in a context menu. */
+function MenuItem({
+  label,
+  onSelect,
+  disabled = false,
+  danger = false,
+  title,
+}: {
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      title={title}
+      onClick={onSelect}
+      className={[
+        'block w-full px-3 py-1.5 text-left text-[13px]',
+        disabled
+          ? 'cursor-default text-slate-600'
+          : danger
+            ? 'text-red-300 hover:bg-red-500/15'
+            : 'text-slate-200 hover:bg-white/10',
+      ].join(' ')}
+    >
+      {label}
+    </button>
   );
 }

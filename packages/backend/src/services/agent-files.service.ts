@@ -9,7 +9,7 @@ import {
 } from '@aether/shared';
 
 import { sendAgentRequest } from './agent-rpc.service.js';
-import { getMimeType } from './files.service.js';
+import { classifyContent } from './files.service.js';
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '../utils/errors.js';
 
 /**
@@ -106,16 +106,16 @@ export async function hostReadFile(agentId: string, relative: string): Promise<R
   }
 
   const buffer = Buffer.from(reply.contentBase64, 'base64');
-  const mimeType = getMimeType(relative);
-  const looksTextual =
-    mimeType.startsWith('text/') ||
-    mimeType === 'application/json' ||
-    mimeType === 'application/xml';
-  const encoding: 'utf8' | 'base64' = looksTextual ? 'utf8' : 'base64';
 
   const readLimit = Math.min(buffer.length, LIMITS.MAX_FILE_READ_BYTES);
   const truncated = buffer.length > readLimit;
   const slice = buffer.subarray(0, readLimit);
+
+  // A host path is even less likely than a workspace one to carry a telling
+  // extension — `/etc/hostname`, `.env`, `Dockerfile`, `id_rsa` — so this leans
+  // on the content check rather than the name. Same helper as the workspace
+  // reader, so the two scopes cannot disagree about the same bytes.
+  const { encoding, mimeType } = classifyContent(relative, slice);
 
   return {
     path: relative,

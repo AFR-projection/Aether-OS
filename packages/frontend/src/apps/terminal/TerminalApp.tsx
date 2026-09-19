@@ -55,6 +55,14 @@ const TERMINAL_THEME = {
   brightWhite: '#f8fafc',
 } as const;
 
+/**
+ * The scope used before the choice settles and when no host agent is connected.
+ *
+ * A module constant rather than a fresh literal so it keeps its identity across
+ * renders and the callbacks below are not rebuilt on every one.
+ */
+const WORKSPACE_SCOPE: FsScope = { scope: 'workspace' };
+
 const STATE_LABEL: Record<TerminalConnectionState, string> = {
   idle: 'idle',
   'requesting-ticket': 'connecting',
@@ -87,18 +95,51 @@ export function TerminalApp({ windowId, props }: AppProps) {
   const [sessionId, setSessionId] = useState<string | null>(
     typeof props.sessionId === 'string' ? props.sessionId : null
   );
-  const [fs, setFs] = useState<FsScope>(() =>
-    props.scope === 'host' && typeof props.agentId === 'string'
-      ? { scope: 'host', agentId: props.agentId }
-      : { scope: 'workspace' }
-  );
+  /**
+   * Where this shell runs.
+   *
+   * A window opened with an explicit scope keeps it, as does one reattaching to
+   * an existing session. Otherwise this starts undecided and settles once the
+   * agent list arrives — and a connected host agent wins, because a shell on
+   * the real machine is the whole point of the app.
+   *
+   * Defaulting to the backend container instead is how `aether status` came
+   * back "command not found": the CLI is on the host, and the shell was not.
+   * The container is still reachable from the picker, it is just no longer what
+   * an operator gets by accident.
+   */
+  const [fs, setFs] = useState<FsScope | undefined>(() => {
+    if (props.scope === 'host' && typeof props.agentId === 'string') {
+      return { scope: 'host', agentId: props.agentId };
+    }
+    if (props.scope === 'workspace' || typeof props.sessionId === 'string') {
+      return { scope: 'workspace' };
+    }
+    return undefined;
+  });
   const agentsQuery = useQuery({ queryKey: queryKeys.agents, queryFn: fetchAgents });
   const connectedAgents = (agentsQuery.data ?? []).filter((agent) => agent.connected);
+
+  /**
+   * Settle the undecided scope once the agent query has resolved.
+   *
+   * Deliberately waits rather than picking a default up front: creating the
+   * session eagerly would put the user in the container and leave them there,
+   * since a session is not moved by the scope changing underneath it.
+   */
+  useEffect(() => {
+    if (fs !== undefined || !agentsQuery.isFetched) return;
+    const firstAgent = connectedAgents[0];
+    setFs(firstAgent ? { scope: 'host', agentId: firstAgent.agentId } : { scope: 'workspace' });
+  }, [fs, agentsQuery.isFetched, connectedAgents]);
 
   const [connectionState, setConnectionState] = useState<TerminalConnectionState>('idle');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [exited, setExited] = useState<{ code: number | null } | null>(null);
   const [fatalError, setFatalError] = useState<unknown>(null);
+
+  /** The scope in use, or the workspace while the choice is still pending. */
+  const activeFs: FsScope = fs ?? WORKSPACE_SCOPE;
 
   /** Creates a new server-side shell in the given scope and binds this window to it. */
   const createSession = useCallback(
@@ -235,6 +276,8 @@ export function TerminalApp({ windowId, props }: AppProps) {
 
   // First mount: create the shell if this window was not opened with one.
   useEffect(() => {
+    // Hold off until the scope is decided — see the effect that settles it.
+    if (fs === undefined) return;
     if (sessionId !== null || creationStartedRef.current) return;
     creationStartedRef.current = true;
 
@@ -261,10 +304,12 @@ export function TerminalApp({ windowId, props }: AppProps) {
     setExited(null);
     setStatusMessage(null);
     terminal?.reset();
-    void createSession(terminal?.cols ?? 80, terminal?.rows ?? 24, fs).catch((error: unknown) => {
-      setFatalError(error);
-    });
-  }, [createSession, fs]);
+    void createSession(terminal?.cols ?? 80, terminal?.rows ?? 24, activeFs).catch(
+      (error: unknown) => {
+        setFatalError(error);
+      }
+    );
+  }, [createSession, activeFs]);
 
   /** Switches this window to a new shell in another scope (workspace or a host agent). */
   const changeLocation = useCallback(
