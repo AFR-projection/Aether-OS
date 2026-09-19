@@ -12,6 +12,12 @@ import { defineConfig } from 'vite';
  */
 export default defineConfig({
   plugins: [react()],
+  // Monaco's worker entry files are imported with `?worker`; excluding the
+  // package from dependency pre-bundling keeps those imports intact so Vite's
+  // worker plugin can bundle each worker as a same-origin script (required by
+  // the app's `script-src 'self'` CSP — no CDN, no cross-origin workers).
+  optimizeDeps: { exclude: ['monaco-editor'] },
+  worker: { format: 'es' },
   server: {
     port: 5173,
     strictPort: true,
@@ -23,10 +29,13 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    // Source maps are emitted so a production stack trace can be mapped back.
-    // They are not referenced from the bundle, so nothing is served to a client
-    // that does not already have access to the build output.
-    sourcemap: true,
+    // Source maps let a production stack trace be mapped back to source. They
+    // are not referenced from the bundle, so nothing extra is served to a
+    // client. But emitting them roughly doubles the build's peak memory —
+    // Rollup keeps every map in memory next to Monaco's already-large graph —
+    // which OOM-kills the build on a small (<=2 GB) VPS. Default them off and
+    // let a host with memory to spare opt back in with AETHER_BUILD_SOURCEMAP=true.
+    sourcemap: process.env.AETHER_BUILD_SOURCEMAP === 'true',
     // A single vendor chunk would be re-downloaded on every app change; the
     // split below keeps the two heavy libraries cacheable on their own.
     rollupOptions: {

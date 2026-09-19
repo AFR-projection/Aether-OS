@@ -45,6 +45,7 @@ export function Button({
     <button
       type={type}
       disabled={disabled === true || loading}
+      aria-busy={loading}
       className={[
         'inline-flex select-none items-center justify-center rounded-md font-medium',
         'transition-colors disabled:cursor-not-allowed',

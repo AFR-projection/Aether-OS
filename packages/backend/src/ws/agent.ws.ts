@@ -3,6 +3,11 @@ import { LIMITS, WS_CLOSE } from '@aether/shared';
 import { markAgentConnected, markAgentDisconnected } from '../services/agent-connections.js';
 import { dispatchAgentMessage } from '../services/agent-gateway.service.js';
 import { authenticateAgent } from '../services/agent-pairing.service.js';
+import {
+  handleAgentFrame,
+  registerAgentSocket,
+  unregisterAgentSocket,
+} from '../services/agent-rpc.service.js';
 import { subsystemLogger } from '../utils/logger.js';
 
 import type { FastifyInstance } from 'fastify';
@@ -72,6 +77,10 @@ export function registerAgentWebSocket(app: FastifyInstance): void {
         return;
       }
 
+      // The agent is now reachable for backend-originated RPC (host-scope files
+      // and terminals). This makes the socket addressable by agent id.
+      registerAgentSocket(record.agentId, socket);
+
       const frameBudget = { count: 0, windowStart: Date.now() };
 
       socket.on('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {
@@ -95,6 +104,19 @@ export function registerAgentWebSocket(app: FastifyInstance): void {
 
         if (Buffer.byteLength(text, 'utf8') > LIMITS.WS_MESSAGE_MAX_BYTES) {
           socket.close(WS_CLOSE.POLICY_VIOLATION, 'Message too large');
+          return;
+        }
+
+        // Replies to backend-originated requests and streamed terminal events are
+        // consumed by the RPC client; only genuine agent→backend frames continue
+        // on to the gateway that runs them against this backend's own resources.
+        let frame: Record<string, unknown> | null = null;
+        try {
+          frame = JSON.parse(text) as Record<string, unknown>;
+        } catch {
+          frame = null;
+        }
+        if (frame !== null && handleAgentFrame(record.agentId, frame)) {
           return;
         }
 
@@ -126,6 +148,7 @@ export function registerAgentWebSocket(app: FastifyInstance): void {
       socket.on('close', () => {
         clearInterval(heartbeat);
         markAgentDisconnected(record.agentId);
+        unregisterAgentSocket(record.agentId, socket);
         log.info({ agentId: record.agentId }, 'agent disconnected');
       });
 

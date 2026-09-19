@@ -2,19 +2,37 @@ import { useEffect, useRef } from 'react';
 
 import { DesktopIcons } from './DesktopIcons.js';
 import { Launcher } from './Launcher.js';
-import { Taskbar } from './Taskbar.js';
+import { Shell } from './Shell.js';
 import { Window } from './Window.js';
 import { APP_REGISTRY } from '../apps/registry.js';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary.js';
 import { useAuthStore, useCurrentUser } from '../stores/auth.store.js';
 import { useDesktopStore } from '../stores/desktop.store.js';
+import { useActiveTheme } from '../stores/theme.store.js';
+
+import type { ThemeId } from '../lib/themes.js';
 
 /**
- * The desktop shell: icons, windows, launcher, and taskbar.
+ * The desktop shell: wallpaper, icons, windows, launcher, and the OS shell
+ * bars. The shell bars, window chrome, and wallpaper all follow the active
+ * theme so the desktop reads as the chosen OS.
  *
  * Apps stay mounted while minimised — only hidden — so a running terminal or a
  * half-written file survives being minimised. Closing a window unmounts it and
  * discards its local state.
  */
+
+/** An authentic wallpaper per OS: Windows 11 Bloom blue, macOS Sequoia-style
+ *  spectrum, and the Adwaita blue-violet. Pure CSS so there is no image to ship. */
+const WALLPAPERS: Record<ThemeId, string> = {
+  win11:
+    'radial-gradient(120% 120% at 70% 15%, #1a4da8 0%, #123a7a 32%, #0a1f47 70%, #060f26 100%)',
+  macos:
+    'linear-gradient(150deg, #2b1b4d 0%, #3d2a6b 22%, #6d3f8a 45%, #b5527a 68%, #e08b5f 100%)',
+  gnome:
+    'radial-gradient(130% 130% at 30% 20%, #4a5fd0 0%, #3a3f9e 38%, #2a2c66 72%, #1a1c3d 100%)',
+};
+
 export function Desktop() {
   const user = useCurrentUser();
   const logout = useAuthStore((state) => state.logout);
@@ -22,8 +40,9 @@ export function Desktop() {
   const focusedId = useDesktopStore((state) => state.focusedId);
   const setDesktopSize = useDesktopStore((state) => state.setDesktopSize);
   const desktopRef = useRef<HTMLDivElement | null>(null);
+  const { id: themeId } = useActiveTheme();
 
-  // The usable area above the taskbar; the window manager clamps to this.
+  // The usable area for windows; the window manager clamps to this.
   useEffect(() => {
     const element = desktopRef.current;
     if (element === null) return;
@@ -39,47 +58,44 @@ export function Desktop() {
 
   if (user === null) return null;
 
-  const components = new Map(APP_REGISTRY.map((app) => [app.id, app.component]));
+  const registry = new Map(APP_REGISTRY.map((app) => [app.id, app]));
 
   return (
-    <div className="flex h-full flex-col bg-surface-900">
-      <div className="flex min-h-0 flex-1">
-        {/* Left icon rail */}
+    <div
+      className="flex h-full flex-col"
+      style={{ background: WALLPAPERS[themeId], backgroundSize: 'cover' }}
+    >
+      <Shell position="top" onLogout={() => void logout()} />
+
+      {/* Window area. Ref is here so the window manager measures only the space
+          windows may occupy, never the shell bars. */}
+      <div ref={desktopRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         <DesktopIcons />
 
-        {/* Window area */}
-        <div ref={desktopRef} className="relative min-w-0 flex-1 overflow-hidden">
-          {/* Empty-state hint, behind the windows. */}
-          {windows.length === 0 ? (
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-center">
-              <p className="text-4xl" aria-hidden="true">
-                🌌
-              </p>
-              <p className="text-sm text-slate-400">Welcome, {user.username}.</p>
-              <p className="max-w-xs text-xs text-slate-500">
-                Open an app from the launcher below, or double-click a desktop icon.
-              </p>
-            </div>
-          ) : null}
+        {windows.map((window) => {
+          const app = registry.get(window.appId);
+          if (app === undefined) return null;
 
-          {windows.map((window) => {
-            const Component = components.get(window.appId);
-            if (Component === undefined) return null;
+          const Component = app.component;
 
-            return (
-              <Window key={window.id} instance={window} focused={window.id === focusedId}>
-                {/* Keep the app mounted while minimised so its state survives. */}
-                <div className={window.minimized ? 'hidden' : 'h-full'}>
+          return (
+            <Window key={window.id} instance={window} focused={window.id === focusedId}>
+              {/* Keep the app mounted while minimised so its state survives. */}
+              <div className={window.minimized ? 'hidden' : 'h-full'}>
+                {/* One boundary per window: a crash here shows a fallback in
+                    this window only and never unmounts the desktop. */}
+                <ErrorBoundary label={app.name} resetKey={window.appId}>
                   <Component windowId={window.id} props={window.props} />
-                </div>
-              </Window>
-            );
-          })}
-        </div>
+                </ErrorBoundary>
+              </div>
+            </Window>
+          );
+        })}
+
+        <Launcher />
       </div>
 
-      <Launcher />
-      <Taskbar onLogout={() => void logout()} />
+      <Shell position="bottom" onLogout={() => void logout()} />
     </div>
   );
 }

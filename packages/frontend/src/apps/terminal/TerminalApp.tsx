@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
@@ -5,9 +6,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import { ErrorState, LoadingState } from '../../components/ui/Feedback.js';
+import { fetchAgents } from '../../lib/agent-api.js';
 import { apiRequest } from '../../lib/api-client.js';
+import { queryKeys } from '../../lib/query-client.js';
 import { TerminalConnection, type TerminalConnectionState } from '../../lib/terminal-connection.js';
 import { useDesktopStore } from '../../stores/desktop.store.js';
+import { isHostScope, type FsScope } from '../files/files-api.js';
 
 import type { AppProps } from '../registry.js';
 import type { TerminalServerMessage, TerminalSession } from '@aether/shared';
@@ -83,21 +87,39 @@ export function TerminalApp({ windowId, props }: AppProps) {
   const [sessionId, setSessionId] = useState<string | null>(
     typeof props.sessionId === 'string' ? props.sessionId : null
   );
+  const [fs, setFs] = useState<FsScope>(() =>
+    props.scope === 'host' && typeof props.agentId === 'string'
+      ? { scope: 'host', agentId: props.agentId }
+      : { scope: 'workspace' }
+  );
+  const agentsQuery = useQuery({ queryKey: queryKeys.agents, queryFn: fetchAgents });
+  const connectedAgents = (agentsQuery.data ?? []).filter((agent) => agent.connected);
+
   const [connectionState, setConnectionState] = useState<TerminalConnectionState>('idle');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [exited, setExited] = useState<{ code: number | null } | null>(null);
   const [fatalError, setFatalError] = useState<unknown>(null);
 
-  /** Creates a new server-side shell and binds this window to it. */
+  /** Creates a new server-side shell in the given scope and binds this window to it. */
   const createSession = useCallback(
-    async (cols: number, rows: number) => {
+    async (cols: number, rows: number, scope: FsScope) => {
+      const scopeFields = isHostScope(scope)
+        ? { scope: 'host' as const, agentId: scope.agentId }
+        : {};
       const session = await apiRequest<TerminalSession>('/api/terminal/sessions', {
         method: 'POST',
-        body: { cols, rows },
+        body: { cols, rows, ...scopeFields },
       });
 
       setSessionId(session.id);
-      setWindowProps(windowId, { sessionId: session.id });
+      // Persist the scope alongside the session id so reopening from the taskbar
+      // and the "New" button both remember where this terminal lives.
+      setWindowProps(windowId, {
+        sessionId: session.id,
+        ...(isHostScope(scope)
+          ? { scope: 'host', agentId: scope.agentId }
+          : { scope: 'workspace' }),
+      });
       setWindowTitle(windowId, `Terminal — ${session.shell.split('/').pop() ?? 'shell'}`);
       setExited(null);
       return session.id;
@@ -220,10 +242,10 @@ export function TerminalApp({ windowId, props }: AppProps) {
     const cols = terminal?.cols ?? 80;
     const rows = terminal?.rows ?? 24;
 
-    void createSession(cols, rows).catch((error: unknown) => {
+    void createSession(cols, rows, fs).catch((error: unknown) => {
       setFatalError(error);
     });
-  }, [createSession, sessionId]);
+  }, [createSession, sessionId, fs]);
 
   const handleReconnect = useCallback(() => {
     setExited(null);
@@ -239,10 +261,28 @@ export function TerminalApp({ windowId, props }: AppProps) {
     setExited(null);
     setStatusMessage(null);
     terminal?.reset();
-    void createSession(terminal?.cols ?? 80, terminal?.rows ?? 24).catch((error: unknown) => {
+    void createSession(terminal?.cols ?? 80, terminal?.rows ?? 24, fs).catch((error: unknown) => {
       setFatalError(error);
     });
-  }, [createSession]);
+  }, [createSession, fs]);
+
+  /** Switches this window to a new shell in another scope (workspace or a host agent). */
+  const changeLocation = useCallback(
+    (next: FsScope) => {
+      const terminal = terminalRef.current;
+      setFs(next);
+      setSessionId(null);
+      setExited(null);
+      setStatusMessage(null);
+      terminal?.reset();
+      void createSession(terminal?.cols ?? 80, terminal?.rows ?? 24, next).catch(
+        (error: unknown) => {
+          setFatalError(error);
+        }
+      );
+    },
+    [createSession]
+  );
 
   const handleKill = useCallback(async () => {
     if (sessionId === null) return;
@@ -262,6 +302,33 @@ export function TerminalApp({ windowId, props }: AppProps) {
   return (
     <div className="flex h-full flex-col bg-surface-900">
       <div className="flex items-center gap-2 border-b border-white/10 px-2 py-1.5">
+        <select
+          aria-label="Terminal location"
+          value={isHostScope(fs) ? `host:${fs.agentId}` : 'workspace'}
+          onChange={(event) => {
+            const value = event.target.value;
+            changeLocation(
+              value === 'workspace'
+                ? { scope: 'workspace' }
+                : { scope: 'host', agentId: value.slice('host:'.length) }
+            );
+          }}
+          title="Where this shell runs"
+          className="h-7 rounded border border-white/10 bg-surface-800 px-2 text-xs text-slate-100 focus:border-accent focus:outline-none"
+        >
+          <option value="workspace">Workspace (backend)</option>
+          {connectedAgents.map((agent) => (
+            <option key={agent.agentId} value={`host:${agent.agentId}`}>
+              {agent.label} (host)
+            </option>
+          ))}
+          {isHostScope(fs) && !connectedAgents.some((agent) => agent.agentId === fs.agentId) ? (
+            <option value={`host:${fs.agentId}`}>host (disconnected)</option>
+          ) : null}
+        </select>
+
+        <div className="mx-1 h-5 w-px bg-white/10" />
+
         <Button
           size="sm"
           variant="ghost"

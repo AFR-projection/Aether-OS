@@ -4,18 +4,25 @@ import { APP_REGISTRY } from '../apps/registry.js';
 import { fetchSettings } from '../lib/system-api.js';
 import { useCurrentUser } from '../stores/auth.store.js';
 import { useDesktopStore } from '../stores/desktop.store.js';
+import { useActiveTheme } from '../stores/theme.store.js';
 
 /**
- * The desktop icon column.
+ * Desktop shortcut icons, laid out the way each OS lays them out.
  *
- * Icons follow the pinned set from the App Catalog, which is stored per user in
- * the shared `settings` table. When nothing has been pinned yet — or the
- * settings request fails — every app the account may use is shown, so a failed
+ * Windows keeps them in a top-left column; macOS keeps them at the top-right.
+ * GNOME shows no desktop icons at all by default — its apps are reached through
+ * Activities — so under that theme this renders nothing and the launcher is the
+ * way in, which is exactly how GNOME behaves.
+ *
+ * Which icons appear follows the pinned set from the App Catalog, stored per
+ * user in the shared `settings` table. When nothing is pinned — or the settings
+ * request fails — every app the account may use is shown, so a failed
  * preference read can never present an empty desktop.
  */
 export function DesktopIcons() {
   const user = useCurrentUser();
   const openWindow = useDesktopStore((state) => state.openWindow);
+  const { chrome } = useActiveTheme();
 
   const username = user?.username ?? '';
 
@@ -28,6 +35,8 @@ export function DesktopIcons() {
   });
 
   if (user === null) return null;
+  // GNOME has no desktop icons; the launcher (Activities) is the entry point.
+  if (chrome.shell === 'topbar') return null;
 
   const permitted = new Set(user.permissions);
   const usable = APP_REGISTRY.filter(
@@ -46,15 +55,23 @@ export function DesktopIcons() {
 
   const visible = pinnedIds === null ? usable : usable.filter((app) => pinnedIds.has(app.id));
 
+  // macOS aligns desktop icons to the right edge; Windows to the left.
+  const alignRight = chrome.controlSide === 'left';
+
   return (
-    <div className="flex w-24 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-white/5 bg-surface-900/40 py-3">
+    <div
+      className={[
+        'pointer-events-none absolute top-2 z-0 flex flex-col gap-1',
+        alignRight ? 'right-2 items-end' : 'left-2 items-start',
+      ].join(' ')}
+    >
       {visible.map((app) => (
         <button
           key={app.id}
           type="button"
           title={app.description}
           aria-label={`Open ${app.name}`}
-          className="flex w-20 flex-col items-center gap-1 rounded-lg p-2 hover:bg-white/5"
+          className="pointer-events-auto flex w-20 flex-col items-center gap-1 rounded-lg p-2 hover:bg-white/10"
           onDoubleClick={() =>
             openWindow(app.id, {
               title: app.name,
@@ -77,10 +94,15 @@ export function DesktopIcons() {
             }
           }}
         >
-          <span className="text-2xl" aria-hidden="true">
-            {app.icon}
+          <span
+            className="flex h-11 w-11 items-center justify-center rounded-xl bg-black/25 text-white shadow-lg backdrop-blur-sm"
+            aria-hidden="true"
+          >
+            <app.icon size={24} strokeWidth={1.75} />
           </span>
-          <span className="w-full truncate text-center text-[11px] text-slate-300">{app.name}</span>
+          <span className="w-full truncate text-center text-[11px] font-medium text-white drop-shadow">
+            {app.name}
+          </span>
         </button>
       ))}
     </div>

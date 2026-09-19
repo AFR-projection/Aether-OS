@@ -40,9 +40,11 @@ export const queryKeys = {
   processes: (search: string, sortBy: string) => ['system', 'processes', search, sortBy] as const,
   instance: ['system', 'instance'] as const,
   settings: ['system', 'settings'] as const,
-  directory: (path: string, showHidden: boolean) => ['files', 'list', path, showHidden] as const,
-  fileContent: (path: string) => ['files', 'read', path] as const,
-  fileSearch: (path: string, query: string) => ['files', 'search', path, query] as const,
+  directory: (scope: string, path: string, showHidden: boolean) =>
+    ['files', 'list', scope, path, showHidden] as const,
+  fileContent: (scope: string, path: string) => ['files', 'read', scope, path] as const,
+  fileSearch: (scope: string, path: string, query: string) =>
+    ['files', 'search', scope, path, query] as const,
   audit: (action: string | undefined, limit: number) => ['audit', action ?? 'all', limit] as const,
   sessions: ['auth', 'sessions'] as const,
   users: ['users'] as const,

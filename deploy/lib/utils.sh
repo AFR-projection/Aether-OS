@@ -135,6 +135,25 @@ COMPOSE_EOF
     mv "$staging_dir" "$static_dir"
     rm -rf "$AETHER_INSTALL_DIR/static.old"
 
+    # The backend bind-mounts this directory. Replacing it with `mv` swaps the
+    # inode, so a *running* backend keeps its mount pointed at the old (now
+    # unlinked) directory and serves an empty static root — a 404 on `/` while
+    # /health still answers. Docker only re-binds on container (re)creation.
+    # Callers that rebuild the image (`aether update`) recreate it anyway, but a
+    # frontend-only rebuild (`aether repair`, `--no-pull` with an unchanged
+    # image) would not. Recreate it here so every path leaves a served bundle.
+    # Guarded on "is the backend running": during a fresh install the container
+    # does not exist yet and this is a no-op.
+    if [ -f "$AETHER_INSTALL_DIR/docker-compose.yml" ] && command -v docker >/dev/null 2>&1; then
+        if compose_cmd -f "$AETHER_INSTALL_DIR/docker-compose.yml" ps --status running backend 2>/dev/null \
+            | grep -q backend; then
+            info "Re-binding the static mount into the running backend"
+            compose_cmd -f "$AETHER_INSTALL_DIR/docker-compose.yml" \
+                up -d --force-recreate --no-deps backend >/dev/null 2>&1 \
+                || warn "Could not recreate the backend to pick up the new bundle; run 'aether restart'."
+        fi
+    fi
+
     info "Frontend bundle installed to $static_dir"
     return 0
 }

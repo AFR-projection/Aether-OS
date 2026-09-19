@@ -8,6 +8,13 @@ import {
 import { config } from '../config.js';
 import { redeemTicket } from '../security/ws-ticket.js';
 import {
+  attachHostSession,
+  isHostSession,
+  resizeHostSession,
+  signalHostSession,
+  writeHostInput,
+} from '../services/host-terminal.service.js';
+import {
   attach,
   isTerminalAvailable,
   resizeSession,
@@ -39,7 +46,9 @@ export function registerTerminalWebSocket(app: FastifyInstance): void {
       return;
     }
 
-    if (!isTerminalAvailable()) {
+    // Host sessions run their PTY on the agent, so this backend's local PTY
+    // availability does not gate them — only local sessions need it.
+    if (!isHostSession(sessionId) && !isTerminalAvailable()) {
       send(socket, {
         type: 'error',
         code: 'TERMINAL_UNAVAILABLE',
@@ -73,23 +82,42 @@ export function registerTerminalWebSocket(app: FastifyInstance): void {
 
       const frameBudget = { count: 0, windowStart: Date.now() };
 
+      // A host session is bridged to the agent; a local one attaches to a PTY in
+      // this process. The two differ only in how they attach and take input.
+      const host = isHostSession(sessionId);
       let unsubscribe: (() => void) | null = null;
 
       try {
-        const attached = attach(sessionId, userId, (message) => send(socket, message));
-        unsubscribe = attached.unsubscribe;
+        if (host) {
+          const attached = await attachHostSession(sessionId, userId, (message) =>
+            send(socket, message)
+          );
+          unsubscribe = attached.unsubscribe;
+          send(socket, {
+            type: 'ready',
+            sessionId: attached.session.id,
+            pid: attached.session.pid ?? 0,
+            shell: attached.session.shell,
+            cwd: attached.session.cwd,
+          });
+          // The agent replays this session's scrollback as output events on
+          // subscribe, so there is nothing to replay here.
+        } else {
+          const attached = attach(sessionId, userId, (message) => send(socket, message));
+          unsubscribe = attached.unsubscribe;
 
-        send(socket, {
-          type: 'ready',
-          sessionId: attached.session.id,
-          pid: attached.session.pid ?? 0,
-          shell: attached.session.shell,
-          cwd: attached.session.cwd,
-        });
+          send(socket, {
+            type: 'ready',
+            sessionId: attached.session.id,
+            pid: attached.session.pid ?? 0,
+            shell: attached.session.shell,
+            cwd: attached.session.cwd,
+          });
 
-        // Rebuild the client's screen with output produced before it attached.
-        for (const chunk of attached.replay) {
-          send(socket, { type: 'output', data: chunk });
+          // Rebuild the client's screen with output produced before it attached.
+          for (const chunk of attached.replay) {
+            send(socket, { type: 'output', data: chunk });
+          }
         }
       } catch (error) {
         log.warn({ err: error, sessionId }, 'websocket attach failed');
@@ -150,23 +178,38 @@ export function registerTerminalWebSocket(app: FastifyInstance): void {
           return;
         }
 
+        // A host frame is forwarded to the agent (async); a local one is applied
+        // to the in-process PTY (sync). Failures are logged, never fatal.
+        const onFrameError = (error: unknown): void =>
+          log.warn({ err: error, sessionId, type: result.data.type }, 'terminal frame rejected');
+
         try {
           switch (result.data.type) {
             case 'input':
-              writeInput(sessionId, userId, result.data.data);
+              if (host) void writeHostInput(sessionId, userId, result.data.data).catch(onFrameError);
+              else writeInput(sessionId, userId, result.data.data);
               break;
             case 'resize':
-              resizeSession(sessionId, userId, result.data.cols, result.data.rows);
+              if (host)
+                void resizeHostSession(
+                  sessionId,
+                  userId,
+                  result.data.cols,
+                  result.data.rows
+                ).catch(onFrameError);
+              else resizeSession(sessionId, userId, result.data.cols, result.data.rows);
               break;
             case 'signal':
-              sendSignal(sessionId, userId, result.data.signal);
+              if (host)
+                void signalHostSession(sessionId, userId, result.data.signal).catch(onFrameError);
+              else sendSignal(sessionId, userId, result.data.signal);
               break;
             case 'ping':
               send(socket, { type: 'pong', at: new Date().toISOString() });
               break;
           }
         } catch (error) {
-          log.warn({ err: error, sessionId, type: result.data.type }, 'terminal frame rejected');
+          onFrameError(error);
         }
       });
 

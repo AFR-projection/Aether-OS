@@ -343,9 +343,10 @@ AETHER_PAIRING_TOKEN=$AETHER_PAIRING_TOKEN
 AETHER_WORKSPACE_ROOT=$AETHER_WORKSPACE_ROOT
 
 TERMINAL_ENABLED=true
-# Sending signals is opt-in: it is the one capability that can take this host
-# down, so enable it deliberately.
-PROCESS_SIGNAL_ENABLED=false
+# Process signalling is on so the Task Manager can end processes on this host.
+# The backend still requires the process:manage permission for every signal,
+# and both sides refuse pid 1, the agent itself, and its ancestors.
+PROCESS_SIGNAL_ENABLED=true
 EOF
     )
     chmod 600 "$config_file"

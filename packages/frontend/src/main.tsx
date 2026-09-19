@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './App.js';
 import { queryClient } from './lib/query-client.js';
+import { bootstrapTheme } from './stores/theme.store.js';
 
 import './index.css';
 
@@ -14,6 +15,10 @@ import './index.css';
  * session — mounting twice would spawn two shells for one window. The terminal
  * guards against this as well, but not double-mounting is the cleaner rule.
  */
+
+// Set the theme on <html> before the first paint so the desktop never flashes
+// the default palette when a different one is stored.
+bootstrapTheme();
 
 const root = document.getElementById('root');
 if (root === null) {

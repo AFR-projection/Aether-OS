@@ -120,13 +120,15 @@ const envSchema = z.object({
   /**
    * Whether the Task Manager may send signals to processes.
    *
-   * Defaults to **false**. Ending a process is the one action in the API that
-   * can take the host down — a careless click on `sshd` or the firewall daemon
-   * locks the operator out of their own machine — so the capability is opt-in
-   * and the installer has to enable it deliberately. Even when enabled, Aether
-   * refuses to signal pid 1, itself, or any of its own ancestors.
+   * Defaults to **true**: Aether is meant to give an operator real control of
+   * their own host, and a Task Manager that cannot end a process is barely one.
+   * The dangerous edge — a careless signal to `sshd`, the firewall daemon, or
+   * the init system — is closed by two guards that are always on regardless of
+   * this flag: the caller must hold `process:manage` (owner/admin only), and
+   * Aether refuses to signal pid 1, itself, or any of its own ancestors. Set
+   * this to `false` to make the process table strictly read-only.
    */
-  AETHER_PROCESS_SIGNAL_ENABLED: booleanFromEnv.default(false),
+  AETHER_PROCESS_SIGNAL_ENABLED: booleanFromEnv.default(true),
 
   // --- Static frontend -----------------------------------------------------
   /** Directory containing the built frontend. Served when it exists. */

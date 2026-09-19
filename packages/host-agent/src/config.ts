@@ -43,7 +43,11 @@ const envSchema = z.object({
     ),
 
   // --- Process management ---
-  PROCESS_SIGNAL_ENABLED: booleanFromEnv.default(false),
+  // Enabled by default: the agent runs on the host to control it, and process
+  // signalling is guarded by the backend's `process:manage` permission plus a
+  // protected-pid check (never pid 1, self, or an ancestor). Set to `false` to
+  // force the process table read-only on this host.
+  PROCESS_SIGNAL_ENABLED: booleanFromEnv.default(true),
 
   // --- Reconnection ---
   RECONNECT_BASE_DELAY_MS: z.coerce.number().int().min(1000).default(1000),

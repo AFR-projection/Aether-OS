@@ -1,3 +1,5 @@
+import { X } from 'lucide-react';
+
 import { Button, Spinner } from './Button.js';
 import { ApiRequestError } from '../../lib/api-client.js';
 
@@ -118,10 +120,10 @@ export function Banner({
         <button
           type="button"
           onClick={onDismiss}
-          className="shrink-0 rounded px-1 text-slate-400 hover:text-slate-200"
+          className="shrink-0 rounded p-0.5 text-slate-400 hover:text-slate-200"
           aria-label="Dismiss"
         >
-          ✕
+          <X size={14} aria-hidden="true" />
         </button>
       ) : null}
     </div>

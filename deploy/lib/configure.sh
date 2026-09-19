@@ -145,7 +145,10 @@ UPLOAD_DIR=/opt/aether/uploads
 AETHER_STATIC_DIR=/opt/aether/static
 TERMINAL_ENABLED=true
 TERMINAL_MAX_SESSIONS=10
-AETHER_PROCESS_SIGNAL_ENABLED=false
+# Process signalling is on so the Task Manager can end processes. It stays
+# guarded by the process:manage permission (owner/admin) and a protected-pid
+# check that never lets pid 1, the backend, or its ancestors be signalled.
+AETHER_PROCESS_SIGNAL_ENABLED=true
 TRUST_PROXY_HOPS=1
 
 AETHER_BOOTSTRAP_TOKEN=${SECRET_BOOTSTRAP_TOKEN}

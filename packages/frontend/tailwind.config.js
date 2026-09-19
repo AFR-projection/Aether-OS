@@ -1,27 +1,41 @@
 /** @type {import('tailwindcss').Config} */
+
+// The palette is driven by CSS variables (defined per theme in index.css under
+// `[data-theme=…]`) rather than literal hex, so switching the OS theme restyles
+// every existing `surface-*` / `accent` utility without touching components.
+// Each variable holds space-separated RGB channels, and the `<alpha-value>`
+// placeholder lets Tailwind's opacity modifiers (e.g. `bg-surface-900/80`) keep
+// working.
+const withChannels = (variable) => `rgb(var(${variable}) / <alpha-value>)`;
+
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        // A single dark palette. A light theme is not implemented; the desktop
-        // metaphor and the terminal app both read better on a dark surface, and
-        // shipping a half-finished light theme would be worse than none.
         surface: {
-          900: '#0b1020',
-          800: '#111834',
-          700: '#18203f',
-          600: '#212a4d',
-          500: '#2c3760',
+          900: withChannels('--surface-900'),
+          800: withChannels('--surface-800'),
+          700: withChannels('--surface-700'),
+          600: withChannels('--surface-600'),
+          500: withChannels('--surface-500'),
         },
         accent: {
-          DEFAULT: '#4f8cff',
-          hover: '#6ea3ff',
-          muted: '#2b4a86',
+          DEFAULT: withChannels('--accent'),
+          hover: withChannels('--accent-hover'),
+          muted: withChannels('--accent-muted'),
         },
       },
       fontFamily: {
+        // The UI font follows the active theme (Segoe UI on Windows, the San
+        // Francisco stack on macOS, Cantarell/Inter on GNOME). The variable is
+        // set per theme in index.css.
+        sans: ['var(--font-ui)', 'system-ui', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+      },
+      borderRadius: {
+        // The floating-window radius, so window chrome can use `rounded-window`.
+        window: 'var(--window-radius)',
       },
       keyframes: {
         'fade-in': {

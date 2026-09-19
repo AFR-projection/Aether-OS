@@ -163,8 +163,11 @@ export function AppCatalogApp({ windowId }: AppProps) {
                 key={app.id}
                 className="flex items-start gap-3 rounded-lg border border-white/10 bg-surface-900/40 p-3"
               >
-                <span className="text-xl" aria-hidden="true">
-                  {app.icon}
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
+                  aria-hidden="true"
+                >
+                  <app.icon size={20} strokeWidth={1.75} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">

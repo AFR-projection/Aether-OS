@@ -2,8 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme palettes.
+ *
+ * Each theme sets the RGB channels the Tailwind `surface`/`accent` scales read
+ * (see tailwind.config.js) plus the UI font and window radius. Colours are
+ * space-separated channels, not hex, so Tailwind's `/opacity` modifiers work.
+ * `:root` carries the Windows 11 values as the default so the UI is styled even
+ * before `data-theme` is set; each `[data-theme=…]` block below overrides them.
+ *
+ * The values are drawn from each OS's real dark palette — Windows 11 mica greys
+ * with the Fluent blue, Apple's systemGray dark scale with the macOS blue, and
+ * Adwaita dark with the GNOME blue — so the desktop reads as that OS, not as a
+ * generic dark theme.
+ */
 @layer base {
-  :root {
+  :root,
+  [data-theme='win11'] {
+    --surface-900: 27 27 31;
+    --surface-800: 32 32 38;
+    --surface-700: 43 43 50;
+    --surface-600: 52 52 60;
+    --surface-500: 64 64 74;
+    --accent: 0 120 212;
+    --accent-hover: 28 145 240;
+    --accent-muted: 43 74 134;
+    --font-ui: 'Segoe UI Variable', 'Segoe UI', system-ui;
+    --window-radius: 8px;
+    color-scheme: dark;
+  }
+
+  [data-theme='macos'] {
+    --surface-900: 28 28 30;
+    --surface-800: 44 44 46;
+    --surface-700: 58 58 60;
+    --surface-600: 72 72 74;
+    --surface-500: 99 99 102;
+    --accent: 10 132 255;
+    --accent-hover: 51 149 255;
+    --accent-muted: 30 74 128;
+    --font-ui: -apple-system, 'SF Pro Text', 'Helvetica Neue', system-ui;
+    --window-radius: 10px;
+    color-scheme: dark;
+  }
+
+  [data-theme='gnome'] {
+    --surface-900: 29 29 29;
+    --surface-800: 36 36 36;
+    --surface-700: 48 48 48;
+    --surface-600: 58 58 58;
+    --surface-500: 77 77 77;
+    --accent: 53 132 228;
+    --accent-hover: 74 144 232;
+    --accent-muted: 28 61 102;
+    --font-ui: 'Cantarell', 'Inter', system-ui;
+    --window-radius: 12px;
     color-scheme: dark;
   }
 
@@ -16,13 +69,14 @@
 
   body {
     overflow: hidden;
+    font-family: var(--font-ui), sans-serif;
   }
 
   /* A desktop environment is a fixed-viewport app: the only things that scroll
      are the individual window bodies, never the page itself. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.surface.500') transparent;
+    scrollbar-color: rgb(var(--surface-500)) transparent;
   }
 
   *::-webkit-scrollbar {
@@ -35,14 +89,14 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background-color: theme('colors.surface.500');
+    background-color: rgb(var(--surface-500));
     border-radius: 9999px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
 
   :focus-visible {
-    outline: 2px solid theme('colors.accent.DEFAULT');
+    outline: 2px solid rgb(var(--accent));
     outline-offset: 2px;
   }
 }

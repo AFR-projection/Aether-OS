@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 
 import { Button } from './Button.js';
 
@@ -27,6 +27,8 @@ export function Dialog({
   width?: 'sm' | 'md' | 'lg';
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const descId = useId();
 
   useEffect(() => {
     const element = ref.current;
@@ -59,6 +61,8 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
+      aria-labelledby={titleId}
+      aria-describedby={description !== undefined ? descId : undefined}
       className={`w-[calc(100vw-2rem)] ${widths[width]} rounded-lg border border-white/10 bg-surface-800 p-0 text-slate-100 shadow-2xl backdrop:bg-black/60`}
       onClick={(event) => {
         // Clicks land on the dialog element itself only when they hit the
@@ -68,9 +72,13 @@ export function Dialog({
     >
       <div className="flex flex-col gap-3 p-5">
         <div className="flex flex-col gap-1">
-          <h2 className="text-sm font-semibold text-slate-100">{title}</h2>
+          <h2 id={titleId} className="text-sm font-semibold text-slate-100">
+            {title}
+          </h2>
           {description !== undefined ? (
-            <p className="text-xs text-slate-400">{description}</p>
+            <p id={descId} className="text-xs text-slate-400">
+              {description}
+            </p>
           ) : null}
         </div>
 

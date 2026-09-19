@@ -1,6 +1,8 @@
 import { useRef, type ReactNode } from 'react';
 
+import { WindowControls } from './WindowControls.js';
 import { useDesktopStore, type WindowInstance } from '../stores/desktop.store.js';
+import { useActiveTheme } from '../stores/theme.store.js';
 
 /**
  * A draggable, resizable window frame.
@@ -8,9 +10,12 @@ import { useDesktopStore, type WindowInstance } from '../stores/desktop.store.js
  * Dragging and resizing are pointer-based so touch and mouse behave the same.
  * The title bar is the drag handle; the bottom-right corner is the resize
  * handle. Double-clicking the title bar toggles maximisation.
+ *
+ * The title-bar layout follows the active OS theme: where the controls sit
+ * (left for macOS traffic lights, right for Windows/GNOME), how the title is
+ * aligned, the bar height, and the window corner radius all come from the
+ * theme's chrome definition.
  */
-
-const TASKBAR_HEIGHT = 40;
 
 export function Window({
   instance,
@@ -27,6 +32,7 @@ export function Window({
   const moveWindow = useDesktopStore((state) => state.moveWindow);
   const resizeWindow = useDesktopStore((state) => state.resizeWindow);
   const toggleMaximize = useDesktopStore((state) => state.toggleMaximize);
+  const { chrome } = useActiveTheme();
 
   const dragRef = useRef<{
     startX: number;
@@ -44,12 +50,38 @@ export function Window({
   if (instance.minimized) return null;
 
   const maximised = instance.restoreBounds !== null;
+  const controlsLeft = chrome.controlSide === 'left';
+  // Windows 11 caption buttons run flush into the top-right corner (clipped only
+  // by the window radius), so the title bar drops its right padding for that theme.
+  const flushControls = chrome.controlStyle === 'win11';
+
+  const controls = (
+    <WindowControls
+      chrome={chrome}
+      focused={focused}
+      maximised={maximised}
+      onMinimize={() => minimizeWindow(instance.id)}
+      onToggleMaximize={() => toggleMaximize(instance.id)}
+      onClose={() => closeWindow(instance.id)}
+    />
+  );
+
+  const title = (
+    <span
+      className={[
+        'min-w-0 flex-1 truncate px-1 text-xs font-medium text-slate-200',
+        chrome.titleAlign === 'center' ? 'text-center' : 'text-left',
+      ].join(' ')}
+    >
+      {instance.title}
+    </span>
+  );
 
   return (
     <div
       className={[
-        'absolute flex flex-col overflow-hidden rounded-lg border bg-surface-800 shadow-2xl',
-        focused ? 'border-accent/50' : 'border-white/10',
+        'absolute flex flex-col overflow-hidden bg-surface-800 shadow-2xl',
+        focused ? 'border border-accent/50' : 'border border-white/10',
       ].join(' ')}
       style={{
         left: instance.bounds.x,
@@ -57,15 +89,19 @@ export function Window({
         width: instance.bounds.width,
         height: instance.bounds.height,
         zIndex: instance.zIndex,
-        // A maximised window has square corners and no border, like every other OS.
-        ...(maximised ? { borderRadius: 0, borderWidth: 0 } : {}),
-        marginBottom: TASKBAR_HEIGHT,
+        borderRadius: maximised ? 0 : chrome.windowRadius,
+        // A maximised window is edge-to-edge with no border, like every OS.
+        ...(maximised ? { borderWidth: 0 } : {}),
       }}
       onPointerDown={() => focusWindow(instance.id)}
     >
       {/* Title bar */}
       <div
-        className="flex h-9 shrink-0 cursor-move select-none items-center gap-1 bg-surface-900/80 px-2"
+        className={[
+          'flex shrink-0 cursor-move select-none items-center gap-1 bg-surface-900/80',
+          flushControls ? 'pl-2 pr-0' : 'px-2',
+        ].join(' ')}
+        style={{ height: chrome.titlebarHeight }}
         onPointerDown={(event) => {
           if (maximised || event.button !== 0) return;
           (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
@@ -90,43 +126,21 @@ export function Window({
         }}
         onDoubleClick={() => toggleMaximize(instance.id)}
       >
-        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-slate-200">
-          {instance.title}
-        </span>
-
-        <button
-          type="button"
-          aria-label="Minimize"
-          className="rounded px-2 py-0.5 text-slate-400 hover:bg-white/10"
-          onClick={(event) => {
-            event.stopPropagation();
-            minimizeWindow(instance.id);
-          }}
-        >
-          –
-        </button>
-        <button
-          type="button"
-          aria-label={maximised ? 'Restore' : 'Maximize'}
-          className="rounded px-2 py-0.5 text-slate-400 hover:bg-white/10"
-          onClick={(event) => {
-            event.stopPropagation();
-            toggleMaximize(instance.id);
-          }}
-        >
-          {maximised ? '❐' : '□'}
-        </button>
-        <button
-          type="button"
-          aria-label="Close"
-          className="rounded px-2 py-0.5 text-slate-400 hover:bg-red-600 hover:text-white"
-          onClick={(event) => {
-            event.stopPropagation();
-            closeWindow(instance.id);
-          }}
-        >
-          ✕
-        </button>
+        {controlsLeft ? (
+          <>
+            {controls}
+            {title}
+            {/* A spacer the width of the controls keeps a centred title truly
+                centred rather than pushed right by the left-side lights. */}
+            <span aria-hidden="true" className="w-14 shrink-0" />
+          </>
+        ) : (
+          <>
+            {chrome.titleAlign === 'center' ? <span aria-hidden="true" className="w-20 shrink-0" /> : null}
+            {title}
+            {controls}
+          </>
+        )}
       </div>
 
       {/* App content */}

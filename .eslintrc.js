@@ -43,7 +43,9 @@ module.exports = {
         alphabetize: { order: 'asc', caseInsensitive: true },
       },
     ],
-    'import/no-unresolved': 'error',
+    // Vite resolves `?worker`/`?url`/`?raw`/`?inline` query suffixes at build
+    // time; the TypeScript resolver cannot follow them, so exempt them here.
+    'import/no-unresolved': ['error', { ignore: ['\\?(worker|url|raw|inline)$'] }],
     'import/no-cycle': 'warn',
 
     // General

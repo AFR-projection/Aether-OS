@@ -22,6 +22,11 @@ COPY packages/frontend packages/frontend
 
 ARG VITE_API_URL=""
 ENV VITE_API_URL=${VITE_API_URL}
+# Raise V8's heap ceiling for the build. The default old-space limit (~2 GB, but
+# far lower when the container sees little RAM) lets the Vite/Rollup bundle step
+# abort with "JavaScript heap out of memory" (SIGABRT, exit 134) on small VPS
+# hosts. This only affects the build container; the runtime image is unaffected.
+ENV NODE_OPTIONS=--max-old-space-size=2048
 RUN pnpm --filter @aether/shared build \
  && pnpm --filter @aether/frontend build
 

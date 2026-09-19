@@ -9,6 +9,12 @@ import { authenticate, requirePermission, requirePrincipal } from '../middleware
 import { issueTicket } from '../security/ws-ticket.js';
 import { recordAuditEvent } from '../services/audit.service.js';
 import {
+  createHostSession,
+  getOwnedHostSession,
+  killHostSession,
+  listHostSessionsForUser,
+} from '../services/host-terminal.service.js';
+import {
   createSession,
   getOwnedSession,
   isTerminalAvailable,
@@ -18,10 +24,42 @@ import {
   terminalStats,
   writeInput,
 } from '../services/terminal.service.js';
-import { NotFoundError } from '../utils/errors.js';
+import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { parseOrThrow } from '../utils/validate.js';
 
 import type { FastifyInstance } from 'fastify';
+
+interface RequestScope {
+  scope: 'workspace' | 'host';
+  agentId: string | null;
+}
+
+/** Splits `scope`/`agentId` off a body so the strict schema sees only its own fields. */
+function readScope(source: unknown): { scope: RequestScope; rest: Record<string, unknown> } {
+  const record = (typeof source === 'object' && source !== null ? source : {}) as Record<
+    string,
+    unknown
+  >;
+  const { scope: scopeRaw, agentId: agentIdRaw, ...rest } = record;
+  const scope = scopeRaw === 'host' ? 'host' : 'workspace';
+  const agentId = typeof agentIdRaw === 'string' && agentIdRaw.length > 0 ? agentIdRaw : null;
+  return { scope: { scope, agentId }, rest };
+}
+
+/** Authorizes access to a session in either scope; throws 404 when the caller does not own it. */
+function assertOwnsSession(sessionId: string, userId: string): void {
+  if (getOwnedHostSession(sessionId, userId) !== null) return;
+  // Local check throws NotFoundError when the user does not own a local session.
+  getOwnedSession(sessionId, userId);
+}
+
+/** Resolves the target agent id for a host-scope terminal, or fails with a clear reason. */
+function requireAgentId(scope: RequestScope): string {
+  if (scope.scope !== 'host' || scope.agentId === null) {
+    throw new ValidationError('A host agent id is required for host-scope terminals');
+  }
+  return scope.agentId;
+}
 
 export function registerTerminalRoutes(app: FastifyInstance): void {
   const guards = [authenticate, requirePermission('terminal:create')];
@@ -34,21 +72,37 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
     preHandler: guards,
     handler: (request) => {
       const principal = requirePrincipal(request);
-      return { data: { sessions: listSessionsForUser(principal.user.id) } };
+      return {
+        data: {
+          sessions: [
+            ...listSessionsForUser(principal.user.id),
+            ...listHostSessionsForUser(principal.user.id),
+          ],
+        },
+      };
     },
   });
 
   app.post('/api/terminal/sessions', { preHandler: guards }, async (request, reply) => {
     const principal = requirePrincipal(request);
-    const body = parseOrThrow(createTerminalBodySchema, request.body ?? {}, 'terminal session');
+    const { scope, rest } = readScope(request.body ?? {});
+    const body = parseOrThrow(createTerminalBodySchema, rest, 'terminal session');
 
-    const session = await createSession({
-      ownerUserId: principal.user.id,
-      cols: body.cols,
-      rows: body.rows,
-      ...(body.cwd !== undefined ? { cwd: body.cwd } : {}),
-      ...(body.shell !== undefined ? { shell: body.shell } : {}),
-    });
+    const session =
+      scope.scope === 'host'
+        ? await createHostSession(requireAgentId(scope), principal.user.id, {
+            cols: body.cols,
+            rows: body.rows,
+            ...(body.cwd !== undefined ? { cwd: body.cwd } : {}),
+            ...(body.shell !== undefined ? { shell: body.shell } : {}),
+          })
+        : await createSession({
+            ownerUserId: principal.user.id,
+            cols: body.cols,
+            rows: body.rows,
+            ...(body.cwd !== undefined ? { cwd: body.cwd } : {}),
+            ...(body.shell !== undefined ? { shell: body.shell } : {}),
+          });
 
     await recordAuditEvent({
       action: 'terminal.created',
@@ -59,7 +113,7 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'] ?? null,
       target: session.id,
-      metadata: { shell: session.shell, pid: session.pid },
+      metadata: { shell: session.shell, pid: session.pid, scope: scope.scope },
     });
 
     return reply.status(201).send({ data: session });
@@ -95,10 +149,14 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
 
     // Ownership is checked before the kill so one user cannot terminate
     // another user's shell by guessing a session id.
-    getOwnedSession(params.id, principal.user.id);
-
-    if (!killSession(params.id, 'user_requested')) {
-      throw new NotFoundError('Terminal session does not exist', { sessionId: params.id });
+    const hostRecord = getOwnedHostSession(params.id, principal.user.id);
+    if (hostRecord !== null) {
+      await killHostSession(params.id, principal.user.id);
+    } else {
+      getOwnedSession(params.id, principal.user.id);
+      if (!killSession(params.id, 'user_requested')) {
+        throw new NotFoundError('Terminal session does not exist', { sessionId: params.id });
+      }
     }
 
     await recordAuditEvent({
@@ -131,7 +189,7 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
       const principal = requirePrincipal(request);
       const params = parseOrThrow(terminalIdParamSchema, request.params, 'session id');
 
-      getOwnedSession(params.id, principal.user.id);
+      assertOwnsSession(params.id, principal.user.id);
 
       return { data: await issueTicket(params.id, principal.user.id) };
     }

@@ -1,3 +1,15 @@
+import {
+  Boxes,
+  FolderClosed,
+  Gauge,
+  LineChart,
+  ShieldCheck,
+  SlidersHorizontal,
+  SquareTerminal,
+  SquareCode,
+  type LucideIcon,
+} from 'lucide-react';
+
 import { AppCatalogApp } from './app-catalog/AppCatalogApp.js';
 import { CodeStudioApp } from './code-studio/CodeStudioApp.js';
 import { FilesApp } from './files/FilesApp.js';
@@ -23,8 +35,8 @@ export interface AppDefinition {
   name: string;
   /** One line, shown in the launcher and the app catalog. */
   description: string;
-  /** A single glyph. Emoji keeps the bundle free of an icon dependency. */
-  icon: string;
+  /** The app's icon, a line icon from lucide-react. */
+  icon: LucideIcon;
   defaultSize: { width: number; height: number };
   /** Only one window of this app may exist at a time. */
   singleton: boolean;
@@ -42,7 +54,7 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
     id: 'files',
     name: 'Files',
     description: 'Browse, edit, upload, and download files in the workspace.',
-    icon: '📁',
+    icon: FolderClosed,
     defaultSize: { width: 940, height: 620 },
     singleton: false,
     requiredPermission: 'files:read',
@@ -52,7 +64,7 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
     id: 'terminal',
     name: 'Terminal',
     description: 'A real shell on the host, streamed over a WebSocket.',
-    icon: '⌨️',
+    icon: SquareTerminal,
     defaultSize: { width: 860, height: 540 },
     singleton: false,
     requiredPermission: 'terminal:create',
@@ -61,8 +73,8 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
   {
     id: 'code-studio',
     name: 'Code Studio',
-    description: 'Open and edit text files, with line numbers and save.',
-    icon: '🧩',
+    description: 'A full code editor with a file tree, tabs, and syntax highlighting.',
+    icon: SquareCode,
     defaultSize: { width: 1000, height: 660 },
     singleton: false,
     requiredPermission: 'files:read',
@@ -72,7 +84,7 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
     id: 'task-manager',
     name: 'Task Manager',
     description: 'Running processes, their memory use, and a search filter.',
-    icon: '📊',
+    icon: Gauge,
     defaultSize: { width: 900, height: 600 },
     singleton: true,
     requiredPermission: 'process:read',
@@ -82,7 +94,7 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
     id: 'system-monitor',
     name: 'System Monitor',
     description: 'CPU, memory, disk, and network for this host.',
-    icon: '📈',
+    icon: LineChart,
     defaultSize: { width: 880, height: 620 },
     singleton: true,
     requiredPermission: 'system:read',
@@ -91,8 +103,8 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
   {
     id: 'settings',
     name: 'Settings',
-    description: 'Account, sessions, users, and instance information.',
-    icon: '⚙️',
+    description: 'Account, sessions, users, appearance, and instance information.',
+    icon: SlidersHorizontal,
     defaultSize: { width: 920, height: 640 },
     singleton: true,
     component: SettingsApp,
@@ -101,7 +113,7 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
     id: 'security-center',
     name: 'Security Center',
     description: 'The audit log: who did what, from where, and whether it worked.',
-    icon: '🛡️',
+    icon: ShieldCheck,
     defaultSize: { width: 980, height: 620 },
     singleton: true,
     requiredPermission: 'audit:read',
@@ -111,7 +123,7 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
     id: 'app-catalog',
     name: 'App Catalog',
     description: 'Choose which apps appear on the desktop and in the launcher.',
-    icon: '🧰',
+    icon: Boxes,
     defaultSize: { width: 820, height: 580 },
     singleton: true,
     component: AppCatalogApp,

@@ -19,8 +19,10 @@ import {
   revokeSession,
   updateUser,
 } from '../../lib/system-api.js';
+import { THEME_IDS, THEMES, type ThemeId } from '../../lib/themes.js';
 import { useCurrentUser } from '../../stores/auth.store.js';
 import { useDesktopStore } from '../../stores/desktop.store.js';
+import { useThemeStore } from '../../stores/theme.store.js';
 
 import type { AppProps } from '../registry.js';
 import type { AgentPairResult, AuthSession, HostAgent, PublicUser } from '@aether/shared';
@@ -34,7 +36,7 @@ import type { AgentPairResult, AuthSession, HostAgent, PublicUser } from '@aethe
  * convenience; it is not the control.
  */
 
-type Tab = 'account' | 'sessions' | 'users' | 'agents' | 'about';
+type Tab = 'account' | 'appearance' | 'sessions' | 'users' | 'agents' | 'about';
 
 export function SettingsApp({ windowId }: AppProps) {
   const user = useCurrentUser();
@@ -54,6 +56,7 @@ export function SettingsApp({ windowId }: AppProps) {
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: 'account', label: 'Account' },
+    { id: 'appearance', label: 'Appearance' },
     { id: 'sessions', label: 'Sessions' },
     ...(canManageUsers ? [{ id: 'users' as Tab, label: 'Users' }] : []),
     ...(canManageSettings ? [{ id: 'agents' as Tab, label: 'Host agents' }] : []),
@@ -84,6 +87,7 @@ export function SettingsApp({ windowId }: AppProps) {
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {tab === 'account' ? <AccountSection user={user} /> : null}
+        {tab === 'appearance' ? <AppearanceSection /> : null}
         {tab === 'sessions' ? <SessionsSection /> : null}
         {tab === 'users' && canManageUsers ? <UsersSection currentUser={user} /> : null}
         {tab === 'agents' && canManageSettings ? <AgentsSection /> : null}
@@ -257,6 +261,152 @@ function AccountSection({ user }: { user: PublicUser }) {
   );
 }
 
+function AppearanceSection() {
+  const theme = useThemeStore((state) => state.theme);
+  const setTheme = useThemeStore((state) => state.setTheme);
+
+  return (
+    <Section title="Desktop theme">
+      <p className="mb-3 text-xs text-slate-400">
+        Choose the look of the whole desktop. Each theme restyles the window frames, the shell, the
+        colours, and the system font to match that operating system. The choice is saved in this
+        browser.
+      </p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {THEME_IDS.map((id) => (
+          <ThemeCard key={id} id={id} selected={theme === id} onSelect={() => setTheme(id)} />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+/** A selectable theme card with a small, accurate preview of its window chrome. */
+function ThemeCard({
+  id,
+  selected,
+  onSelect,
+}: {
+  id: ThemeId;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const definition = THEMES[id];
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={[
+        'flex flex-col gap-2 rounded-lg border p-2 text-left transition-colors',
+        selected
+          ? 'border-accent bg-accent/10'
+          : 'border-white/10 bg-surface-900/40 hover:border-white/20',
+      ].join(' ')}
+    >
+      <ThemePreview id={id} />
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-slate-100">{definition.label}</span>
+          {selected ? (
+            <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] font-medium text-white">
+              Active
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{definition.description}</p>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * A miniature, data-theme-scoped mock of the desktop for the given theme.
+ *
+ * The `data-theme` attribute on this subtree makes the CSS variables resolve to
+ * that theme's palette regardless of the active theme, so all three previews
+ * show their true colours side by side.
+ */
+function ThemePreview({ id }: { id: ThemeId }) {
+  const { chrome } = THEMES[id];
+  const controlsLeft = chrome.controlSide === 'left';
+
+  const controls =
+    chrome.controlStyle === 'traffic' ? (
+      <span className="flex gap-1">
+        <span className="h-2 w-2 rounded-full" style={{ background: '#ff5f57' }} />
+        <span className="h-2 w-2 rounded-full" style={{ background: '#febc2e' }} />
+        <span className="h-2 w-2 rounded-full" style={{ background: '#28c840' }} />
+      </span>
+    ) : chrome.controlStyle === 'gnome' ? (
+      <span className="flex gap-1">
+        <span className="h-2.5 w-2.5 rounded-full bg-white/25" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/25" />
+      </span>
+    ) : (
+      <svg width="26" height="6" viewBox="0 0 26 6" className="text-slate-300" aria-hidden="true">
+        <line x1="0" y1="3" x2="5" y2="3" stroke="currentColor" strokeWidth="1" />
+        <rect x="10" y="0.5" width="5" height="5" fill="none" stroke="currentColor" strokeWidth="1" />
+        <line x1="21" y1="0.5" x2="26" y2="5.5" stroke="currentColor" strokeWidth="1" />
+        <line x1="26" y1="0.5" x2="21" y2="5.5" stroke="currentColor" strokeWidth="1" />
+      </svg>
+    );
+
+  return (
+    <div
+      data-theme={id}
+      className="relative flex h-24 flex-col overflow-hidden rounded-md"
+      style={{
+        background:
+          id === 'macos'
+            ? 'linear-gradient(150deg, #3d2a6b, #b5527a)'
+            : id === 'gnome'
+              ? 'linear-gradient(140deg, #3a3f9e, #1a1c3d)'
+              : 'linear-gradient(140deg, #123a7a, #060f26)',
+      }}
+    >
+      {/* Top shell bar for dock/topbar themes. */}
+      {chrome.shell !== 'taskbar' ? (
+        <div className="flex h-3 items-center bg-black/40 px-1">
+          <span className="h-1 w-6 rounded-full bg-white/40" />
+        </div>
+      ) : null}
+
+      {/* A little window. */}
+      <div className="mx-auto mt-3 w-3/4 overflow-hidden rounded border border-white/10 bg-surface-800 shadow">
+        <div
+          className={[
+            'flex items-center gap-1 bg-surface-900 px-1.5 py-1',
+            controlsLeft ? 'flex-row' : 'flex-row-reverse',
+          ].join(' ')}
+        >
+          {controls}
+          <span className="h-1 flex-1 rounded-full bg-white/15" />
+        </div>
+        <div className="space-y-1 p-1.5">
+          <span className="block h-1 w-full rounded-full bg-white/10" />
+          <span className="block h-1 w-2/3 rounded-full" style={{ background: 'rgb(var(--accent))' }} />
+        </div>
+      </div>
+
+      {/* Bottom shell for taskbar/dock themes. */}
+      {chrome.shell === 'taskbar' ? (
+        <div className="mt-auto flex h-3 items-center justify-center bg-black/40">
+          <span className="h-1.5 w-1.5 rounded-sm" style={{ background: 'rgb(var(--accent))' }} />
+        </div>
+      ) : chrome.shell === 'dock' ? (
+        <div className="mt-auto mb-1 flex justify-center gap-1">
+          <span className="h-3 w-3 rounded-md bg-white/25" />
+          <span className="h-3 w-3 rounded-md bg-white/25" />
+          <span className="h-3 w-3 rounded-md bg-white/25" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SessionsSection() {
   const queryClient = useQueryClient();
   const [pendingRevoke, setPendingRevoke] = useState<AuthSession | null>(null);
@@ -276,7 +426,7 @@ function SessionsSection() {
     return <ErrorState error={sessions.error} onRetry={() => void sessions.refetch()} />;
   }
 
-  const rows = sessions.data.sessions;
+  const rows = sessions.data;
 
   return (
     <Section title="Active sessions">

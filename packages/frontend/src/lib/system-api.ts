@@ -91,8 +91,16 @@ export function fetchAuditEvents(params: {
   });
 }
 
-export function fetchSessions(): Promise<{ sessions: AuthSession[] }> {
-  return apiRequest<{ sessions: AuthSession[] }>('/api/auth/sessions');
+/**
+ * Lists the caller's active sessions.
+ *
+ * The endpoint returns a bare array inside the `{ data }` envelope, and
+ * `apiRequest` unwraps `data`, so the resolved value is the array itself —
+ * not an object with a `sessions` field. Typing it as the array is what keeps
+ * callers from reading `.sessions` off an array and crashing.
+ */
+export function fetchSessions(): Promise<AuthSession[]> {
+  return apiRequest<AuthSession[]>('/api/auth/sessions');
 }
 
 export function revokeSession(sessionId: string): Promise<{ revoked: boolean }> {
