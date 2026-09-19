@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { queryBooleanSchema, relativePathSchema } from './common.schema.js';
+import { queryBooleanSchema, relativePathSchema, uuidSchema } from './common.schema.js';
 
 /** Query for `GET /api/files/list`. An empty path means the workspace root. */
 export const listDirectoryQuerySchema = z.object({
@@ -47,6 +47,33 @@ export const downloadQuerySchema = z.object({
   path: relativePathSchema,
 });
 export type DownloadQuery = z.infer<typeof downloadQuerySchema>;
+
+/**
+ * Query for `GET /api/files/raw` — the byte-serving endpoint.
+ *
+ * This one is authenticated by `ticket` rather than by a bearer token, because
+ * the callers are `<img>`, `<video>` and `<audio>` elements that fetch their own
+ * `src` and cannot attach a header. The ticket is bound to exactly the scope,
+ * agent and path given here, so it authorises one file and nothing else; see
+ * `security/media-ticket.ts`.
+ */
+export const rawQuerySchema = z.object({
+  path: relativePathSchema,
+  scope: z.enum(['workspace', 'host']).default('workspace'),
+  agentId: uuidSchema.optional(),
+  ticket: z.string().min(1).max(512),
+  /** Present on a download, which is stored rather than displayed. */
+  download: queryBooleanSchema.default(false),
+});
+export type RawQuery = z.infer<typeof rawQuerySchema>;
+
+/** Body for `POST /api/files/media-ticket`. */
+export const mediaTicketBodySchema = z.object({
+  path: relativePathSchema,
+  scope: z.enum(['workspace', 'host']).default('workspace'),
+  agentId: uuidSchema.optional(),
+});
+export type MediaTicketBody = z.infer<typeof mediaTicketBodySchema>;
 
 export const searchQuerySchema = z.object({
   /** Directory to search, relative to the workspace root. */

@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 import {
   LIMITS,
@@ -9,7 +10,7 @@ import {
 } from '@aether/shared';
 
 import { sendAgentRequest } from './agent-rpc.service.js';
-import { classifyContent } from './files.service.js';
+import { classifyContent, getMimeType } from './files.service.js';
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '../utils/errors.js';
 
 /**
@@ -169,8 +170,174 @@ export async function hostCreateDirectory(agentId: string, relative: string): Pr
   return synthesizeEntry(relative, 'directory', 0);
 }
 
-export async function hostDeletePath(agentId: string, relative: string): Promise<void> {
-  await sendAgentRequest(agentId, 'files.delete', { path: relative });
+export async function hostDeletePath(
+  agentId: string,
+  relative: string,
+  recursive = false
+): Promise<void> {
+  await sendAgentRequest(agentId, 'files.delete', { path: relative, recursive });
+}
+
+export async function hostRenamePath(
+  agentId: string,
+  options: { from: string; to: string; overwrite: boolean }
+): Promise<FileEntry> {
+  const reply = expectRecord(
+    await sendAgentRequest(agentId, 'files.rename', {
+      from: options.from,
+      to: options.to,
+      overwrite: options.overwrite,
+    }),
+    'rename'
+  );
+
+  const entry = reply.entry as AgentListEntry | undefined;
+  if (!entry || typeof entry.path !== 'string') {
+    // The rename succeeded — the agent answered ok — so failing here would
+    // report a change that did happen as though it had not. Synthesize the
+    // entry from the destination the caller named instead.
+    return synthesizeEntry(options.to, 'file', 0);
+  }
+
+  return toFileEntry(entry);
+}
+
+/**
+ * Size and content type of a host file, in one round trip.
+ *
+ * The agent's chunk reply carries the file's full size alongside the bytes it
+ * was asked for, so the cheapest way to learn a size is to ask for a small read
+ * and throw the bytes away — except they are not thrown away here. The sample
+ * goes through the same content classification the editor's reader uses, which
+ * is what gives a host file with no extension (`favicon`, a copied `photo`) the
+ * right `Content-Type` instead of `application/octet-stream`, and the browser's
+ * media element something it is willing to play.
+ */
+export async function hostProbeFile(
+  agentId: string,
+  relative: string
+): Promise<{ size: number; name: string; mimeType: string }> {
+  const sampleBytes = 4 * 1024;
+  const reply = expectRecord(
+    await sendAgentRequest(agentId, 'files.readChunk', {
+      path: relative,
+      offset: 0,
+      length: sampleBytes,
+    }),
+    'read'
+  );
+
+  const size = typeof reply.size === 'number' ? reply.size : 0;
+  const name = path.posix.basename(relative);
+  const sample =
+    typeof reply.contentBase64 === 'string'
+      ? Buffer.from(reply.contentBase64, 'base64')
+      : Buffer.alloc(0);
+
+  // A probe that reads nothing must not decide the type from an empty buffer:
+  // `classifyContent` would call an empty sample textual and hand a video
+  // `text/plain`.
+  if (sample.length === 0) {
+    return { size, name, mimeType: getMimeType(relative) };
+  }
+
+  return { size, name, mimeType: classifyContent(relative, sample).mimeType };
+}
+
+/**
+ * Streams a byte range of a host file as a Node readable.
+ *
+ * Each chunk crosses the agent's WebSocket as base64 in its own request/reply,
+ * which is why the chunk size is bounded by the frame limit rather than by
+ * anything about the file. The generator stops on a short read: the agent
+ * returns fewer bytes than asked for only when the file ended, and asking again
+ * would cost a round trip to be told the same thing.
+ *
+ * A host file is not on this container's filesystem, so there is no fd to hand
+ * to `createReadStream` — this is the whole reason the range has to be pulled
+ * rather than pushed.
+ */
+export function hostOpenRange(
+  agentId: string,
+  relative: string,
+  range: { start: number; end: number }
+): NodeJS.ReadableStream {
+  const { start, end } = range;
+
+  async function* chunks(): AsyncGenerator<Buffer> {
+    let offset = start;
+
+    while (offset <= end) {
+      const length = Math.min(LIMITS.HOST_STREAM_CHUNK_BYTES, end - offset + 1);
+      const reply = expectRecord(
+        await sendAgentRequest(agentId, 'files.readChunk', { path: relative, offset, length }),
+        'read'
+      );
+
+      if (typeof reply.contentBase64 !== 'string') {
+        throw new ServiceUnavailableError('The host agent returned no file content');
+      }
+
+      const chunk = Buffer.from(reply.contentBase64, 'base64');
+      if (chunk.length === 0) return;
+
+      yield chunk;
+      offset += chunk.length;
+
+      // A short read is the agent telling us the file ended.
+      if (chunk.length < length) return;
+    }
+  }
+
+  return Readable.from(chunks());
+}
+
+/**
+ * Writes a whole buffer to a host file in chunks.
+ *
+ * Uploads arrive as a stream on this side and have to leave as framed messages
+ * on the other, so the bytes are buffered to one frame's worth and flushed as
+ * each full chunk accumulates. The first flush truncates: without that, a small
+ * new file landing on a larger old one would keep the old file's tail.
+ */
+export async function hostWriteStream(
+  agentId: string,
+  relative: string,
+  source: NodeJS.ReadableStream
+): Promise<FileEntry> {
+  let pending: Buffer[] = [];
+  let pendingBytes = 0;
+  let offset = 0;
+  let first = true;
+
+  const flush = async (): Promise<void> => {
+    if (pendingBytes === 0 && !first) return;
+
+    const chunk = Buffer.concat(pending, pendingBytes);
+    pending = [];
+    pendingBytes = 0;
+
+    await sendAgentRequest(agentId, 'files.writeChunk', {
+      path: relative,
+      offset,
+      contentBase64: chunk.toString('base64'),
+      truncate: first,
+    });
+
+    offset += chunk.length;
+    first = false;
+  };
+
+  for await (const raw of source) {
+    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+    pending.push(buffer);
+    pendingBytes += buffer.length;
+
+    if (pendingBytes >= LIMITS.HOST_STREAM_CHUNK_BYTES) await flush();
+  }
+
+  await flush();
+  return synthesizeEntry(relative, 'file', offset);
 }
 
 /**

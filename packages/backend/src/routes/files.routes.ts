@@ -1,8 +1,12 @@
+import { PassThrough, type Readable } from 'node:stream';
+
 import {
   deleteBodySchema,
   downloadQuerySchema,
   listDirectoryQuerySchema,
+  mediaTicketBodySchema,
   mkdirBodySchema,
+  rawQuerySchema,
   readFileQuerySchema,
   renameBodySchema,
   searchQuerySchema,
@@ -12,12 +16,17 @@ import {
 
 import { config } from '../config.js';
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
+import { issueMediaTicket, redeemMediaTicket } from '../security/media-ticket.js';
 import {
   hostCreateDirectory,
   hostDeletePath,
   hostListDirectory,
+  hostOpenRange,
+  hostProbeFile,
   hostReadFile,
+  hostRenamePath,
   hostWriteFile,
+  hostWriteStream,
 } from '../services/agent-files.service.js';
 import { isAgentRpcConnected } from '../services/agent-rpc.service.js';
 import { recordAuditEvent } from '../services/audit.service.js';
@@ -29,6 +38,7 @@ import {
   readFile,
   renamePath,
   searchEntries,
+  statForServing,
   statPath,
   streamToFile,
   writeFile,
@@ -40,8 +50,10 @@ import {
   ServiceUnavailableError,
   ValidationError,
 } from '../utils/errors.js';
+import { parseRange } from '../utils/range.js';
 import { parseOrThrow } from '../utils/validate.js';
 
+import type { FileEntry } from '@aether/shared';
 import type { FastifyInstance } from 'fastify';
 
 /**
@@ -137,11 +149,13 @@ export function registerFilesRoutes(app: FastifyInstance): void {
   app.get('/api/files/download', { preHandler: readGuards }, async (request, reply) => {
     const principal = requirePrincipal(request);
     const { scope, rest } = readScope(request.query);
-    if (scope.scope === 'host') {
-      throw new NotImplementedError('Downloading from a host agent is not available yet');
-    }
     const query = parseOrThrow(downloadQuerySchema, rest, 'download query');
-    const { stream, size, name } = await openReadStream(query.path);
+
+    const agentId = scope.scope === 'host' ? requireAgent(scope) : null;
+    const probed =
+      agentId === null
+        ? await statForServing(query.path)
+        : await hostProbeFile(agentId, query.path);
 
     await recordAuditEvent({
       action: 'file.downloaded',
@@ -152,16 +166,24 @@ export function registerFilesRoutes(app: FastifyInstance): void {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'] ?? null,
       target: query.path,
-      metadata: { size },
+      metadata: { size: probed.size, scope: scope.scope },
     });
+
+    const body =
+      agentId === null
+        ? (await openReadStream(query.path)).stream
+        : hostOpenRange(agentId, query.path, { start: 0, end: probed.size - 1 });
 
     // `filename` is passed through encodeURIComponent so a name containing a
     // quote or newline cannot break out of the header value.
     return reply
       .header('Content-Type', 'application/octet-stream')
-      .header('Content-Length', String(size))
-      .header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`)
-      .send(stream);
+      .header('Content-Length', String(probed.size))
+      .header(
+        'Content-Disposition',
+        `attachment; filename*=UTF-8''${encodeURIComponent(probed.name)}`
+      )
+      .send(body);
   });
 
   app.post('/api/files/write', { preHandler: writeGuards }, async (request) => {
@@ -227,12 +249,16 @@ export function registerFilesRoutes(app: FastifyInstance): void {
   app.post('/api/files/rename', { preHandler: writeGuards }, async (request) => {
     const principal = requirePrincipal(request);
     const { scope, rest } = readScope(request.body);
-    if (scope.scope === 'host') {
-      throw new NotImplementedError('Renaming on a host agent is not available yet');
-    }
     const body = parseOrThrow(renameBodySchema, rest, 'rename request');
 
-    const entry = await renamePath({ from: body.from, to: body.to, overwrite: body.overwrite });
+    const entry =
+      scope.scope === 'host'
+        ? await hostRenamePath(requireAgent(scope), {
+            from: body.from,
+            to: body.to,
+            overwrite: body.overwrite,
+          })
+        : await renamePath({ from: body.from, to: body.to, overwrite: body.overwrite });
 
     await recordAuditEvent({
       action: 'file.renamed',
@@ -243,7 +269,7 @@ export function registerFilesRoutes(app: FastifyInstance): void {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'] ?? null,
       target: body.from,
-      metadata: { to: body.to, overwrite: body.overwrite },
+      metadata: { to: body.to, overwrite: body.overwrite, scope: scope.scope },
     });
 
     return { data: entry };
@@ -255,7 +281,7 @@ export function registerFilesRoutes(app: FastifyInstance): void {
     const body = parseOrThrow(deleteBodySchema, rest, 'delete request');
 
     if (scope.scope === 'host') {
-      await hostDeletePath(requireAgent(scope), body.path);
+      await hostDeletePath(requireAgent(scope), body.path, body.recursive);
     } else {
       await deletePath(body.path, body.recursive);
     }
@@ -300,9 +326,6 @@ export function registerFilesRoutes(app: FastifyInstance): void {
   app.post('/api/files/upload', { preHandler: writeGuards }, async (request, reply) => {
     const principal = requirePrincipal(request);
     const { scope, rest } = readScope(request.query);
-    if (scope.scope === 'host') {
-      throw new NotImplementedError('Uploading to a host agent is not available yet');
-    }
     const query = parseOrThrow(uploadQuerySchema, rest, 'upload query');
 
     if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/octet-stream') {
@@ -313,7 +336,11 @@ export function registerFilesRoutes(app: FastifyInstance): void {
       throw new PayloadTooLargeError('Request body could not be read');
     }
 
-    const entry = await streamToFile(query.path, query.name, request.raw, config.MAX_FILE_SIZE);
+    const relative = query.path === '' ? query.name : `${query.path}/${query.name}`;
+    const entry =
+      scope.scope === 'host'
+        ? await uploadToHost(requireAgent(scope), relative, request.raw)
+        : await streamToFile(query.path, query.name, request.raw, config.MAX_FILE_SIZE);
 
     await recordAuditEvent({
       action: 'file.uploaded',
@@ -324,9 +351,171 @@ export function registerFilesRoutes(app: FastifyInstance): void {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'] ?? null,
       target: entry.path,
-      metadata: { size: entry.size },
+      metadata: { size: entry.size, scope: scope.scope },
     });
 
     return reply.status(201).send({ data: entry });
   });
+
+  /**
+   * Issues a ticket for the byte-serving endpoint.
+   *
+   * Requested over an authenticated call, then used as a plain query parameter
+   * by an `<img>`/`<video>`/`<audio>` element that cannot set headers. The
+   * ticket names the scope and the exact path, so it opens one file for ten
+   * minutes and nothing else.
+   */
+  app.post('/api/files/media-ticket', { preHandler: readGuards }, async (request) => {
+    const principal = requirePrincipal(request);
+    const body = parseOrThrow(mediaTicketBodySchema, request.body, 'media ticket request');
+
+    const agentId =
+      body.scope === 'host' ? requireAgent({ scope: 'host', agentId: body.agentId ?? null }) : null;
+
+    return {
+      data: await issueMediaTicket({
+        userId: principal.user.id,
+        scope: body.scope,
+        agentId,
+        path: body.path,
+      }),
+    };
+  });
+
+  /**
+   * Serves file bytes, with `Range` support, for elements that fetch their own
+   * source.
+   *
+   * The whole point is that a video element can open this URL directly and seek
+   * inside it: the requested range is answered with `206` and exactly those
+   * bytes, whether the file is on this container's disk or on a host agent
+   * behind an RPC channel. The two scopes converge on one readable stream here,
+   * so nothing downstream has to know which it got.
+   */
+  app.get('/api/files/raw', async (request, reply) => {
+    // The scope fields are read off the query and re-derived from the validated
+    // ticket binding below, so the raw `scope` here is intentionally unused.
+    const { rest } = readScope(request.query);
+    const query = parseOrThrow(rawQuerySchema, rest, 'raw query');
+
+    const agentId =
+      query.scope === 'host'
+        ? requireAgent({ scope: 'host', agentId: query.agentId ?? null })
+        : null;
+
+    await redeemMediaTicket(query.ticket, {
+      scope: query.scope,
+      agentId,
+      path: query.path,
+    });
+
+    const probed =
+      agentId === null
+        ? await statForServing(query.path)
+        : await hostProbeFile(agentId, query.path);
+
+    const disposition = query.download
+      ? `attachment; filename*=UTF-8''${encodeURIComponent(probed.name)}`
+      : 'inline';
+
+    const headers = {
+      'Content-Type': probed.mimeType,
+      'Content-Disposition': disposition,
+      // Advertised so a media element knows seeking is available before it
+      // tries; without it some players will not offer a scrub bar at all.
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'private, max-age=60',
+    };
+
+    if (request.method === 'HEAD') {
+      return reply.headers({ ...headers, 'Content-Length': String(probed.size) }).send();
+    }
+
+    const parsed = parseRange(request.headers.range, probed.size);
+
+    if (parsed.kind === 'unsatisfiable') {
+      return reply.status(416).header('Content-Range', `bytes */${probed.size}`).send();
+    }
+
+    if (parsed.kind === 'full') {
+      const body =
+        agentId === null
+          ? (await openReadStream(query.path)).stream
+          : hostOpenRange(agentId, query.path, { start: 0, end: probed.size - 1 });
+
+      return reply.headers({ ...headers, 'Content-Length': String(probed.size) }).send(body);
+    }
+
+    const { start, end } = parsed.range;
+    const body =
+      agentId === null
+        ? (await openReadStream(query.path, { start, end })).stream
+        : hostOpenRange(agentId, query.path, { start, end });
+
+    return reply
+      .status(206)
+      .headers({
+        ...headers,
+        'Content-Range': `bytes ${start}-${end}/${probed.size}`,
+        'Content-Length': String(end - start + 1),
+      })
+      .send(body);
+  });
+}
+
+/**
+ * Streams an upload body to a host agent, enforcing the same ceiling the
+ * workspace path does.
+ *
+ * The bytes are counted as they pass rather than trusted from a `Content-Length`
+ * header, because that header is caller-controlled. When the limit is crossed
+ * the source is destroyed and the partial file is deleted on the agent, so a
+ * refused upload leaves nothing behind — the same guarantee `streamToFile`
+ * gives in workspace scope, arrived at over RPC instead of on disk.
+ */
+async function uploadToHost(
+  agentId: string,
+  relative: string,
+  source: Readable
+): Promise<FileEntry> {
+  let written = 0;
+  let overflowed = false;
+
+  const counted = new PassThrough();
+
+  source.on('data', (chunk: Buffer) => {
+    written += chunk.length;
+    if (written > config.MAX_FILE_SIZE) {
+      overflowed = true;
+      source.destroy(
+        new PayloadTooLargeError('Upload exceeds the maximum file size', {
+          limit: config.MAX_FILE_SIZE,
+        })
+      );
+    }
+  });
+
+  // An error on the source has to reach the awaiting writer; otherwise an
+  // aborted upload would hang here instead of failing the request.
+  source.on('error', (error) => counted.destroy(error));
+  source.pipe(counted);
+
+  let entry: FileEntry;
+  try {
+    entry = await hostWriteStream(agentId, relative, counted);
+  } catch (error) {
+    if (overflowed) {
+      await hostDeletePath(agentId, relative, false).catch(() => undefined);
+    }
+    throw error;
+  }
+
+  if (overflowed) {
+    await hostDeletePath(agentId, relative, false).catch(() => undefined);
+    throw new PayloadTooLargeError('Upload exceeds the maximum file size', {
+      limit: config.MAX_FILE_SIZE,
+    });
+  }
+
+  return entry;
 }

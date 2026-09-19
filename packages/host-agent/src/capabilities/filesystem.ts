@@ -1,7 +1,17 @@
-import { mkdir, readFile, readdir, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 
-import { NotFoundError } from '../errors.js';
+import { ConflictError, NotFoundError } from '../errors.js';
 import { subsystemLogger } from '../logger.js';
 import { joinToRoot, resolveExistingPath, resolvePathForWrite } from '../security/workspace.js';
 
@@ -92,6 +102,152 @@ export async function readFileContent(cfg: AgentConfig, relative: string): Promi
   return readFile(resolved.absolute);
 }
 
+export interface ChunkResult {
+  content: Buffer;
+  /** Total size of the file, so a ranged reader learns the boundary it asked about. */
+  size: number;
+}
+
+/**
+ * Reads one byte range out of a file.
+ *
+ * The existing `files.read` returns a whole file, which is the wrong shape for
+ * anything a browser plays or seeks: a video is far larger than one WebSocket
+ * frame, and the only frame the reader cares about is the one the player asked
+ * for. Reading a range keeps a 4 GB film as cheap to serve as a 4 KB icon, and
+ * it is what makes HTTP `Range` requests answerable at all.
+ *
+ * The returned buffer is shorter than `length` when the request runs past the
+ * end of the file — the caller compares `offset + content.length` against `size`
+ * to tell a short read from a complete one.
+ */
+export async function readFileChunk(
+  cfg: AgentConfig,
+  relative: string,
+  offset: number,
+  length: number
+): Promise<ChunkResult> {
+  const resolved = await resolveExistingPath(cfg, relative);
+
+  if (!resolved.exists) {
+    throw new NotFoundError('File does not exist', { path: relative });
+  }
+
+  const stats = await stat(resolved.absolute);
+  if (stats.isDirectory()) {
+    throw new NotFoundError('Path is a directory, not a file', { path: relative });
+  }
+
+  if (offset >= stats.size) {
+    return { content: Buffer.alloc(0), size: stats.size };
+  }
+
+  const toRead = Math.min(length, stats.size - offset);
+  const handle = await open(resolved.absolute, 'r');
+  try {
+    const buffer = Buffer.alloc(toRead);
+    const { bytesRead } = await handle.read(buffer, 0, toRead, offset);
+    return { content: buffer.subarray(0, bytesRead), size: stats.size };
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Writes one byte range into a file, optionally truncating it first.
+ *
+ * The first chunk of an upload passes `truncate`, which is what stops a new file
+ * landing on top of a longer old one and keeping that file's tail. Subsequent
+ * chunks append at increasing offsets without it.
+ */
+export async function writeFileChunk(
+  cfg: AgentConfig,
+  relative: string,
+  offset: number,
+  content: Buffer,
+  truncate: boolean
+): Promise<number> {
+  const resolved = await resolvePathForWrite(cfg, relative, { createParents: false });
+
+  const handle = await open(resolved.absolute, truncate ? 'w' : 'r+');
+  try {
+    if (!truncate && offset > 0) {
+      // `r+` on a file shorter than the offset would leave a hole of NUL bytes.
+      // Creating it first keeps the append position honest.
+      const stats = await handle.stat();
+      if (stats.size < offset) {
+        await handle.truncate(offset);
+      }
+    }
+    const { bytesWritten } = await handle.write(content, 0, content.length, offset);
+    return bytesWritten;
+  } finally {
+    await handle.close();
+  }
+}
+
+export interface RenameOptions {
+  from: string;
+  to: string;
+  overwrite: boolean;
+}
+
+export async function renameEntry(cfg: AgentConfig, options: RenameOptions): Promise<FileEntry> {
+  const source = await resolveExistingPath(cfg, options.from);
+  if (!source.exists) {
+    throw new NotFoundError('Source path does not exist', { path: options.from });
+  }
+
+  const destination = await resolvePathForWrite(cfg, options.to, { createParents: false });
+
+  if (destination.exists && !options.overwrite) {
+    throw new ConflictError('Destination already exists', { path: options.to });
+  }
+
+  // A directory moved inside itself fails with EINVAL at the syscall; catching it
+  // here means the caller gets a reason rather than an errno.
+  if (source.relative !== '' && destination.relative.startsWith(`${source.relative}/`)) {
+    throw new ConflictError('Cannot move a directory into itself');
+  }
+
+  await rename(source.absolute, destination.absolute);
+  const stats = await stat(destination.absolute);
+  return statsToFileEntry(path.posix.basename(destination.relative), destination.relative, stats);
+}
+
+export async function deleteEntry(
+  cfg: AgentConfig,
+  relative: string,
+  recursive = false
+): Promise<void> {
+  const resolved = await resolveExistingPath(cfg, relative);
+
+  if (!resolved.exists) {
+    throw new NotFoundError('Path does not exist', { path: relative });
+  }
+
+  if (resolved.relative === '') {
+    throw new ConflictError('Refusing to delete the root of the agent workspace');
+  }
+
+  const statResult = await stat(resolved.absolute);
+  if (statResult.isDirectory()) {
+    const entries = await readdir(resolved.absolute);
+    if (entries.length > 0 && !recursive) {
+      throw new ConflictError('Refusing to delete a non-empty directory', { path: relative });
+    }
+    // `rmdir` cannot remove a tree, and `rm -r` on a machine where the agent
+    // runs as root is exactly the call that must not be sloppy about its
+    // boundary — so `recursive` is honoured literally rather than being passed
+    // through from the caller unexamined.
+    await rm(resolved.absolute, { recursive, force: false });
+  } else {
+    await unlink(resolved.absolute);
+  }
+
+  log.info({ path: relative, recursive }, 'entry deleted');
+}
+
 export async function writeFileContent(
   cfg: AgentConfig,
   relative: string,
@@ -102,27 +258,6 @@ export async function writeFileContent(
     createParents: options?.createParents,
   });
   await writeFile(resolved.absolute, content);
-}
-
-export async function deleteEntry(cfg: AgentConfig, relative: string): Promise<void> {
-  const resolved = await resolveExistingPath(cfg, relative);
-
-  if (!resolved.exists) {
-    throw new NotFoundError('Path does not exist', { path: relative });
-  }
-
-  const statResult = await stat(resolved.absolute);
-  if (statResult.isDirectory()) {
-    const entries = await readdir(resolved.absolute);
-    if (entries.length > 0) {
-      throw new NotFoundError('Refusing to delete a non-empty directory', { path: relative });
-    }
-    await rmdir(resolved.absolute);
-  } else {
-    await unlink(resolved.absolute);
-  }
-
-  log.info({ path: relative }, 'entry deleted');
 }
 
 export async function createDirectory(cfg: AgentConfig, relative: string): Promise<void> {

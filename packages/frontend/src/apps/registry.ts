@@ -2,6 +2,7 @@ import {
   Boxes,
   FolderClosed,
   Gauge,
+  Image as ImageIcon,
   LineChart,
   ShieldCheck,
   SlidersHorizontal,
@@ -13,6 +14,7 @@ import {
 import { AppCatalogApp } from './app-catalog/AppCatalogApp.js';
 import { CodeStudioApp } from './code-studio/CodeStudioApp.js';
 import { FilesApp } from './files/FilesApp.js';
+import { MediaViewerApp } from './media-viewer/MediaViewerApp.js';
 import { SecurityCenterApp } from './security-center/SecurityCenterApp.js';
 import { SettingsApp } from './settings/SettingsApp.js';
 import { SystemMonitorApp } from './system-monitor/SystemMonitorApp.js';
@@ -79,6 +81,16 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
     singleton: false,
     requiredPermission: 'files:read',
     component: CodeStudioApp,
+  },
+  {
+    id: 'media-viewer',
+    name: 'Media Viewer',
+    description: 'Images, video, audio, and PDFs, with seeking and zoom.',
+    icon: ImageIcon,
+    defaultSize: { width: 900, height: 640 },
+    singleton: false,
+    requiredPermission: 'files:read',
+    component: MediaViewerApp,
   },
   {
     id: 'task-manager',

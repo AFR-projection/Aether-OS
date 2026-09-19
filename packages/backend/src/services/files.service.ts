@@ -529,16 +529,44 @@ export async function searchEntries(options: SearchOptions): Promise<FileEntry[]
   return results;
 }
 
-/** Opens a readable stream for the download endpoint. */
+/**
+ * Opens a readable stream over a byte range for the serving endpoints.
+ *
+ * `range` is inclusive on both ends, matching what an HTTP `Range` header
+ * means. Without one the whole file is streamed, which is what a download
+ * wants; with one, a browser's media element gets exactly the bytes it asked
+ * for and a seek costs a slice instead of a whole file.
+ */
 export async function openReadStream(
-  relative: string
-): Promise<{ stream: NodeJS.ReadableStream; size: number; name: string }> {
+  relative: string,
+  range?: { start: number; end: number }
+): Promise<{
+  stream: NodeJS.ReadableStream;
+  size: number;
+  name: string;
+  mimeType: string;
+}> {
   const { absolute, size } = await assertReadableFile(relative);
+
+  const stream =
+    range === undefined
+      ? createReadStream(absolute)
+      : createReadStream(absolute, { start: range.start, end: range.end });
+
   return {
-    stream: createReadStream(absolute),
+    stream,
     size,
     name: path.basename(absolute),
+    mimeType: getMimeType(absolute),
   };
+}
+
+/** Size, name and content type of a file, without opening it. */
+export async function statForServing(
+  relative: string
+): Promise<{ size: number; name: string; mimeType: string }> {
+  const { absolute, size } = await assertReadableFile(relative);
+  return { size, name: path.basename(absolute), mimeType: getMimeType(absolute) };
 }
 
 /** Ensures the configured upload directory exists inside the workspace. */

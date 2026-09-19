@@ -28,9 +28,12 @@ export const agentCapabilities = [
   'processes.signal',
   'files.list',
   'files.read',
+  'files.readChunk',
   'files.write',
+  'files.writeChunk',
   'files.delete',
   'files.mkdir',
+  'files.rename',
   'terminal.create',
   'terminal.input',
   'terminal.resize',
@@ -64,6 +67,22 @@ export const filesListParamsSchema = z.object({ path: relativePathSchema.default
 
 export const filesReadParamsSchema = z.object({ path: relativePathSchema }).strict();
 
+/**
+ * A byte range within one file.
+ *
+ * `offset` is a plain non-negative integer and `length` is capped at the frame
+ * budget, so a single request can never be answered with a reply too large to
+ * send. Reaching the end of a file is not an error: the reply simply carries
+ * fewer bytes than were asked for.
+ */
+export const filesReadChunkParamsSchema = z
+  .object({
+    path: relativePathSchema,
+    offset: z.number().int().min(0),
+    length: z.number().int().min(1).max(LIMITS.HOST_STREAM_CHUNK_BYTES),
+  })
+  .strict();
+
 export const filesWriteParamsSchema = z
   .object({
     path: relativePathSchema,
@@ -71,9 +90,31 @@ export const filesWriteParamsSchema = z
   })
   .strict();
 
-export const filesDeleteParamsSchema = z.object({ path: relativePathSchema }).strict();
+export const filesWriteChunkParamsSchema = z
+  .object({
+    path: relativePathSchema,
+    offset: z.number().int().min(0),
+    // The base64 ceiling is the encoded size of the largest legal chunk, with
+    // room for the padding characters that push it a few bytes over 4/3.
+    contentBase64: z.string().max(Math.ceil((LIMITS.HOST_STREAM_CHUNK_BYTES * 4) / 3) + 8),
+    /** Truncate before writing. Only the first chunk of an upload sets this. */
+    truncate: z.boolean().default(false),
+  })
+  .strict();
+
+export const filesDeleteParamsSchema = z
+  .object({ path: relativePathSchema, recursive: z.boolean().default(false) })
+  .strict();
 
 export const filesMkdirParamsSchema = z.object({ path: relativePathSchema }).strict();
+
+export const filesRenameParamsSchema = z
+  .object({
+    from: relativePathSchema,
+    to: relativePathSchema,
+    overwrite: z.boolean().default(false),
+  })
+  .strict();
 
 export const terminalCreateParamsSchema = z
   .object({
@@ -81,6 +122,7 @@ export const terminalCreateParamsSchema = z
     rows: z.number().int().min(1).max(1000).default(24),
     cwd: relativePathSchema.optional(),
     shell: z.string().max(256).optional(),
+    command: z.string().max(4096).optional(),
   })
   .strict();
 
@@ -114,9 +156,12 @@ const requestParamsByType: Record<string, z.ZodTypeAny> = {
   'processes.signal': processSignalParamsSchema,
   'files.list': filesListParamsSchema,
   'files.read': filesReadParamsSchema,
+  'files.readChunk': filesReadChunkParamsSchema,
   'files.write': filesWriteParamsSchema,
+  'files.writeChunk': filesWriteChunkParamsSchema,
   'files.delete': filesDeleteParamsSchema,
   'files.mkdir': filesMkdirParamsSchema,
+  'files.rename': filesRenameParamsSchema,
   'terminal.create': terminalCreateParamsSchema,
   'terminal.input': terminalInputParamsSchema,
   'terminal.resize': terminalResizeParamsSchema,

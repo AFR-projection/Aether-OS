@@ -95,6 +95,7 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
             rows: body.rows,
             ...(body.cwd !== undefined ? { cwd: body.cwd } : {}),
             ...(body.shell !== undefined ? { shell: body.shell } : {}),
+            ...(body.command !== undefined ? { command: body.command } : {}),
           })
         : await createSession({
             ownerUserId: principal.user.id,
@@ -102,6 +103,7 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
             rows: body.rows,
             ...(body.cwd !== undefined ? { cwd: body.cwd } : {}),
             ...(body.shell !== undefined ? { shell: body.shell } : {}),
+            ...(body.command !== undefined ? { command: body.command } : {}),
           });
 
     await recordAuditEvent({

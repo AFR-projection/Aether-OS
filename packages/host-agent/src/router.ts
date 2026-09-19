@@ -4,7 +4,10 @@ import {
   createDirectory,
   deleteEntry,
   listFiles,
+  readFileChunk,
   readFileContent,
+  renameEntry,
+  writeFileChunk,
   writeFileContent,
 } from './capabilities/filesystem.js';
 import {
@@ -61,11 +64,36 @@ interface WriteParams {
   contentBase64: string;
 }
 
+interface ReadChunkParams {
+  path: string;
+  offset: number;
+  length: number;
+}
+
+interface WriteChunkParams {
+  path: string;
+  offset: number;
+  contentBase64: string;
+  truncate: boolean;
+}
+
+interface DeleteParams {
+  path: string;
+  recursive: boolean;
+}
+
+interface RenameParams {
+  from: string;
+  to: string;
+  overwrite: boolean;
+}
+
 interface TerminalCreateParams {
   cols?: number;
   rows?: number;
   cwd?: string;
   shell?: string;
+  command?: string;
 }
 
 interface TerminalIdParams {
@@ -151,6 +179,12 @@ async function route(
       return { contentBase64: content.toString('base64') };
     }
 
+    case 'files.readChunk': {
+      const params = request.params as ReadChunkParams;
+      const { content, size } = await readFileChunk(cfg, params.path, params.offset, params.length);
+      return { contentBase64: content.toString('base64'), size, offset: params.offset };
+    }
+
     case 'files.write': {
       const params = request.params as WriteParams;
       const content = Buffer.from(params.contentBase64, 'base64');
@@ -158,9 +192,16 @@ async function route(
       return { written: true, path: params.path, bytes: content.length };
     }
 
+    case 'files.writeChunk': {
+      const params = request.params as WriteChunkParams;
+      const content = Buffer.from(params.contentBase64, 'base64');
+      const bytes = await writeFileChunk(cfg, params.path, params.offset, content, params.truncate);
+      return { written: true, path: params.path, bytes, offset: params.offset };
+    }
+
     case 'files.delete': {
-      const params = request.params as PathParams;
-      await deleteEntry(cfg, params.path);
+      const params = request.params as DeleteParams;
+      await deleteEntry(cfg, params.path, params.recursive);
       return { deleted: true, path: params.path };
     }
 
@@ -168,6 +209,16 @@ async function route(
       const params = request.params as PathParams;
       await createDirectory(cfg, params.path);
       return { created: true, path: params.path };
+    }
+
+    case 'files.rename': {
+      const params = request.params as RenameParams;
+      const entry = await renameEntry(cfg, {
+        from: params.from,
+        to: params.to,
+        overwrite: params.overwrite,
+      });
+      return { renamed: true, entry };
     }
 
     case 'terminal.create': {
@@ -178,6 +229,7 @@ async function route(
         rows: params.rows ?? 24,
         cwd: params.cwd,
         shell: params.shell,
+        command: params.command,
       });
     }
 

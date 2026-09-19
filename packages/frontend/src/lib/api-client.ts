@@ -315,17 +315,22 @@ export async function apiDownload(
 /**
  * Uploads a file as a raw body.
  *
+ * `scope` carries the `scope`/`agentId` query fields when the target is a host
+ * agent rather than the backend workspace — without them an upload aimed at the
+ * host would silently land in the container instead.
+ *
  * `fetch` reports upload progress through a stream, which is not implemented
  * here — the UI shows an indeterminate state instead of a fake percentage.
  */
 export async function apiUpload(
   targetDirectory: string,
   file: File,
+  scope: Record<string, string> = {},
   signal?: AbortSignal
 ): Promise<void> {
   await apiRequest('/api/files/upload', {
     method: 'POST',
-    query: { path: targetDirectory, name: file.name },
+    query: { path: targetDirectory, name: file.name, ...scope },
     rawBody: file,
     contentType: 'application/octet-stream',
     ...(signal !== undefined ? { signal } : {}),

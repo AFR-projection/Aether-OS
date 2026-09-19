@@ -9,6 +9,15 @@ export const createTerminalBodySchema = z.object({
   cwd: relativePathSchema.optional(),
   /** Optional shell override. Validated against an allowlist on the server. */
   shell: z.string().max(256).optional(),
+  /**
+   * Run this command instead of an interactive shell.
+   *
+   * The shell still comes from the allowlist and this is handed to it as
+   * `-c <command>`, so it grants nothing a terminal does not already grant —
+   * it just means the session starts running something rather than waiting.
+   * Code Studio's Run panel is the caller.
+   */
+  command: z.string().min(1).max(4096).optional(),
 });
 export type CreateTerminalBody = z.infer<typeof createTerminalBodySchema>;
 

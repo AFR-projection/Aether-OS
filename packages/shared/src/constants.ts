@@ -90,4 +90,14 @@ export const LIMITS = {
   MAX_UPLOAD_BYTES: 512 * 1024 * 1024,
   MAX_DIRECTORY_ENTRIES: 5_000,
   WS_MESSAGE_MAX_BYTES: 1024 * 1024,
+  /**
+   * Bytes moved per frame when a file is streamed to or from a host agent.
+   *
+   * A host file has to travel as base64 inside the agent's WebSocket frames,
+   * and the frame ceiling above is what sizes this: 512 KiB of payload encodes
+   * to roughly 700 KB of base64, which leaves the JSON envelope comfortable
+   * room under 1 MiB. Raising it past that does not make transfers faster, it
+   * makes the agent reject them.
+   */
+  HOST_STREAM_CHUNK_BYTES: 512 * 1024,
 } as const;

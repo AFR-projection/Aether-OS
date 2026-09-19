@@ -42,7 +42,10 @@ function request(
     | 'processes.signal'
     | 'files.list'
     | 'files.read'
+    | 'files.readChunk'
     | 'files.write'
+    | 'files.writeChunk'
+    | 'files.rename'
     | 'files.delete'
     | 'files.mkdir',
   params: unknown = {}
@@ -162,9 +165,123 @@ describe('router', () => {
       OWNER,
       request('r12', 'files.delete', { path: 'sub' })
     );
-    // Deleting a non-empty directory is rejected with NOT_FOUND by the agent.
+    // A refusal because the directory still has contents is a conflict, not a
+    // missing path: the resource is right there, and saying NOT_FOUND would
+    // send a caller looking for the wrong problem.
     expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.error.code).toBe('NOT_FOUND');
+    if (!refused.ok) expect(refused.error.code).toBe('CONFLICT');
+  });
+
+  it('deletes a non-empty directory when recursive is set', async () => {
+    await dispatchRequest(cfg, OWNER, request('r20', 'files.mkdir', { path: 'tree' }));
+    await dispatchRequest(cfg, OWNER, request('r21', 'files.mkdir', { path: 'tree/deep' }));
+
+    const content = Buffer.from('x').toString('base64');
+    await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r22', 'files.write', { path: 'tree/deep/file.txt', contentBase64: content })
+    );
+
+    const removed = await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r23', 'files.delete', { path: 'tree', recursive: true })
+    );
+    expect(removed.ok).toBe(true);
+
+    const listing = await dispatchRequest(cfg, OWNER, request('r24', 'files.list', { path: '' }));
+    expect(listing.ok).toBe(true);
+    if (listing.ok) {
+      const names = (listing.result as { entries: { name: string }[] }).entries.map((e) => e.name);
+      expect(names).not.toContain('tree');
+    }
+  });
+
+  it('reads a byte range without pulling the whole file', async () => {
+    const payload = Buffer.from('0123456789');
+    await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r30', 'files.write', {
+        path: 'range.txt',
+        contentBase64: payload.toString('base64'),
+      })
+    );
+
+    const slice = await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r31', 'files.readChunk', { path: 'range.txt', offset: 2, length: 4 })
+    );
+
+    expect(slice.ok).toBe(true);
+    if (slice.ok) {
+      const result = slice.result as { contentBase64: string; size: number; offset: number };
+      expect(Buffer.from(result.contentBase64, 'base64').toString()).toBe('2345');
+      // The whole-file size comes back with the slice, which is what lets a
+      // ranged reader answer `Content-Range` without a second request.
+      expect(result.size).toBe(10);
+      expect(result.offset).toBe(2);
+    }
+  });
+
+  it('returns an empty slice past the end rather than failing', async () => {
+    // Each test gets a fresh workspace, so this one writes its own file rather
+    // than leaning on the test above it.
+    await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r33', 'files.write', {
+        path: 'range.txt',
+        contentBase64: Buffer.from('0123456789').toString('base64'),
+      })
+    );
+
+    const reply = await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r32', 'files.readChunk', { path: 'range.txt', offset: 99, length: 4 })
+    );
+
+    expect(reply.ok).toBe(true);
+    if (reply.ok) {
+      const result = reply.result as { contentBase64: string; size: number };
+      expect(result.contentBase64).toBe('');
+      expect(result.size).toBe(10);
+    }
+  });
+
+  it('renames a file and refuses to clobber without overwrite', async () => {
+    const content = Buffer.from('a').toString('base64');
+    await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r40', 'files.write', { path: 'from.txt', contentBase64: content })
+    );
+    await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r41', 'files.write', { path: 'to.txt', contentBase64: content })
+    );
+
+    const refused = await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r42', 'files.rename', { from: 'from.txt', to: 'to.txt' })
+    );
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error.code).toBe('CONFLICT');
+
+    const moved = await dispatchRequest(
+      cfg,
+      OWNER,
+      request('r43', 'files.rename', { from: 'from.txt', to: 'moved.txt' })
+    );
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      expect((moved.result as { entry: { name: string } }).entry.name).toBe('moved.txt');
+    }
   });
 
   it('rejects listing a missing directory as not found', async () => {

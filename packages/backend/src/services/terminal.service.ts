@@ -111,6 +111,8 @@ export interface CreateSessionOptions {
   rows: number;
   cwd?: string;
   shell?: string;
+  /** Runs instead of an interactive shell; handed to the shell as `-c <command>`. */
+  command?: string;
 }
 
 export async function createSession(options: CreateSessionOptions): Promise<TerminalSession> {
@@ -143,7 +145,7 @@ export async function createSession(options: CreateSessionOptions): Promise<Term
   const shell = resolveShell(options.shell);
   const id = randomUUID();
 
-  const child = pty.spawn(shell, [], {
+  const child = pty.spawn(shell, options.command ? ['-c', options.command] : [], {
     name: 'xterm-256color',
     cols: options.cols,
     rows: options.rows,

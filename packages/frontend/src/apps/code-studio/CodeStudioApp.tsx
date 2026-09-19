@@ -1,9 +1,10 @@
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
-import { RotateCw, Save, Undo2, X } from 'lucide-react';
+import { Play, RotateCw, Save, Undo2, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { FileTree } from './FileTree.js';
 import { languageForFile } from './languages.js';
+import { RunPanel } from './RunPanel.js';
 import { Button } from '../../components/ui/Button.js';
 import { ConfirmDialog } from '../../components/ui/Dialog.js';
 import { Banner, EmptyState, ErrorState, LoadingState } from '../../components/ui/Feedback.js';
@@ -62,6 +63,7 @@ export function CodeStudioApp({ windowId, props }: AppProps) {
   const [activePath, setActivePath] = useState<string>(initialPath);
   const [dirtyPaths, setDirtyPaths] = useState<Set<string>>(() => new Set());
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [runOpen, setRunOpen] = useState(false);
 
   /** Tab the user asked to close while it still had unsaved edits. */
   const [closingPath, setClosingPath] = useState<string | null>(null);
@@ -303,6 +305,19 @@ export function CodeStudioApp({ windowId, props }: AppProps) {
           Reload
         </Button>
 
+        <div className="mx-1 h-5 w-px bg-white/10" />
+
+        <Button
+          size="sm"
+          variant={runOpen ? 'primary' : 'ghost'}
+          onClick={() => setRunOpen((open) => !open)}
+          disabled={activePath === ''}
+          title="Run this file in a real pty, in its own directory"
+        >
+          <Play size={14} className="mr-1 inline" aria-hidden="true" />
+          Run
+        </Button>
+
         <div className="flex-1" />
 
         {loaded !== undefined ? (
@@ -417,6 +432,12 @@ export function CodeStudioApp({ windowId, props }: AppProps) {
               </div>
             </>
           )}
+
+          {/* The run panel belongs to the editor column, not the window, so the
+              explorer stays visible while a program's output is on screen. */}
+          {runOpen && activePath !== '' ? (
+            <RunPanel path={activePath} fs={fs} onClose={() => setRunOpen(false)} />
+          ) : null}
         </div>
       </div>
 

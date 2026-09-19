@@ -117,6 +117,16 @@ export interface CreateSessionOptions {
   rows: number;
   cwd?: string;
   shell?: string;
+  /**
+   * A command to run instead of an interactive shell.
+   *
+   * It is passed to the shell as `-c <command>` rather than executed directly,
+   * so pipelines, `&&`, globs and `$VAR` all behave the way the person who
+   * typed it expects. The shell itself still comes from the allowlist, so this
+   * does not widen what can be spawned — only what the allowed shell is asked
+   * to do, which is the same thing a terminal already grants.
+   */
+  command?: string;
 }
 
 export async function createSession(
@@ -148,7 +158,7 @@ export async function createSession(
   const shell = resolveShell(cfg, options.shell);
   const id = randomUUID();
 
-  const child = pty.spawn(shell, [], {
+  const child = pty.spawn(shell, options.command ? ['-c', options.command] : [], {
     name: 'xterm-256color',
     cols: options.cols,
     rows: options.rows,

@@ -21,6 +21,7 @@ import { ConfirmDialog, Dialog } from '../../components/ui/Dialog.js';
 import { Banner, EmptyState, ErrorState, LoadingState } from '../../components/ui/Feedback.js';
 import { Field, TextInput } from '../../components/ui/Input.js';
 import { fetchAgents } from '../../lib/agent-api.js';
+import { classifyFile, isViewable } from '../../lib/file-kind.js';
 import { formatBytes, formatRelative } from '../../lib/format.js';
 import { queryKeys } from '../../lib/query-client.js';
 import { useDesktopStore } from '../../stores/desktop.store.js';
@@ -64,6 +65,17 @@ function isAetherSystemPath(host: boolean, path: string): boolean {
 /** True when the given entry, in host scope, lives inside Aether's own system tree. */
 function entryIsAetherSystem(host: boolean, entryPath: string): boolean {
   return isAetherSystemPath(host, entryPath);
+}
+
+/**
+ * The verb the context menu offers for an entry.
+ *
+ * Naming the destination rather than saying "Open" is the difference between a
+ * menu that describes what will happen and one that makes the user find out.
+ */
+function menuLabelFor(entry: FileEntry): string {
+  if (entry.type === 'directory') return 'Open';
+  return isViewable(classifyFile({ name: entry.name })) ? 'Open in Media Viewer' : 'Open';
 }
 
 export function FilesApp({ windowId, props }: AppProps) {
@@ -179,7 +191,8 @@ export function FilesApp({ windowId, props }: AppProps) {
   });
 
   const renameMutation = useMutation({
-    mutationFn: (params: { from: string; to: string }) => renamePath(params.from, params.to),
+    mutationFn: (params: { from: string; to: string }) =>
+      renamePath(params.from, params.to, false, fs),
     onSuccess: () => {
       setRenameOpen(false);
       setSelectedPath(null);
@@ -200,6 +213,21 @@ export function FilesApp({ windowId, props }: AppProps) {
     onError: reportError,
   });
 
+  /**
+   * Opens a file in the application that suits it.
+   *
+   * A directory navigates. A file goes to the editor or to the Media Viewer
+   * depending on what its name says it is. Anything neither tool can present is
+   * still offered to the editor, which will say plainly that the file is not
+   * text — rather than the wall of base64 a photograph used to open into.
+   *
+   * The decision is made from the name alone, and deliberately: the directory
+   * listing does not carry a content type, and fetching each file's bytes just
+   * to decide which window to open would cost a read per double-click. The
+   * server classifies the bytes when the file is actually loaded, which is what
+   * catches the extensionless cases — `/etc/hostname`, `.env`, `Dockerfile` —
+   * that the name cannot.
+   */
   const openEntry = (entry: FileEntry) => {
     if (entry.type === 'directory') {
       setPath(entry.path);
@@ -215,16 +243,31 @@ export function FilesApp({ windowId, props }: AppProps) {
       return;
     }
 
-    if (entry.type === 'file') {
-      openWindow('code-studio', {
-        title: `Code Studio — ${entry.name}`,
-        // Carry the scope through so the editor reads and writes the same host.
-        props: { path: entry.path, ...(host ? { scope: 'host', agentId: fs.agentId } : {}) },
-        width: 1000,
-        height: 660,
+    if (entry.type !== 'file') return;
+
+    // The scope travels with the window so both apps read and write the same
+    // machine the Files app is showing.
+    const scopeProps = host ? { scope: 'host', agentId: fs.agentId } : {};
+    const kind = classifyFile({ name: entry.name });
+
+    if (isViewable(kind)) {
+      openWindow('media-viewer', {
+        title: `${entry.name} — Media Viewer`,
+        props: { path: entry.path, name: entry.name, ...scopeProps },
+        width: 900,
+        height: 640,
         singleton: false,
       });
+      return;
     }
+
+    openWindow('code-studio', {
+      title: `Code Studio — ${entry.name}`,
+      props: { path: entry.path, ...scopeProps },
+      width: 1000,
+      height: 660,
+      singleton: false,
+    });
   };
 
   const handleUpload = async (files: FileList | null) => {
@@ -237,7 +280,7 @@ export function FilesApp({ windowId, props }: AppProps) {
       // Sequential rather than parallel: the backend enforces one file per
       // request and a burst of large uploads would compete for the same disk.
       for (const file of Array.from(files)) {
-        await uploadFile(path, file);
+        await uploadFile(path, file, fs);
       }
       invalidate();
     } catch (error) {
@@ -394,8 +437,6 @@ export function FilesApp({ windowId, props }: AppProps) {
           variant="ghost"
           onClick={() => uploadInputRef.current?.click()}
           loading={uploading}
-          disabled={host}
-          title={host ? 'Uploading to a host agent is not available yet' : undefined}
           icon={<Upload size={14} strokeWidth={1.75} aria-hidden="true" />}
         >
           Upload
@@ -423,8 +464,7 @@ export function FilesApp({ windowId, props }: AppProps) {
             setRenameValue(selectedEntry.name);
             setRenameOpen(true);
           }}
-          disabled={selectedEntry === null || host}
-          title={host ? 'Renaming on a host agent is not available yet' : undefined}
+          disabled={selectedEntry === null}
         >
           Rename
         </Button>
@@ -434,10 +474,9 @@ export function FilesApp({ windowId, props }: AppProps) {
           variant="ghost"
           onClick={() => {
             if (selectedEntry === null) return;
-            void downloadPath(selectedEntry.path).catch(reportError);
+            void downloadPath(selectedEntry.path, fs).catch(reportError);
           }}
-          disabled={selectedEntry === null || selectedEntry.type !== 'file' || host}
-          title={host ? 'Downloading from a host agent is not available yet' : undefined}
+          disabled={selectedEntry === null || selectedEntry.type !== 'file'}
         >
           Download
         </Button>
@@ -810,7 +849,7 @@ export function FilesApp({ windowId, props }: AppProps) {
           ) : (
             <>
               <MenuItem
-                label={menuEntry.type === 'directory' ? 'Open' : 'Open in Code Studio'}
+                label={menuLabelFor(menuEntry)}
                 disabled={menuEntry.escapesWorkspace}
                 title={
                   menuEntry.escapesWorkspace
@@ -820,9 +859,23 @@ export function FilesApp({ windowId, props }: AppProps) {
                 onSelect={() => openEntry(menuEntry)}
               />
               <MenuItem
+                label="Open in Code Studio"
+                disabled={menuEntry.type === 'directory' || menuEntry.escapesWorkspace}
+                onSelect={() =>
+                  openWindow('code-studio', {
+                    title: `Code Studio — ${menuEntry.name}`,
+                    props: {
+                      path: menuEntry.path,
+                      ...(host ? { scope: 'host', agentId: fs.agentId } : {}),
+                    },
+                    width: 1000,
+                    height: 660,
+                    singleton: false,
+                  })
+                }
+              />
+              <MenuItem
                 label="Rename"
-                disabled={host}
-                title={host ? 'Renaming on a host agent is not available yet' : undefined}
                 onSelect={() => {
                   setRenameValue(menuEntry.name);
                   setRenameOpen(true);
@@ -830,9 +883,8 @@ export function FilesApp({ windowId, props }: AppProps) {
               />
               <MenuItem
                 label="Download"
-                disabled={host || menuEntry.type !== 'file'}
-                title={host ? 'Downloading from a host agent is not available yet' : undefined}
-                onSelect={() => void downloadPath(menuEntry.path).catch(reportError)}
+                disabled={menuEntry.type !== 'file'}
+                onSelect={() => void downloadPath(menuEntry.path, fs).catch(reportError)}
               />
               <div className="my-1 h-px bg-white/10" />
               <MenuItem label="Delete" danger onSelect={() => setConfirmDeleteOpen(true)} />

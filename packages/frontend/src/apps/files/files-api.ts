@@ -93,10 +93,15 @@ export function createDirectory(path: string, recursive = false, fs?: FsScope): 
   });
 }
 
-export function renamePath(from: string, to: string, overwrite = false): Promise<FileEntry> {
+export function renamePath(
+  from: string,
+  to: string,
+  overwrite = false,
+  fs?: FsScope
+): Promise<FileEntry> {
   return apiRequest<FileEntry>('/api/files/rename', {
     method: 'POST',
-    body: { from, to, overwrite },
+    body: { from, to, overwrite, ...scopeFields(fs) },
   });
 }
 
@@ -120,9 +125,45 @@ export function searchFiles(
 export function uploadFile(
   targetDirectory: string,
   file: File,
+  fs?: FsScope,
   signal?: AbortSignal
 ): Promise<void> {
-  return apiUpload(targetDirectory, file, signal);
+  return apiUpload(targetDirectory, file, scopeFields(fs), signal);
+}
+
+/**
+ * Mints a ticket for the byte-serving endpoint.
+ *
+ * `<img>`, `<video>` and `<audio>` fetch their own `src` and cannot attach an
+ * Authorization header, so the ticket travels in the URL instead. It names one
+ * scope and one path, and the server refuses it for anything else — which is
+ * what makes putting a credential in a URL acceptable here at all.
+ */
+export function requestMediaTicket(
+  path: string,
+  fs?: FsScope
+): Promise<{ ticket: string; expiresIn: number }> {
+  return apiRequest<{ ticket: string; expiresIn: number }>('/api/files/media-ticket', {
+    method: 'POST',
+    body: { path, ...scopeFields(fs) },
+  });
+}
+
+/** Builds the URL a media element can load, given an already-issued ticket. */
+export function mediaUrl(
+  path: string,
+  ticket: string,
+  fs?: FsScope,
+  options: { download?: boolean; filename?: string } = {}
+): string {
+  const params = new URLSearchParams({ path, ticket });
+  if (isHostScope(fs)) {
+    params.set('scope', 'host');
+    params.set('agentId', fs.agentId);
+  }
+  if (options.download) params.set('download', 'true');
+  if (options.filename !== undefined) params.set('name', options.filename);
+  return `/api/files/raw?${params.toString()}`;
 }
 
 /**
@@ -131,8 +172,11 @@ export function uploadFile(
  * The blob is created and revoked here rather than left to the caller, so a
  * download cannot leak an object URL that pins the whole file in memory.
  */
-export async function downloadPath(path: string): Promise<void> {
-  const { blob, filename } = await apiDownload('/api/files/download', { path });
+export async function downloadPath(path: string, fs?: FsScope): Promise<void> {
+  const { blob, filename } = await apiDownload('/api/files/download', {
+    path,
+    ...scopeFields(fs),
+  });
   const url = URL.createObjectURL(blob);
 
   try {

@@ -42,6 +42,7 @@ export interface CreateHostSessionOptions {
   rows: number;
   cwd?: string;
   shell?: string;
+  command?: string;
 }
 
 export async function createHostSession(
@@ -58,6 +59,7 @@ export async function createHostSession(
     rows: options.rows,
     ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
     ...(options.shell !== undefined ? { shell: options.shell } : {}),
+    ...(options.command !== undefined ? { command: options.command } : {}),
   });
 
   const session = reply as TerminalSession;
