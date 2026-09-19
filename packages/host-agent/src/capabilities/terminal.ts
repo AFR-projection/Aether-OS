@@ -146,7 +146,7 @@ export async function createSession(
   const pty = await loadPty();
   const root = await getWorkspaceRoot(cfg);
 
-  let cwd = root;
+  let cwd = await defaultCwd(cfg, root);
   if (options.cwd) {
     const resolved = await resolveExistingPath(cfg, options.cwd);
     if (!resolved.exists) {
@@ -163,7 +163,7 @@ export async function createSession(
     cols: options.cols,
     rows: options.rows,
     cwd,
-    env: buildChildEnvironment(root),
+    env: buildChildEnvironment(cwd),
   });
 
   const now = new Date().toISOString();
@@ -257,6 +257,33 @@ export function resolveShell(cfg: AgentConfig, requested?: string): string {
 }
 
 /**
+ * The directory a new interactive shell starts in when the caller names none.
+ *
+ * A terminal on a real machine opens in the user's home directory, not at the
+ * root of the filesystem. In full-host mode the agent runs as root and that home
+ * is `/root`, which is where an operator expects to land. A confined agent's home
+ * can sit outside the workspace root, though, and starting a shell there would
+ * put it outside the tree the agent is scoped to — so the root is used instead
+ * of escaping.
+ */
+async function defaultCwd(cfg: AgentConfig, root: string): Promise<string> {
+  const home = process.env.HOME ?? process.env.USERPROFILE;
+  if (!home) return root;
+
+  const relative = path.relative(root, home);
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return root;
+
+  try {
+    // Resolved through the same containment check as any other path, so a home
+    // reached by a symlink out of the root is refused rather than followed.
+    const resolved = await resolveExistingPath(cfg, relative.split(path.sep).join('/'));
+    return resolved.exists ? resolved.absolute : root;
+  } catch {
+    return root;
+  }
+}
+
+/**
  * Builds the environment for the spawned shell.
  *
  * A minimal environment is passed rather than inheriting `process.env`
@@ -264,9 +291,9 @@ export function resolveShell(cfg: AgentConfig, requested?: string): string {
  * running as the same user would be able to read it with a single `env`
  * command.
  */
-function buildChildEnvironment(root: string): Record<string, string> {
+function buildChildEnvironment(cwd: string): Record<string, string> {
   const user = process.env.USER ?? process.env.USERNAME ?? 'aether';
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? root;
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? cwd;
 
   return {
     TERM: 'xterm-256color',
@@ -274,7 +301,10 @@ function buildChildEnvironment(root: string): Record<string, string> {
     USER: user,
     LOGNAME: user,
     HOME: home,
-    PWD: root,
+    // The shell's own idea of its working directory. Reporting the workspace
+    // root here while the process actually starts somewhere else made `pwd`
+    // disagree with the prompt until the first `cd`.
+    PWD: cwd,
     SHELL: process.env.SHELL ?? '/bin/bash',
     LANG: process.env.LANG ?? 'C.UTF-8',
     PATH: process.env.PATH ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',

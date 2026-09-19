@@ -7,9 +7,9 @@
  *
  * Every call takes an optional filesystem scope. The default (undefined) is the
  * backend workspace; a host scope proxies the request to a connected host agent
- * so the operation runs against the real machine. Host scope supports the
- * operations the agent exposes today — list, read, write, mkdir, delete — and
- * the callers disable the rest (rename, search, upload, download) for it.
+ * so the operation runs against the real machine. Both scopes support list,
+ * read, write, mkdir, rename, delete and download; only recursive name search is
+ * workspace-only, because the agent protocol has no such call yet.
  */
 
 import { apiDownload, apiRequest, apiUpload } from '../../lib/api-client.js';

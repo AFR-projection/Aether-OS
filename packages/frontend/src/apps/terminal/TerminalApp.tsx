@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
@@ -6,9 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import { ErrorState, LoadingState } from '../../components/ui/Feedback.js';
-import { fetchAgents } from '../../lib/agent-api.js';
 import { apiRequest } from '../../lib/api-client.js';
-import { queryKeys } from '../../lib/query-client.js';
+import { useFsScope, effectiveScope } from '../../lib/fs-scope.js';
 import { TerminalConnection, type TerminalConnectionState } from '../../lib/terminal-connection.js';
 import { useDesktopStore } from '../../stores/desktop.store.js';
 import { isHostScope, type FsScope } from '../files/files-api.js';
@@ -55,14 +53,6 @@ const TERMINAL_THEME = {
   brightWhite: '#f8fafc',
 } as const;
 
-/**
- * The scope used before the choice settles and when no host agent is connected.
- *
- * A module constant rather than a fresh literal so it keeps its identity across
- * renders and the callbacks below are not rebuilt on every one.
- */
-const WORKSPACE_SCOPE: FsScope = { scope: 'workspace' };
-
 const STATE_LABEL: Record<TerminalConnectionState, string> = {
   idle: 'idle',
   'requesting-ticket': 'connecting',
@@ -99,39 +89,16 @@ export function TerminalApp({ windowId, props }: AppProps) {
    * Where this shell runs.
    *
    * A window opened with an explicit scope keeps it, as does one reattaching to
-   * an existing session. Otherwise this starts undecided and settles once the
-   * agent list arrives — and a connected host agent wins, because a shell on
-   * the real machine is the whole point of the app.
+   * an existing session. Otherwise the scope settles on a connected host agent,
+   * because a shell on the real machine is the whole point of the app.
    *
    * Defaulting to the backend container instead is how `aether status` came
-   * back "command not found": the CLI is on the host, and the shell was not.
-   * The container is still reachable from the picker, it is just no longer what
-   * an operator gets by accident.
+   * back "command not found": the CLI is installed on the host, and the shell
+   * was not. The container is still reachable from the picker — it is just no
+   * longer what an operator gets by accident.
    */
-  const [fs, setFs] = useState<FsScope | undefined>(() => {
-    if (props.scope === 'host' && typeof props.agentId === 'string') {
-      return { scope: 'host', agentId: props.agentId };
-    }
-    if (props.scope === 'workspace' || typeof props.sessionId === 'string') {
-      return { scope: 'workspace' };
-    }
-    return undefined;
-  });
-  const agentsQuery = useQuery({ queryKey: queryKeys.agents, queryFn: fetchAgents });
-  const connectedAgents = (agentsQuery.data ?? []).filter((agent) => agent.connected);
-
-  /**
-   * Settle the undecided scope once the agent query has resolved.
-   *
-   * Deliberately waits rather than picking a default up front: creating the
-   * session eagerly would put the user in the container and leave them there,
-   * since a session is not moved by the scope changing underneath it.
-   */
-  useEffect(() => {
-    if (fs !== undefined || !agentsQuery.isFetched) return;
-    const firstAgent = connectedAgents[0];
-    setFs(firstAgent ? { scope: 'host', agentId: firstAgent.agentId } : { scope: 'workspace' });
-  }, [fs, agentsQuery.isFetched, connectedAgents]);
+  const scope = useFsScope(props, { pinned: typeof props.sessionId === 'string' });
+  const { fs, setFs, connectedAgents } = scope;
 
   const [connectionState, setConnectionState] = useState<TerminalConnectionState>('idle');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -139,7 +106,7 @@ export function TerminalApp({ windowId, props }: AppProps) {
   const [fatalError, setFatalError] = useState<unknown>(null);
 
   /** The scope in use, or the workspace while the choice is still pending. */
-  const activeFs: FsScope = fs ?? WORKSPACE_SCOPE;
+  const activeFs: FsScope = effectiveScope(scope);
 
   /** Creates a new server-side shell in the given scope and binds this window to it. */
   const createSession = useCallback(
@@ -154,12 +121,13 @@ export function TerminalApp({ windowId, props }: AppProps) {
 
       setSessionId(session.id);
       // Persist the scope alongside the session id so reopening from the taskbar
-      // and the "New" button both remember where this terminal lives.
+      // and the "New" button both remember where this terminal lives. The
+      // workspace is left implicit: a session id alone already pins a window to
+      // the workspace, and writing `scope: 'workspace'` for a fallback would
+      // record a decision nobody made as though somebody had.
       setWindowProps(windowId, {
         sessionId: session.id,
-        ...(isHostScope(scope)
-          ? { scope: 'host', agentId: scope.agentId }
-          : { scope: 'workspace' }),
+        ...(isHostScope(scope) ? { scope: 'host', agentId: scope.agentId } : {}),
       });
       setWindowTitle(windowId, `Terminal — ${session.shell.split('/').pop() ?? 'shell'}`);
       setExited(null);

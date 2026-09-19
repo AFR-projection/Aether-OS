@@ -20,9 +20,9 @@ import { Button } from '../../components/ui/Button.js';
 import { ConfirmDialog, Dialog } from '../../components/ui/Dialog.js';
 import { Banner, EmptyState, ErrorState, LoadingState } from '../../components/ui/Feedback.js';
 import { Field, TextInput } from '../../components/ui/Input.js';
-import { fetchAgents } from '../../lib/agent-api.js';
 import { classifyFile, isViewable } from '../../lib/file-kind.js';
 import { formatBytes, formatRelative } from '../../lib/format.js';
+import { effectiveScope, scopeLabel, useFsScope } from '../../lib/fs-scope.js';
 import { queryKeys } from '../../lib/query-client.js';
 import { useDesktopStore } from '../../stores/desktop.store.js';
 
@@ -84,22 +84,17 @@ export function FilesApp({ windowId, props }: AppProps) {
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
 
   const [path, setPath] = useState<string>(typeof props.path === 'string' ? props.path : '');
-  const [fs, setFs] = useState<FsScope>(() =>
-    props.scope === 'host' && typeof props.agentId === 'string'
-      ? { scope: 'host', agentId: props.agentId }
-      : { scope: 'workspace' }
-  );
+  const scope = useFsScope(props);
+  // The listing is held back until the scope settles — see `useFsScope`. Reading
+  // the workspace first would show the container's directories for a moment and
+  // then replace them with the host's, which looks like a failure.
+  const settled = scope.fs !== undefined;
+  const fs: FsScope = effectiveScope(scope);
   const host = isHostScope(fs);
   const scopeKey = fsScopeKey(fs);
 
-  const agentsQuery = useQuery({ queryKey: queryKeys.agents, queryFn: fetchAgents });
-  const connectedAgents = useMemo(
-    () => (agentsQuery.data ?? []).filter((agent) => agent.connected),
-    [agentsQuery.data]
-  );
-  const hostLabel = host
-    ? (connectedAgents.find((agent) => agent.agentId === fs.agentId)?.label ?? 'the host agent')
-    : '';
+  const connectedAgents = scope.connectedAgents;
+  const hostLabel = host ? scopeLabel(fs, connectedAgents) : '';
 
   const [showHidden, setShowHidden] = useState(true);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -139,18 +134,21 @@ export function FilesApp({ windowId, props }: AppProps) {
   const listing = useQuery({
     queryKey: queryKeys.directory(scopeKey, path, showHidden),
     queryFn: () => listDirectory(path, showHidden, fs),
-    enabled: !isSearching,
+    enabled: settled && !isSearching,
   });
 
   const searchResults = useQuery({
     queryKey: queryKeys.fileSearch(scopeKey, path, searchQuery.trim()),
     queryFn: () => searchFiles(path, searchQuery.trim()),
-    enabled: isSearching,
+    enabled: settled && isSearching,
   });
 
   useEffect(() => {
-    setWindowTitle(windowId, path === '' ? 'Files — Workspace' : `Files — ${path}`);
-  }, [path, setWindowTitle, windowId]);
+    setWindowTitle(
+      windowId,
+      path === '' ? `Files — ${host ? hostLabel : 'Workspace'}` : `Files — ${path}`
+    );
+  }, [host, hostLabel, path, setWindowTitle, windowId]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['files'] });
@@ -345,7 +343,7 @@ export function FilesApp({ windowId, props }: AppProps) {
           value={host ? `host:${fs.agentId}` : 'workspace'}
           onChange={(event) => {
             const value = event.target.value;
-            setFs(
+            scope.setFs(
               value === 'workspace'
                 ? { scope: 'workspace' }
                 : { scope: 'host', agentId: value.slice('host:'.length) }
@@ -357,7 +355,7 @@ export function FilesApp({ windowId, props }: AppProps) {
           }}
           className="h-7 rounded border border-white/10 bg-surface-900/70 px-2 text-xs text-slate-100 focus:border-accent focus:outline-none"
         >
-          <option value="workspace">Workspace (backend)</option>
+          <option value="workspace">Workspace (container)</option>
           {connectedAgents.map((agent) => (
             <option key={agent.agentId} value={`host:${agent.agentId}`}>
               {agent.label} (host)

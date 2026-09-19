@@ -26,8 +26,16 @@ import type { AppProps } from '../registry.js';
  */
 
 const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4] as const;
-const MIN_ZOOM = ZOOM_STEPS[0];
-const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+type ZoomStep = (typeof ZOOM_STEPS)[number];
+
+/**
+ * The ends of the ladder, named so the buttons can compare against them.
+ *
+ * Typed as `ZoomStep` rather than `number` so removing a step from the list
+ * above and forgetting these two is a compile error instead of a dead button.
+ */
+const MIN_ZOOM: ZoomStep = ZOOM_STEPS[0];
+const MAX_ZOOM: ZoomStep = 4;
 
 function readString(props: Record<string, unknown>, key: string): string | undefined {
   const value = props[key];
