@@ -30,8 +30,19 @@ AETHER_UPDATE_LOCK="${AETHER_UPDATE_LOCK:-$AETHER_INSTALL_DIR/state/update.lock}
 AETHER_UPDATE_BRANCH="${AETHER_UPDATE_BRANCH:-main}"
 LAST_UPDATE_RECORD="$AETHER_BACKUP_DIR/last-update.json"
 
+# The repository a source tree with no Git history of its own is fetched from.
+# The installer clones this same URL, and it is named here as well because
+# `aether update` has to reach the repository on its own — there is no installer
+# around, and nothing from install time is recorded that says where the source
+# came from. Overridable for a fork or a mirror.
+AETHER_REPO_URL="${AETHER_REPO_URL:-https://github.com/AFR-projection/Aether-OS.git}"
+
 AETHER_CHECK_ONLY=false
 AETHER_PULL=true
+
+# Set by adopt_git_checkout to the tree it replaced, so a failed update can put
+# it back. Empty on every other path.
+ADOPTED_PREVIOUS_SRC=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -145,6 +156,16 @@ fetch_origin() {
     fi
 }
 
+# The revision origin/<branch> is at, read without a local repository so that
+# `--check` can still promise it changes nothing. Prints the full sha; fails if
+# the branch does not exist or the remote cannot be reached.
+remote_branch_revision() {
+    local branch="$1" output
+    command_exists git || return 1
+    output=$(git ls-remote --exit-code "$AETHER_REPO_URL" "refs/heads/$branch" 2>/dev/null) || return 1
+    printf '%s' "${output%%[[:space:]]*}"
+}
+
 # Compares with origin/<branch> and prints the decision: "same" or "ahead".
 fetch_and_compare() {
     local branch="$1"
@@ -188,29 +209,89 @@ reset_to_revision() {
         || warn "Could not reset the source tree back to $revision."
 }
 
+# True when the directory is the checkout the installer was run from: it has the
+# repository root, the installer, and it is not the install directory itself.
+is_repo_dir() {
+    [ -n "${1:-}" ] &&
+        [ "$1" != "$AETHER_INSTALL_DIR" ] &&
+        [ -f "$1/package.json" ] &&
+        [ -f "$1/deploy/lib/install.sh" ]
+}
+
+# Replaces the source tree with a copy of a local checkout. Used when the
+# installer ran from a checkout it wants the deployment to mirror.
 sync_from_repo_dir() {
     # The rsync below uses --delete, so a wrong AETHER_REPO_DIR would not merely
     # fail — it would replace the source tree with whatever that directory
     # happens to hold. Require the directory to actually look like the
     # repository before pointing anything destructive at it.
-    if [ -n "${AETHER_REPO_DIR:-}" ] &&
-        [ -f "$AETHER_REPO_DIR/package.json" ] &&
-        [ -f "$AETHER_REPO_DIR/deploy/lib/install.sh" ] &&
-        [ "$AETHER_REPO_DIR" != "$AETHER_INSTALL_DIR" ]; then
+    if is_repo_dir "${AETHER_REPO_DIR:-}"; then
         info "Re-syncing source from $AETHER_REPO_DIR"
+        # `.git` is copied, not excluded. Excluding it is what turns an
+        # updatable install into one that can never update again: the files
+        # arrive without the history that says which revision they are, and
+        # every later `aether update` then finds no origin to fetch from and
+        # silently rebuilds what is already there.
         if command_exists rsync; then
             rsync -a --delete \
-                --exclude node_modules --exclude .git --exclude dist \
+                --exclude node_modules --exclude dist \
                 --exclude '*.log' \
                 "$AETHER_REPO_DIR/" "$AETHER_SRC_DIR/"
         else
-            (cd "$AETHER_REPO_DIR" && tar cf - --exclude=node_modules --exclude=.git --exclude=dist .) \
+            (cd "$AETHER_REPO_DIR" && tar cf - --exclude=node_modules --exclude=dist .) \
                 | (cd "$AETHER_SRC_DIR" && tar xf -)
         fi
         return 0
     fi
 
-    warn "Source is neither a git checkout nor backed by a repo directory; rebuilding as-is."
+    return 1
+}
+
+# Gives a source tree that has no Git history one, by cloning the repository and
+# swapping the clone in.
+#
+# The state this repairs is the one an install from a downloaded tarball lands
+# in, and the one this deployment was found in: `<install>/src` holds the files
+# but no `.git`, so there is nothing to fetch and `aether update` degenerates
+# into rebuilding whatever is already there — an update that reports success and
+# changes nothing.
+#
+# The tree is replaced rather than adopted in place. `git init` over the existing
+# files would leave every file upstream has deleted since as an untracked
+# leftover, and a tree with no history cannot say which those are. src holds
+# nothing but upstream source — the sync that fills it excludes .env, dist and
+# node_modules — so the clone and the tree it replaces differ only in revision.
+adopt_git_checkout() {
+    local branch="$1"
+    local staging="$AETHER_INSTALL_DIR/src.adopting"
+    local previous="$AETHER_INSTALL_DIR/src.pre-git"
+
+    command_exists git || fatal "git is required to update from $AETHER_REPO_URL."
+
+    info "The source tree at $AETHER_SRC_DIR is not a Git checkout; fetching $AETHER_REPO_URL"
+    rm -rf "$staging"
+    git clone --quiet --depth 1 --branch "$branch" "$AETHER_REPO_URL" "$staging" \
+        || fatal "Could not clone $AETHER_REPO_URL. Check the network and the URL, then try again."
+
+    # A clone that exited 0 is not necessarily this repository: a captive portal
+    # or a misconfigured mirror answers with something else and git says nothing
+    # about it. Check for the same two files the installer checks for before
+    # letting this anywhere near the running source tree.
+    if [ ! -f "$staging/package.json" ] || [ ! -f "$staging/deploy/lib/install.sh" ]; then
+        rm -rf "$staging"
+        fatal "$AETHER_REPO_URL does not look like Aether Cloud OS (no deploy/lib/install.sh)."
+    fi
+
+    # The replaced tree is kept until the new one has been built, migrated and
+    # health-checked, because `roll_back` cannot put it back by itself: it reverts
+    # the revision the update started from, and a tree with no `.git` has no
+    # revision to revert to.
+    rm -rf "$previous"
+    mv "$AETHER_SRC_DIR" "$previous"
+    mv "$staging" "$AETHER_SRC_DIR"
+    ADOPTED_PREVIOUS_SRC="$previous"
+
+    info "Source is now at $(current_revision_short)"
 }
 
 # --- Build and migrate -----------------------------------------------------
@@ -352,6 +433,18 @@ roll_back() {
 
     warn "Update failed. Rolling back to $prev_short."
 
+    # If this update adopted a tree that had no Git history, there is no revision
+    # to reset to — so the tree that was replaced goes back instead. Done before
+    # the reset below so that the reset sees a tree with no checkout again and
+    # correctly does nothing, rather than leaving the new tree in place while
+    # claiming to have reverted it.
+    if [ -n "$ADOPTED_PREVIOUS_SRC" ] && [ -d "$ADOPTED_PREVIOUS_SRC" ]; then
+        warn "Restoring the source tree this deployment replaced on adoption."
+        rm -rf "$AETHER_SRC_DIR"
+        mv "$ADOPTED_PREVIOUS_SRC" "$AETHER_SRC_DIR"
+        ADOPTED_PREVIOUS_SRC=""
+    fi
+
     reset_to_revision "$prev_revision"
 
     if [ -n "$archive" ] && [ -f "$archive" ]; then
@@ -390,7 +483,13 @@ update_aether() {
                 info "Update available: $before_short → $(git -C "$AETHER_SRC_DIR" rev-parse --short FETCH_HEAD)"
             fi
         else
-            info "Not a git checkout; use --no-pull to rebuild the current source."
+            local remote_revision
+            if remote_revision=$(remote_branch_revision "$AETHER_UPDATE_BRANCH"); then
+                info "The source tree is not a Git checkout; the next update will adopt $AETHER_UPDATE_BRANCH at ${remote_revision:0:7} from $AETHER_REPO_URL."
+            else
+                warn "The source tree is not a Git checkout and $AETHER_REPO_URL could not be reached."
+                info "Use --no-pull to rebuild the current source without fetching."
+            fi
         fi
         return 0
     fi
@@ -427,9 +526,12 @@ update_aether() {
         if is_git_checkout; then
             stage "Updating source"
             fast_forward "$AETHER_UPDATE_BRANCH"
-        else
+        elif is_repo_dir "${AETHER_REPO_DIR:-}"; then
             stage "Syncing source"
             sync_from_repo_dir
+        else
+            stage "Adopting the source tree into Git"
+            adopt_git_checkout "$AETHER_UPDATE_BRANCH"
         fi
     fi
 
@@ -479,6 +581,34 @@ update_aether() {
         warn "Could not find deploy/lib/deploy.sh in updated source; keeping existing config"
     fi
 
+    # The management CLI is a *copy* of the scripts in the source tree, taken at
+    # install time, and `aether update` execs that copy — so the update engine is
+    # whatever was installed, and a fix to the updater itself can never reach an
+    # instance through it. Re-install the CLI from the tree that was just
+    # updated, so the next run is the engine that belongs to this revision.
+    #
+    # Without this, a deployment that could not update itself stays unable to
+    # update itself no matter how the updater is fixed: reaching the fix would
+    # require the very update that is broken.
+    #
+    # Taken from the updated source, not from the installed copy, and run in a
+    # subshell: sourcing a second copy of these libraries into this shell would
+    # redefine the functions this update is still running on — `health_check`
+    # exists in both, with different meanings.
+    if [ -f "$AETHER_SRC_DIR/deploy/lib/finalize.sh" ]; then
+        (
+            # shellcheck source=/dev/null
+            source "$AETHER_SRC_DIR/deploy/lib/core.sh"
+            # shellcheck source=/dev/null
+            source "$AETHER_SRC_DIR/deploy/lib/utils.sh"
+            # shellcheck source=/dev/null
+            source "$AETHER_SRC_DIR/deploy/lib/finalize.sh"
+            install_cli
+        ) || warn "The installed CLI could not be refreshed; a later update will retry."
+    else
+        warn "Could not find deploy/lib/finalize.sh in the updated source; keeping the installed CLI."
+    fi
+
     # From here on, any failure is rolled back rather than left half-applied.
     if ! (build_frontend && rebuild_backend && run_migrations && restart_stack && health_check); then
         roll_back "$before" "$before_short" "$archive" || true
@@ -505,6 +635,14 @@ update_aether() {
 
     # Record deployment metadata for `aether status` and future updates
     write_deployment_metadata "$after" "$(current_branch)"
+
+    # The tree kept aside by an adoption is only for a rollback that can no
+    # longer happen: this update has been built, migrated, restarted and
+    # verified, and the revision check above proved the new source is what runs.
+    if [ -n "$ADOPTED_PREVIOUS_SRC" ]; then
+        rm -rf "$ADOPTED_PREVIOUS_SRC"
+        ADOPTED_PREVIOUS_SRC=""
+    fi
 
     printf '\n'
     info "Update complete: $before_short → $(current_revision_short)"

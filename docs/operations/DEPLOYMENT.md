@@ -285,6 +285,53 @@ aether update --no-pull    # rebuild the current source without fetching
 
 The update is pull-only. It never pushes to any remote.
 
+### Where the new source comes from
+
+`<install>/src` is a Git checkout, and it is the only thing an update pulls from. Two variables
+decide where it fetches:
+
+| Variable               | Default                                           | Notes                                                                   |
+| ---------------------- | ------------------------------------------------- | ----------------------------------------------------------------------- |
+| `AETHER_REPO_URL`      | `https://github.com/AFR-projection/Aether-OS.git` | Read from the environment of the run. A fork must export it per update. |
+| `AETHER_UPDATE_BRANCH` | `main`                                            | The branch the deployment tracks                                        |
+
+An install made from a downloaded tarball — or one whose `.git` was removed by an older version of
+this script, which excluded it when re-syncing — has the files but no history. There is nothing to
+fetch, so the update would rebuild what is already there and report success. That state is repaired
+rather than reported: the tree is cloned fresh from `AETHER_REPO_URL` and swapped in, the replaced
+tree is kept beside it as `src.pre-git` until the new one has been built, migrated and
+health-checked, and it is put back if the update fails. From then on the instance updates normally.
+
+`aether update --check` reports it without changing anything:
+`the next update will adopt main at <short> from <url>`.
+
+### The update engine updates itself
+
+`aether update` runs `<install>/scripts/update.sh`, which is a _copy_ made at install time — not the
+file in the source tree. A deployment whose updater is broken therefore cannot be repaired by an
+update, because reaching the fix would require the update that does not work. So every update
+re-installs the CLI from the tree it just updated, which means a fix to these scripts takes effect
+one update after the one that delivers it. The files are replaced by rename rather than by copying
+over them, so re-installing `update.sh` cannot disturb the run that is doing it.
+
+### Already-installed instances whose updater predates this
+
+An instance installed before the source tree was kept updatable runs an old `update.sh`, and that
+old copy is what `aether update` executes. Refresh the three files the current updater is built
+from, once, by hand:
+
+```bash
+sudo git clone --depth 1 https://github.com/AFR-projection/Aether-OS.git /tmp/aether-fix
+sudo install -m 755 /tmp/aether-fix/deploy/scripts/update.sh /opt/aether/scripts/update.sh
+sudo install -m 644 /tmp/aether-fix/deploy/lib/core.sh       /opt/aether/lib/core.sh
+sudo install -m 644 /tmp/aether-fix/deploy/lib/utils.sh      /opt/aether/lib/utils.sh
+sudo rm -rf /tmp/aether-fix
+sudo aether update
+```
+
+The update that follows adopts `src` into Git and re-installs the rest of the CLI itself, so this is
+the only time it has to be done.
+
 ---
 
 ## systemd
@@ -346,6 +393,12 @@ an installation ID you can quote in a bug report.
 **`aether update` left the stack unhealthy** It rolls back by itself and says so. If the automatic
 rollback failed too, it prints the archive:
 `aether rollback /opt/aether/backups/aether-backup-<timestamp>.tar.gz`
+
+**`aether update` says `Already up to date` but nothing changed** The source tree is already at
+`origin/main`; the running containers may still be older — a source tree at the right revision is
+not proof that the image was rebuilt from it. `aether update --no-pull` rebuilds from the current
+source. If it says the source is not a Git checkout instead, see
+[Where the new source comes from](#where-the-new-source-comes-from).
 
 **`Host Agent: service up, backend has not acknowledged it`** The agent process is running but the
 handshake did not complete. Check both ends: `sudo journalctl -u aether-host-agent -n 50 --no-pager`

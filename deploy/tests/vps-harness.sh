@@ -3,8 +3,8 @@
 #
 # Drives a real installation on a throwaway Ubuntu host and asserts the whole
 # lifecycle: one-command install, status, doctor, backup/restore, update
-# (including "already up to date"), repair, and uninstall with and without
-# --purge.
+# (including "already up to date"), repair, adoption of a source tree that has
+# no Git history, and uninstall with and without --purge.
 #
 # It needs a real machine: root, systemd, and Docker, on Ubuntu. Anywhere else
 # it prints BLOCKED_BY_ENVIRONMENT and exits 77 (the conventional "skipped"
@@ -307,6 +307,43 @@ phase_repair() {
     expect_contains "host agent reconnected" "Host Agent:         connected"
 }
 
+# The state an install from a downloaded tarball ends up in, and the state a live
+# instance was found in: src holds the files but no history, so there is no origin
+# to fetch and `aether update` rebuilds what is already there while reporting
+# success. The update has to repair that, not report it.
+phase_adoption() {
+    section "Adoption of a source tree with no Git history"
+
+    rm -rf "$INSTALL_DIR/src/.git"
+    expect_no_file "$INSTALL_DIR/src/.git" "history removed (the state being repaired)"
+
+    run "update --check reports the adoption" aether update --check
+    expect_contains "it names the branch it will adopt" "will adopt"
+    expect_no_file "$INSTALL_DIR/src/.git" "--check changed nothing"
+
+    run_logged "update adopts the tree and rebuilds" /tmp/aether-harness-adoption.log \
+        aether update --yes
+
+    expect_file "$INSTALL_DIR/src/.git" "src is a Git checkout again"
+    expect_no_file "$INSTALL_DIR/src.pre-git" "the replaced tree was cleaned up"
+
+    local revision
+    revision=$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD 2>/dev/null || echo unknown)
+    if [ "$revision" != "unknown" ]; then
+        pass "the adopted tree reports a revision ($revision)"
+    else
+        fail "the adopted tree reports a revision"
+    fi
+
+    run "instance is healthy after the adoption" aether status
+    expect_contains "host agent reconnected" "Host Agent:         connected"
+
+    # The control that makes this more than a one-off repair: the adopted tree is
+    # a normal checkout, so the next update is a plain fast-forward again.
+    run "a second update is a normal one" aether update --yes
+    expect_contains "it reports being up to date" "Already up to date"
+}
+
 phase_rollback_injection() {
     section "Rollback on injected failure"
 
@@ -423,6 +460,7 @@ main() {
     phase_idempotency
     phase_rollback_injection
     phase_repair
+    phase_adoption
     phase_uninstall
 
     if [ "$PURGE_PASS" = "true" ]; then

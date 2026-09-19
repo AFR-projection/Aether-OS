@@ -162,6 +162,22 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
 
+  deploy:
+    name: Deploy scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # The install and update path had no automated check here, and the state
+      # that broke updates on a live instance — a source tree with no Git
+      # history — is invisible to every other job in this file. The harness
+      # needs nothing but git, which the runner already has. The full
+      # end-to-end harness (deploy/tests/vps-harness.sh) needs a real Ubuntu
+      # host with systemd and Docker, so it is not run here.
+      - name: Update path harness
+        run: bash deploy/tests/update-adoption.sh
+
   build:
     name: Build
     runs-on: ubuntu-latest

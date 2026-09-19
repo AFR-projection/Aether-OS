@@ -78,6 +78,23 @@ configure_firewall() {
     fi
 }
 
+# Copies one file into the installed CLI, atomically.
+#
+# Written beside the destination and renamed into place, rather than copied over
+# it, because `aether update` re-installs this CLI while `update.sh` — one of the
+# files being replaced — is the script it is executing. A shell reads a script
+# as it runs it, and `cp` truncates the target in place, so a running update
+# would carry on reading from its own offset into different content and fail in
+# a way that looks like the update being broken. A rename swaps the inode
+# instead: the running script keeps reading the file it started with, and the
+# new copy is in place for whatever runs next.
+install_script_file() {
+    local source="$1" target="$2" mode="$3"
+    cp "$source" "$target.new"
+    chmod "$mode" "$target.new"
+    mv -f "$target.new" "$target"
+}
+
 install_cli() {
     # Install a real management CLI and the helper scripts it dispatches.
     local cli_dir="${AETHER_INSTALL_DIR}/scripts"
@@ -86,17 +103,15 @@ install_cli() {
 
     # Helpers source ../lib/core.sh and ../lib/utils.sh. Keep those libraries
     # beside the installed scripts rather than depending on the source tree.
-    cp "${AETHER_INSTALL_DIR}/src/deploy/lib/core.sh" "$lib_dir/core.sh"
-    cp "${AETHER_INSTALL_DIR}/src/deploy/lib/utils.sh" "$lib_dir/utils.sh"
+    # Terse mode 644 spelled out as a number, because these are sourced and only
+    # need to be readable.
+    install_script_file "${AETHER_INSTALL_DIR}/src/deploy/lib/core.sh" "$lib_dir/core.sh" 644
+    install_script_file "${AETHER_INSTALL_DIR}/src/deploy/lib/utils.sh" "$lib_dir/utils.sh" 644
     for helper in backup.sh restore.sh update.sh uninstall.sh; do
-        cp "${AETHER_INSTALL_DIR}/src/deploy/scripts/$helper" "$cli_dir/$helper"
-        chmod 755 "$cli_dir/$helper"
+        install_script_file "${AETHER_INSTALL_DIR}/src/deploy/scripts/$helper" "$cli_dir/$helper" 755
     done
-    # Ensure helper scripts resolve the copied libraries, not the deleted source.
-    chmod 644 "$lib_dir/core.sh" "$lib_dir/utils.sh"
 
-    cp "${AETHER_INSTALL_DIR}/src/deploy/scripts/aether" "$cli_dir/aether"
-    chmod 755 "$cli_dir/aether"
+    install_script_file "${AETHER_INSTALL_DIR}/src/deploy/scripts/aether" "$cli_dir/aether" 755
 
     if [ -w /usr/local/bin ]; then
         ln -sf "$cli_dir/aether" /usr/local/bin/aether
