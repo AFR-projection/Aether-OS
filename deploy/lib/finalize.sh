@@ -318,6 +318,11 @@ print_summary() {
     printf '  SYSTEM INFO\n'
     printf '  ─────────────────────────────────────────────────────────────\n'
     printf '  Install directory: %s\n' "$AETHER_INSTALL_DIR"
+    if [ "${AETHER_FULL_HOST_ACCESS:-true}" = "true" ]; then
+        printf '  Host access:       FULL — the whole filesystem is manageable from the GUI\n'
+    else
+        printf '  Host access:       CONFINED — the agent only sees its workspace\n'
+    fi
     printf '  Version:           %s\n' "$AETHER_VERSION"
     printf '  Installation ID:   %s\n' "$AETHER_INSTALLATION_ID"
     printf '  Log file:          %s\n' "$AETHER_LOG_FILE"

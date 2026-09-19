@@ -290,7 +290,26 @@ install_local_agent() {
 
     token_hash=$(hash_token "$token")
 
-    ensure_agent_identity
+    # Full host access (the default): the agent runs as root over the whole
+    # filesystem, so every file on this VPS shows in Files and Terminal — the
+    # "real computer" experience. Confined mode runs it unprivileged, limited to
+    # its workspace directory. The choice only changes the service user and the
+    # workspace root handed to setup-host.sh; the pairing is identical.
+    local agent_service_user agent_workspace
+    if [ "${AETHER_FULL_HOST_ACCESS:-true}" = "true" ]; then
+        agent_service_user="root"
+        agent_workspace="/"
+        info "Host agent scope: FULL (root, whole filesystem) — the entire VPS is manageable from the GUI"
+        # The backend container still bind-mounts <install>/data and runs as uid
+        # 1001, so that directory must still be owned by 1001. prepare_data_dirs
+        # (deploy stage) already did that; a root agent needs no extra identity.
+    else
+        agent_service_user="$AETHER_AGENT_USER"
+        agent_workspace="$AETHER_LOCAL_WORKSPACE_DIR"
+        info "Host agent scope: CONFINED (unprivileged, workspace only)"
+        ensure_agent_identity
+    fi
+
     pair_local_agent "$agent_id" "$token_hash"
 
     # Write the record as soon as the identity is paired, BEFORE the runtime
@@ -304,18 +323,18 @@ install_local_agent() {
     write_agent_record "$agent_id"
 
     # setup-host.sh owns one implementation of: copy the source, build the
-    # agent, write agent.env (600), install the unit, start it. Passing the
-    # service user is what makes this the unprivileged local agent rather than
-    # the root one remote hosts get.
+    # agent, write agent.env (600), install the unit, start it. The service user
+    # and workspace chosen above decide whether this is the root full-filesystem
+    # agent or the unprivileged workspace-only one.
     info "Installing the agent runtime into $AETHER_AGENT_DIR"
     bash "$AETHER_SRC_DIR/deploy/scripts/setup-host.sh" \
         --backend-url "$(backend_ws_url)" \
         --token "$token" \
         --agent-id "$agent_id" \
-        --workspace "$AETHER_LOCAL_WORKSPACE_DIR" \
+        --workspace "$agent_workspace" \
         --install-dir "$AETHER_AGENT_DIR" \
         --repo-dir "$AETHER_SRC_DIR" \
-        --service-user "$AETHER_AGENT_USER"
+        --service-user "$agent_service_user"
 
     verify_agent_connection "$agent_id" \
         || fatal "Local host agent installation failed: the connection was not confirmed on both sides."

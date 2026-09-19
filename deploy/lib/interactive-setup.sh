@@ -298,6 +298,49 @@ prompt_master_account() {
     printf '\n'
 }
 
+# Interactive prompt for host agent scope (full filesystem vs confined).
+prompt_host_access() {
+    # An explicit --full-host-access / --no-full-host-access already decided
+    # this; do not second-guess a flag the operator passed on purpose.
+    if [ -n "${AETHER_FULL_HOST_ACCESS_EXPLICIT:-}" ]; then
+        info "Host access already set by flag (full=${AETHER_FULL_HOST_ACCESS}); skipping the prompt."
+        return 0
+    fi
+
+    printf '\n'
+    printf '═══════════════════════════════════════════════════════════════\n'
+    printf '  HOST FILESYSTEM ACCESS\n'
+    printf '═══════════════════════════════════════════════════════════════\n'
+    printf '\n'
+    printf 'Aether can manage this whole machine so every file on the VPS shows\n'
+    printf 'up in the Files app and Terminal — the real-computer experience.\n'
+    printf '\n'
+    printf '  Full access (recommended for a personal VPS):\n'
+    printf '    The host agent runs as root over the entire filesystem. Anyone\n'
+    printf '    who logs in as owner can read and write ALL files through the\n'
+    printf '    GUI, including /etc, SSH keys, and other sensitive data.\n'
+    printf '\n'
+    printf '  Confined:\n'
+    printf '    The agent runs unprivileged and only sees its workspace folder.\n'
+    printf '\n'
+
+    printf 'Enable full host access? [Y/n]: '
+    local answer=""
+    read -r answer || true
+    case "$answer" in
+        [Nn]*)
+            AETHER_FULL_HOST_ACCESS="false"
+            info "Host access: CONFINED (workspace only)"
+            ;;
+        *)
+            AETHER_FULL_HOST_ACCESS="true"
+            info "Host access: FULL (root, whole filesystem)"
+            ;;
+    esac
+    export AETHER_FULL_HOST_ACCESS
+    printf '\n'
+}
+
 # Run interactive setup
 run_interactive_setup() {
     # Skip if --yes flag or non-interactive
@@ -317,4 +360,5 @@ run_interactive_setup() {
     fi
 
     prompt_master_account
+    prompt_host_access
 }

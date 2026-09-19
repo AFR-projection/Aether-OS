@@ -53,6 +53,12 @@ Options:
   --resume               skip stages already completed in this directory
   --dry-run              validate everything but make no changes to the system
   --no-https              serve HTTP only (domain remains optional)
+  --full-host-access     the host agent manages the WHOLE filesystem as root, so
+                         every file on the VPS shows in Files and Terminal (this
+                         is the default). Anyone who logs in as owner can then
+                         read and write the entire disk through the GUI.
+  --no-full-host-access  confine the host agent to its workspace directory and
+                         run it unprivileged (Files shows only the workspace)
   --version              show installer version
   --help                 show this message
 
@@ -72,6 +78,8 @@ parse_args() {
             --resume) AETHER_RESUME=true; shift ;;
             --dry-run) AETHER_DRY_RUN=true; shift ;;
             --no-https) AETHER_NO_HTTPS=true; shift ;;
+            --full-host-access) AETHER_FULL_HOST_ACCESS=true; AETHER_FULL_HOST_ACCESS_EXPLICIT=true; shift ;;
+            --no-full-host-access) AETHER_FULL_HOST_ACCESS=false; AETHER_FULL_HOST_ACCESS_EXPLICIT=true; shift ;;
             --version) printf '%s\n' "$AETHER_VERSION"; exit 0 ;;
             --help) usage; exit 0 ;;
             *) printf 'Unknown option: %s\n\n' "$1" >&2; usage; exit 2 ;;
@@ -89,6 +97,8 @@ parse_args() {
         AETHER_YES="${AETHER_YES:-false}" AETHER_RESUME="${AETHER_RESUME:-false}" \
         AETHER_DRY_RUN="${AETHER_DRY_RUN:-false}" \
         AETHER_NO_HTTPS="${AETHER_NO_HTTPS:-false}" \
+        AETHER_FULL_HOST_ACCESS="${AETHER_FULL_HOST_ACCESS:-true}" \
+        AETHER_FULL_HOST_ACCESS_EXPLICIT="${AETHER_FULL_HOST_ACCESS_EXPLICIT:-}" \
         AETHER_INSTALL_DIR AETHER_SECRETS_DIR
 }
 
