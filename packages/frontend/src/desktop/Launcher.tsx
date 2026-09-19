@@ -1,7 +1,7 @@
 import { Power, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { APP_REGISTRY } from '../apps/registry.js';
+import { availableApps } from '../apps/registry.js';
 import { useAuthStore, useCurrentUser } from '../stores/auth.store.js';
 import { useDesktopStore } from '../stores/desktop.store.js';
 import { useActiveTheme } from '../stores/theme.store.js';
@@ -31,10 +31,7 @@ export function Launcher() {
 
   const apps = useMemo(() => {
     if (user === null) return [];
-    const permitted = new Set(user.permissions);
-    const visible = APP_REGISTRY.filter(
-      (app) => app.requiredPermission === undefined || permitted.has(app.requiredPermission)
-    );
+    const visible = availableApps(user.permissions);
     const needle = filter.trim().toLowerCase();
     return needle === ''
       ? visible

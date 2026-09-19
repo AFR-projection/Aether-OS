@@ -43,19 +43,61 @@ export interface PortListResponse {
   forwardEnabled: boolean;
 }
 
+/** What `GET /api/ports` answers: the host's sockets, plus what this instance can do with them. */
+export interface PortsResponse extends PortListResponse {
+  preview: PreviewCapability;
+  /** Ports this user has open in a preview, so the UI can show them as running. */
+  previews: PortPreview[];
+}
+
 /**
- * How to serve a dev server under a path prefix.
+ * A server listening on the host, made reachable from the desktop.
  *
- * A preview opened at `/ports/5173/` is not at `/`, so a server that emits
- * absolute asset URLs (`/assets/app.js`) will not resolve them and the page comes
- * up blank with a console full of 404s. Aether cannot fix that from the outside —
- * the server has to be told its base path. Rather than hide the problem, the
- * Ports app names what to change for the framework it recognised.
+ * A preview is served from its own origin — the same host on a different port
+ * (`https://example.com:8443`) — rather than under a path on the desktop's own
+ * origin. That choice is what makes a real project work: an app served at `/` of
+ * its own origin emits absolute asset URLs that resolve, whereas the same app
+ * served under `/ports/5173/` requests `/assets/app.js` from the desktop's own
+ * root and comes up blank. It also keeps the previewed app off the desktop's
+ * origin, so nothing it runs can read the desktop's stored session.
  */
-export interface PortBasePathHint {
-  framework: string;
-  /** What to change, in one sentence, safe to show verbatim. */
-  guidance: string;
-  /** A command that applies it, when the framework takes a flag for it. */
-  command?: string;
+export interface PortPreview {
+  port: number;
+  /**
+   * The host the previewed port is on.
+   *
+   * A port number means nothing on its own — `3000` is a different server on
+   * every machine — and a user may hold previews on more than one agent, so the
+   * agent is part of what identifies a preview. Without it the Ports app cannot
+   * tell which host is already showing a port, and would offer to open one that
+   * is running on the other.
+   */
+  agentId: string;
+  /** Origin the preview is served from, without a trailing slash. */
+  origin: string;
+  /** The URL to open. */
+  url: string;
+  /** When the preview's credential stops being accepted. */
+  expiresAt: string;
+}
+
+/** How this instance can (or cannot) expose a port. */
+export interface PreviewCapability {
+  enabled: boolean;
+  /**
+   * Origins a preview can be served from.
+   *
+   * Sent to the frontend so the desktop's own content security policy can allow
+   * exactly these origins to be framed, and so the Ports app can tell the user
+   * where a preview will appear before it opens.
+   */
+  origins: string[];
+  /**
+   * What is missing, in one sentence, when previews are unavailable.
+   *
+   * Null when they work. A preview needs a published port outside the one the
+   * desktop is served on, and a host or network firewall that refuses it is the
+   * likeliest reason for a failure that looks like the server being down.
+   */
+  reason: string | null;
 }

@@ -4,6 +4,7 @@ import {
   Gauge,
   Image as ImageIcon,
   LineChart,
+  Network,
   ShieldCheck,
   SlidersHorizontal,
   SquareTerminal,
@@ -15,6 +16,8 @@ import { AppCatalogApp } from './app-catalog/AppCatalogApp.js';
 import { CodeStudioApp } from './code-studio/CodeStudioApp.js';
 import { FilesApp } from './files/FilesApp.js';
 import { MediaViewerApp } from './media-viewer/MediaViewerApp.js';
+import { PortPreviewApp } from './port-preview/PortPreviewApp.js';
+import { PortsApp } from './ports/PortsApp.js';
 import { SecurityCenterApp } from './security-center/SecurityCenterApp.js';
 import { SettingsApp } from './settings/SettingsApp.js';
 import { SystemMonitorApp } from './system-monitor/SystemMonitorApp.js';
@@ -48,6 +51,15 @@ export interface AppDefinition {
    * every request — hiding the icon is convenience, not access control.
    */
   requiredPermission?: Permission;
+  /**
+   * Registered but never offered.
+   *
+   * Some window types are not apps anyone launches: a port preview is opened by
+   * the Ports app with the address it is showing, and would be an empty window
+   * if it appeared in the launcher. It still needs a registry entry, because
+   * that is what the window manager resolves an id to.
+   */
+  hidden?: boolean;
   component: ComponentType<AppProps>;
 }
 
@@ -103,6 +115,30 @@ export const APP_REGISTRY: readonly AppDefinition[] = [
     component: TaskManagerApp,
   },
   {
+    id: 'ports',
+    name: 'Ports',
+    description: 'Servers listening on the host, opened as windows in the desktop.',
+    icon: Network,
+    defaultSize: { width: 940, height: 560 },
+    singleton: true,
+    requiredPermission: 'ports:read',
+    component: PortsApp,
+  },
+  {
+    // Opened by the Ports app, one window per previewed port. Registered so the
+    // window manager can resolve the id, hidden so it is never offered as an app
+    // to launch — it has nothing to show without the address it was opened for.
+    id: 'port-preview',
+    name: 'Port Preview',
+    description: 'A server running on the host, shown inside the desktop.',
+    icon: Network,
+    defaultSize: { width: 1024, height: 700 },
+    singleton: false,
+    hidden: true,
+    requiredPermission: 'ports:read',
+    component: PortPreviewApp,
+  },
+  {
     id: 'system-monitor',
     name: 'System Monitor',
     description: 'CPU, memory, disk, and network for this host.',
@@ -146,9 +182,11 @@ export function findApp(appId: string): AppDefinition | undefined {
   return APP_REGISTRY.find((app) => app.id === appId);
 }
 
-/** Apps the given permission set may use. */
+/** Apps the given permission set may use, excluding the ones never offered. */
 export function availableApps(permissions: readonly Permission[]): AppDefinition[] {
   return APP_REGISTRY.filter(
-    (app) => app.requiredPermission === undefined || permissions.includes(app.requiredPermission)
+    (app) =>
+      app.hidden !== true &&
+      (app.requiredPermission === undefined || permissions.includes(app.requiredPermission))
   );
 }

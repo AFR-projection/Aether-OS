@@ -55,6 +55,22 @@ configure_firewall() {
     $SUDO ufw allow 80/tcp
     $SUDO ufw allow 443/tcp
 
+    # Preview addresses. A project running on this host is served from one of
+    # these ports, and the connection is made by the operator's own browser
+    # rather than by the machine — so without the rule the preview window fills
+    # with nothing at all, which reads as the project being broken.
+    #
+    # The range is opened as a whole rather than per preview because ufw rules
+    # are not something to write and delete as ports are opened and closed; the
+    # backend is what decides whether a given address answers, and it answers
+    # only for the user who asked for it.
+    if [ "${AETHER_PREVIEW_ENABLED:-true}" = "true" ]; then
+        local preview_range="${AETHER_PREVIEW_PORT_START}:$(preview_port_end)"
+        $SUDO ufw allow "$preview_range/tcp" \
+            || warn "Could not open the preview ports $preview_range — previews will not be reachable."
+        info "Preview ports opened: $preview_range/tcp"
+    fi
+
     if [ "${AETHER_YES:-false}" = "true" ] || confirm "Enable UFW now?"; then
         $SUDO ufw --force enable
     else

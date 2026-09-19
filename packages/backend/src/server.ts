@@ -18,8 +18,10 @@ import { registerAuditRoutes } from './routes/audit.routes.js';
 import { registerAuthRoutes, registerUserRoutes } from './routes/auth.routes.js';
 import { registerFilesRoutes } from './routes/files.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
+import { registerPortsRoutes, registerPreviewGateway } from './routes/ports.routes.js';
 import { registerSystemRoutes } from './routes/system.routes.js';
 import { registerTerminalRoutes } from './routes/terminal.routes.js';
+import { previewOrigins, previewPortForHost } from './security/preview.js';
 import { isAppError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
 import { registerAgentWebSocket } from './ws/agent.ws.js';
@@ -58,6 +60,11 @@ export async function buildServer(): Promise<FastifyInstance> {
         scriptSrc: ["'self'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'", ...config.ALLOWED_ORIGINS],
+        // A port preview is a different origin — same host, its own port — so
+        // framing one is a cross-origin frame and has to be named here. The
+        // origins are exactly the ones this instance serves previews from, not a
+        // wildcard: nothing else may be framed into the desktop.
+        frameSrc: ["'self'", ...previewOrigins()],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         baseUri: ["'self'"],
@@ -86,7 +93,11 @@ export async function buildServer(): Promise<FastifyInstance> {
       timeWindow: config.RATE_LIMIT_WINDOW_MS,
       // Per-IP buckets are capped so a distributed source cannot exhaust memory.
       cache: 20_000,
-      allowList: [],
+      // A preview is exempt, and has to be: one page load fetches a document and
+      // every asset it references, which is exactly the burst this limit exists
+      // to stop. The limit protects the API, not a dev server the user started
+      // on their own machine and is the only one able to reach.
+      allowList: (request) => previewPortForHost(request.headers.host) !== null,
       keyGenerator: (request) => request.ip,
       errorResponseBuilder: () => ({
         error: {
@@ -128,6 +139,12 @@ export async function buildServer(): Promise<FastifyInstance> {
     return Promise.resolve(payload);
   });
 
+  // Before any route: a request on a preview address is answered by the preview
+  // gateway, whatever path it asks for, and must never reach the API router —
+  // a previewed app's paths are its own, and one of them will eventually look
+  // like an API path by accident.
+  registerPreviewGateway(app);
+
   registerHealthRoutes(app);
   registerAuthRoutes(app);
   registerUserRoutes(app);
@@ -135,6 +152,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   registerTerminalRoutes(app);
   registerSystemRoutes(app);
   registerAuditRoutes(app);
+  registerPortsRoutes(app);
   registerAgentRoutes(app);
   registerTerminalWebSocket(app);
   registerAgentWebSocket(app);
@@ -196,6 +214,13 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   app.setNotFoundHandler(async (request, reply) => {
+    // A request on a preview address was answered by the preview gateway on the
+    // way in — it has no route, because the paths belong to the previewed app
+    // rather than to this server. Sending a 404 body now would be an attempt to
+    // write over a reply that is already on the wire, which Fastify reports as a
+    // warning per request; a single page load would produce dozens.
+    if (previewPortForHost(request.headers.host) !== null) return reply;
+
     // `reply.sendFile` only exists once `@fastify/static` is registered. Without
     // this guard an API-only deployment (no built frontend) would answer a
     // browser navigating to `/desktop` with a 500 instead of a 404.

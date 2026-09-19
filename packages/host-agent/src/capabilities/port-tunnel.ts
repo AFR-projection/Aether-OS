@@ -98,12 +98,26 @@ function fail(runtime: TunnelRuntime, reason: string): void {
   runtime.wake = null;
 }
 
+/**
+ * Frees a finished tunnel's slot.
+ *
+ * Separate from `destroyTunnel` because the socket can end on its own — the
+ * server closed it, which is how every HTTP response ends — and the slot still
+ * has to come back immediately. One page load opens a connection per asset, so
+ * waiting for the idle timer to reap them would leave the tunnel limit spent
+ * before the page had finished loading.
+ */
+function retireTunnel(runtime: TunnelRuntime): void {
+  if (tunnels.get(runtime.id) === runtime) tunnels.delete(runtime.id);
+  if (runtime.idleTimer) clearTimeout(runtime.idleTimer);
+  runtime.idleTimer = null;
+}
+
 function destroyTunnel(id: string, reason: string): void {
   const runtime = tunnels.get(id);
   if (!runtime) return;
 
-  tunnels.delete(id);
-  if (runtime.idleTimer) clearTimeout(runtime.idleTimer);
+  retireTunnel(runtime);
   runtime.closed = true;
   runtime.closeReason = runtime.closeReason ?? reason;
   runtime.wake?.();
@@ -187,6 +201,11 @@ export async function openTunnel(
   });
   socket.on('close', () => {
     fail(runtime, 'closed');
+    // The socket is gone, so the tunnel is over. Retiring it here rather than
+    // leaving it for the idle timer is what keeps the tunnel limit usable: a
+    // single page load opens one connection per asset, and none of them outlive
+    // the response they carried.
+    retireTunnel(runtime);
   });
 
   tunnels.set(id, runtime);

@@ -138,6 +138,36 @@ Counters live in the cache, so they are per-process unless `REDIS_URL` is set.
 | ------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AETHER_PROCESS_SIGNAL_ENABLED` | `false` | Whether the Task Manager may signal processes. Defaults off because ending a process is the one API action that can take a host down. Even when enabled, Aether refuses to signal PID 1, itself, or any of its own ancestors. |
 
+## Port previews
+
+A server started on the host — `npm run dev`, `python -m http.server`, anything — binds to loopback
+and is therefore invisible to a browser. A preview serves one of those ports from this same hostname
+on a spare port, so the project sees itself at the root of its own origin and the desktop can frame
+it. See [HOST-AGENTS.md](../operations/HOST-AGENTS.md#port-previews) for how it works end to end.
+
+**`AETHER_PREVIEW_ENABLED`** (default `true`) turns the whole feature off: no address is offered,
+and `POST /api/ports/preview` refuses. Listing what the host listens on is part of `ports:read` and
+is unaffected.
+
+**`AETHER_PREVIEW_PORT_START`** (default `8443`) is the first preview port. It must not collide with
+anything else on the host, and it must be published by Docker and open in the firewall — the
+installer keeps those three in step, but only for the range that was in `.env` at install time.
+
+**`AETHER_PREVIEW_PORT_COUNT`** (default `10`) is how many previews can be open at once. A preview
+that is stopped frees its address, and so does its twelve-hour expiry.
+
+Two things the installer does with these values, and neither can be inferred at runtime:
+
+- **Published ports.** `docker-compose.yml` forwards the range to Caddy. Compose cannot expand a
+  loop, so the range is written into the file when it is generated; changing `.env` alone leaves
+  Docker forwarding the old range.
+- **Firewall.** `ufw` gets one rule for the range, because the connection is made by the operator's
+  browser rather than by the machine. An instance installed before previews existed has no such
+  rule; see [the deployment guide](../operations/DEPLOYMENT.md#the-firewall).
+
+The backend reads the same three values to decide which addresses it will answer on, which is why a
+mismatch shows up as a preview that opens a connection nobody accepts.
+
 ## Static frontend
 
 | Variable            | Default | Notes                                                                                                                                      |

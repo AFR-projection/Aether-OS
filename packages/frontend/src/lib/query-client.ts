@@ -49,6 +49,11 @@ export const queryKeys = {
   sessions: ['auth', 'sessions'] as const,
   users: ['users'] as const,
   agents: ['agents'] as const,
+  /**
+   * Keyed by agent, because two hosts have separate socket tables and separate
+   * preview reservations — and the app switches between them in place.
+   */
+  ports: (agentId: string) => ['ports', agentId] as const,
   terminals: ['terminal', 'sessions'] as const,
   terminalStatus: ['terminal', 'status'] as const,
 };

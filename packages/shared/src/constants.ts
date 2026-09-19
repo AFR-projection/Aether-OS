@@ -18,6 +18,7 @@ export const PERMISSIONS = [
   'terminal:attach',
   'process:read',
   'process:manage',
+  'agents:read',
   'ports:read',
   'ports:forward',
   'system:read',
@@ -38,6 +39,13 @@ export type Role = (typeof ROLES)[number];
  *
  * `owner` is the account created by the installer / first-run bootstrap.
  * `admin` can do everything except manage other users' accounts.
+ *
+ * `agents:read` is held by every role, and is deliberately separate from the
+ * `settings:manage` that pairing and revoking an agent require. Listing the
+ * host agents is not an administrative act: it is what tells the Terminal,
+ * Files and Ports apps which machine they are working on. Tying it to
+ * `settings:manage` left an operator with a shell they could not aim at any
+ * host, and a viewer with a Ports app that had nothing to list.
  */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   owner: PERMISSIONS,
@@ -49,6 +57,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'terminal:attach',
     'process:read',
     'process:manage',
+    'agents:read',
     'ports:read',
     'ports:forward',
     'system:read',
@@ -61,11 +70,12 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'terminal:create',
     'terminal:attach',
     'process:read',
+    'agents:read',
     'ports:read',
     'ports:forward',
     'system:read',
   ],
-  viewer: ['files:read', 'process:read', 'ports:read', 'system:read'],
+  viewer: ['files:read', 'process:read', 'agents:read', 'ports:read', 'system:read'],
 };
 
 /** Returns true when `role` grants `permission`. */

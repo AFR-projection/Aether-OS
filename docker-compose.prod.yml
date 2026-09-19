@@ -135,6 +135,14 @@ services:
     ports:
       - '80:80'
       - '443:443'
+      # Port previews: the addresses a project running on this host is served
+      # from. The range is rewritten by the installer from
+      # AETHER_PREVIEW_PORT_START/COUNT, and the Caddyfile gets one site block
+      # per port to match — docker compose cannot expand a range on its own, so
+      # changing the .env values without reinstalling means changing this line
+      # too. Publishing the whole range is what lets the backend stay on the
+      # internal network: only Caddy is exposed.
+      - '8443-8452:8443-8452'
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

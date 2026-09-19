@@ -42,3 +42,10 @@
 		format json
 	}
 }
+
+# AETHER_PREVIEW_SITES
+# The installer inserts one site block per preview port below this line, with
+# X-Frame-Options left off so the desktop can frame a project running on this
+# host. They are generated rather than written out because Caddy has no loop and
+# the port range is an install-time choice. Nothing appears here if previews are
+# disabled or if the range is empty.

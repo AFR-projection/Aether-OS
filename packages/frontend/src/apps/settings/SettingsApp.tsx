@@ -53,13 +53,17 @@ export function SettingsApp({ windowId }: AppProps) {
 
   const canManageUsers = user.permissions.includes('users:manage');
   const canManageSettings = user.permissions.includes('settings:manage');
+  // Listing the hosts is a read, and one the Terminal and Files apps depend on.
+  // The tab is shown to whoever may read the list; pairing and revoking are
+  // gated inside it on settings:manage.
+  const canReadAgents = user.permissions.includes('agents:read');
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: 'account', label: 'Account' },
     { id: 'appearance', label: 'Appearance' },
     { id: 'sessions', label: 'Sessions' },
     ...(canManageUsers ? [{ id: 'users' as Tab, label: 'Users' }] : []),
-    ...(canManageSettings ? [{ id: 'agents' as Tab, label: 'Host agents' }] : []),
+    ...(canReadAgents ? [{ id: 'agents' as Tab, label: 'Host agents' }] : []),
     { id: 'about', label: 'About' },
   ];
 
@@ -90,7 +94,7 @@ export function SettingsApp({ windowId }: AppProps) {
         {tab === 'appearance' ? <AppearanceSection /> : null}
         {tab === 'sessions' ? <SessionsSection /> : null}
         {tab === 'users' && canManageUsers ? <UsersSection currentUser={user} /> : null}
-        {tab === 'agents' && canManageSettings ? <AgentsSection /> : null}
+        {tab === 'agents' && canReadAgents ? <AgentsSection /> : null}
         {tab === 'about' ? <AboutSection canManageSettings={canManageSettings} /> : null}
       </div>
     </div>
@@ -810,9 +814,16 @@ function CreateUserDialog({
 
 function AgentsSection() {
   const queryClient = useQueryClient();
+  const user = useCurrentUser();
   const [pairOpen, setPairOpen] = useState(false);
   const [pendingRevoke, setPendingRevoke] = useState<HostAgent | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Seeing which hosts exist is not the same act as pairing or revoking one, and
+  // the two are gated separately: every role may read the list, because that is
+  // what the Terminal and Files apps need to aim at a machine, while only
+  // settings:manage may add or remove one.
+  const canManage = user?.permissions.includes('settings:manage') ?? false;
 
   const agents = useQuery({ queryKey: queryKeys.agents, queryFn: fetchAgents });
 
@@ -844,12 +855,15 @@ function AgentsSection() {
       ) : null}
 
       <div className="mb-2 flex items-center gap-2">
-        <Button size="sm" variant="primary" onClick={() => setPairOpen(true)}>
-          Pair an agent
-        </Button>
+        {canManage ? (
+          <Button size="sm" variant="primary" onClick={() => setPairOpen(true)}>
+            Pair an agent
+          </Button>
+        ) : null}
         <span className="text-[11px] text-slate-500">
-          Agents run on other machines and connect back over a WebSocket to serve this
-          instance&apos;s files, processes, and terminals.
+          {canManage
+            ? "Agents run on other machines and connect back over a WebSocket to serve this instance's files, processes, and terminals."
+            : 'Agents run on other machines and connect back over a WebSocket to serve this instance. Pairing one requires the settings:manage permission.'}
         </span>
       </div>
 
@@ -885,14 +899,16 @@ function AgentsSection() {
                 </td>
                 <td className="py-1 text-slate-500">{formatRelative(agent.createdAt)}</td>
                 <td className="py-1 text-right">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-red-300"
-                    onClick={() => setPendingRevoke(agent)}
-                  >
-                    Revoke
-                  </Button>
+                  {canManage ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-300"
+                      onClick={() => setPendingRevoke(agent)}
+                    >
+                      Revoke
+                    </Button>
+                  ) : null}
                 </td>
               </tr>
             ))}

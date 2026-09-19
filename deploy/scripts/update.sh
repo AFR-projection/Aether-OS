@@ -448,7 +448,27 @@ update_aether() {
         AETHER_ADMIN_EMAIL="$(env_value AETHER_ADMIN_EMAIL "$AETHER_INSTALL_DIR/.env" || true)"
         AETHER_NO_HTTPS="$(env_value AETHER_NO_HTTPS "$AETHER_INSTALL_DIR/.env" || true)"
         AETHER_NO_HTTPS="${AETHER_NO_HTTPS:-false}"
+
+        # The preview range is read back for the same reason: it decides both the
+        # published ports in the compose file and the site blocks in the
+        # Caddyfile, and regenerating them from a default while .env holds a
+        # different range would leave the backend serving previews on addresses
+        # Docker never forwards.
+        AETHER_PREVIEW_ENABLED="$(env_value AETHER_PREVIEW_ENABLED "$AETHER_INSTALL_DIR/.env" || true)"
+        AETHER_PREVIEW_PORT_START="$(env_value AETHER_PREVIEW_PORT_START "$AETHER_INSTALL_DIR/.env" || true)"
+        AETHER_PREVIEW_PORT_COUNT="$(env_value AETHER_PREVIEW_PORT_COUNT "$AETHER_INSTALL_DIR/.env" || true)"
+
+        # Defaulted rather than left empty, because an install made before
+        # previews existed has none of these keys and an empty range is not a
+        # range: the port arithmetic would fail and the update would stop before
+        # it wrote anything. The defaults are the ones the shipped compose file
+        # and utils.sh already agree on.
+        AETHER_PREVIEW_ENABLED="${AETHER_PREVIEW_ENABLED:-true}"
+        AETHER_PREVIEW_PORT_START="${AETHER_PREVIEW_PORT_START:-8443}"
+        AETHER_PREVIEW_PORT_COUNT="${AETHER_PREVIEW_PORT_COUNT:-10}"
+
         export AETHER_DOMAIN AETHER_ADMIN_EMAIL AETHER_NO_HTTPS
+        export AETHER_PREVIEW_ENABLED AETHER_PREVIEW_PORT_START AETHER_PREVIEW_PORT_COUNT
 
         # Source deploy functions for install_compose_file and write_caddyfile
         # shellcheck source=../lib/deploy.sh

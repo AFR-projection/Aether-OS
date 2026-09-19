@@ -179,6 +179,47 @@ env_value() {
 }
 
 # ---------------------------------------------------------------------------
+# PORT PREVIEWS — the one range that three files have to agree on
+# ---------------------------------------------------------------------------
+# A preview is served from the same host on a spare port, so the range appears
+# in three places that cannot read each other: the backend's .env (where a
+# preview may be served from), the published ports in docker-compose.yml (what
+# Docker forwards), and the firewall (what the kernel accepts). Docker compose
+# cannot expand a loop, so the range is written out here and substituted into
+# each file by the installer.
+#
+# Defaults match the shipped docker-compose.prod.yml, so an install that never
+# sets these still works.
+AETHER_PREVIEW_PORT_START="${AETHER_PREVIEW_PORT_START:-8443}"
+AETHER_PREVIEW_PORT_COUNT="${AETHER_PREVIEW_PORT_COUNT:-10}"
+
+# The highest port in the range. Written as arithmetic rather than a loop
+# because a shell loop cannot be interpolated into a compose file.
+preview_port_end() {
+    local start="$AETHER_PREVIEW_PORT_START"
+    local count="$AETHER_PREVIEW_PORT_COUNT"
+    local last
+
+    case "$start" in
+        ''|*[!0-9]*) fatal "AETHER_PREVIEW_PORT_START must be a port number (got '$start')" ;;
+    esac
+    case "$count" in
+        ''|*[!0-9]*) fatal "AETHER_PREVIEW_PORT_COUNT must be a number (got '$count')" ;;
+    esac
+
+    last=$((start + count - 1))
+    if [ "$count" -lt 1 ] || [ "$last" -gt 65535 ]; then
+        fatal "The preview port range $start-$last is not usable"
+    fi
+    printf '%s' "$last"
+}
+
+# `8443-8452` — the form both a compose port range and a ufw rule take.
+preview_port_range() {
+    printf '%s-%s' "$AETHER_PREVIEW_PORT_START" "$(preview_port_end)"
+}
+
+# ---------------------------------------------------------------------------
 # APT — non-interactive, lock-aware
 # ---------------------------------------------------------------------------
 # apt and dpkg serialise through lock files under /var/lib. On a freshly

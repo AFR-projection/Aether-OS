@@ -43,6 +43,9 @@ server enforces. Hiding a button in the UI is not access control.
 | `terminal:attach` |   ●   |   ●   |    ●     |        |
 | `process:read`    |   ●   |   ●   |    ●     |   ●    |
 | `process:manage`  |   ●   |   ●   |          |        |
+| `agents:read`     |   ●   |   ●   |    ●     |   ●    |
+| `ports:read`      |   ●   |   ●   |    ●     |   ●    |
+| `ports:forward`   |   ●   |   ●   |    ●     |        |
 | `system:read`     |   ●   |   ●   |    ●     |   ●    |
 | `settings:manage` |   ●   |   ●   |          |        |
 | `users:manage`    |   ●   |       |          |        |
@@ -243,9 +246,13 @@ reports `signalable: false` on those processes in the list response so the UI ca
 
 | Method   | Path                   | Permission        | Purpose                       |
 | -------- | ---------------------- | ----------------- | ----------------------------- |
-| `GET`    | `/api/agents`          | `settings:manage` | List paired agents            |
+| `GET`    | `/api/agents`          | `agents:read`     | List paired agents            |
 | `POST`   | `/api/agents/pair`     | `settings:manage` | Mint a one-time pairing token |
 | `DELETE` | `/api/agents/:agentId` | `settings:manage` | Revoke an agent               |
+
+Listing is held by every role: it is what tells the Terminal, Files and Ports apps which machine
+they are working on, and it carries no secret. Pairing a new host and revoking one stay
+administrative. The list is scoped to the caller's own agents either way.
 
 `GET /api/agents` returns `connected` and `connectedAt` from the live connection registry, so a
 paired-but-offline agent is distinguishable from a connected one:
@@ -269,6 +276,68 @@ paired-but-offline agent is distinguishable from a connected one:
 stored, so it can never be shown again. If it is lost, revoke the agent and pair again.
 
 Deletion is a **soft** revoke (`revoked_at`), so the record of what was paired survives.
+
+---
+
+## Ports
+
+| Method   | Path                 | Permission      | Purpose                                    |
+| -------- | -------------------- | --------------- | ------------------------------------------ |
+| `GET`    | `/api/ports`         | `ports:read`    | Listening sockets on a host, plus previews |
+| `POST`   | `/api/ports/preview` | `ports:forward` | Reserve an address for a port              |
+| `DELETE` | `/api/ports/preview` | `ports:forward` | Release that address                       |
+
+**`GET /api/ports?agentId=…`** returns the host's listening sockets, whether this instance can open
+one, and the previews this user already holds:
+
+```json
+{
+  "data": {
+    "ports": [
+      {
+        "port": 5173,
+        "address": "127.0.0.1",
+        "family": "ipv4",
+        "pid": 4021,
+        "process": "node",
+        "command": "node /srv/app/node_modules/.bin/vite",
+        "loopbackOnly": true
+      }
+    ],
+    "total": 1,
+    "truncated": false,
+    "forwardEnabled": true,
+    "preview": { "enabled": true, "origins": ["https://example.com:8443"], "reason": null },
+    "previews": [
+      {
+        "port": 5173,
+        "agentId": "…",
+        "origin": "https://example.com:8443",
+        "url": "https://example.com:8443/",
+        "expiresAt": "2026-09-18T…"
+      }
+    ]
+  }
+}
+```
+
+**`POST /api/ports/preview`** takes `{ agentId, port }`, proves the port is reachable by opening the
+tunnel, reserves one preview address for the caller, and answers with the URL **and** a `Set-Cookie`
+for that address — the cookie is the credential the framed page is fetched with, and it is not in
+the response body. A port that is not listening is refused here rather than shown as an empty window
+a minute later.
+
+**`DELETE /api/ports/preview?agentId=…&port=…`** frees the address and clears its cookie. A port
+with no reservation answers `{ "released": false }` and changes no cookie: there is nothing to
+close.
+
+An address is reserved per user, and a preview URL is only useful to the user who reserved it — see
+[Port previews](../operations/HOST-AGENTS.md#port-previews) for what is checked on every request and
+why a cookie rather than a token.
+
+Requests that arrive **on a preview address** are not routes at all. The address a request came in
+on decides whether it is a preview, and the paths belong to the previewed app, so there is no path
+to register — see the note in `packages/backend/src/routes/ports.routes.ts`.
 
 ---
 

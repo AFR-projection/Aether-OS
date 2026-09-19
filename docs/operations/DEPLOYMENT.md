@@ -145,6 +145,22 @@ If `ufw` is present, the installer backs up the current rules first, then allows
 anything else, then 80 and 443. It never disables the firewall. SSH-first is not a formality — a
 rule set that drops an established SSH session locks you out of the host you are installing on.
 
+It then opens the [preview port range](../reference/CONFIGURATION.md#port-previews) as a whole
+(`8443:8452` by default). One rule rather than one per preview: `ufw` rules are not something to
+write and delete as ports are opened and closed, and it is the backend that decides whether a given
+preview address answers, not the firewall.
+
+> **If this instance was installed before previews existed, the range is not open on it.**
+> `aether update` republishes the ports in Docker but does not edit firewall rules. Open the range
+> once by hand, with the values from `.env`:
+>
+> ```bash
+> sudo ufw allow 8443:8452/tcp
+> ```
+>
+> Without it a preview window loads nothing at all, which reads as the project being broken rather
+> than as the connection being refused.
+
 ### The post-install check
 
 `finalize` verifies that 5432, 6379, and 3000 are **not** listening on the host's public interfaces.

@@ -196,16 +196,22 @@ the backend side, because the agent does not assume the backend already checked.
 
 An agent advertises what it can do at handshake time:
 
-| Group     | Capabilities                                                                                                |
-| --------- | ----------------------------------------------------------------------------------------------------------- |
-| System    | `system.info`                                                                                               |
-| Processes | `processes.list`, `processes.signal`                                                                        |
-| Files     | `files.list`, `files.read`, `files.write`, `files.delete`, `files.mkdir`                                    |
-| Terminal  | `terminal.create`, `terminal.input`, `terminal.resize`, `terminal.signal`, `terminal.kill`, `terminal.list` |
+| Group     | Capabilities                                                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| System    | `system.info`                                                                                                                   |
+| Processes | `processes.list`, `processes.signal`                                                                                            |
+| Files     | `files.list`, `files.read`, `files.readChunk`, `files.write`, `files.writeChunk`, `files.delete`, `files.mkdir`, `files.rename` |
+| Ports     | `ports.list`, `ports.open`, `ports.read`, `ports.write`, `ports.close`                                                          |
+| Terminal  | `terminal.create`, `terminal.input`, `terminal.resize`, `terminal.signal`, `terminal.kill`, `terminal.list`                     |
 
 That list is the entire vocabulary. There is **no `exec` and no arbitrary command**: every
 capability is a named operation with a typed parameter schema validated before it reaches a handler.
 A compromised agent cannot be asked to do anything outside this set.
+
+The four `files.*Chunk` and `ports.*` capabilities are each half of a stream rather than a
+request/response pair. A file is read and written in chunks so a large one never has to fit in a
+single message, and a port tunnel is pulled a chunk at a time — the agent holds the socket back
+while no read is outstanding, so the kernel's own buffer is the only place bytes wait.
 
 ### Process signalling
 
@@ -224,6 +230,72 @@ API reports `signalable: false` for those so the UI can grey them out.
 A terminal on a host is **not a sandbox**. It is a shell running as the agent's service user, with
 that user's full access to the machine. Grant `terminal:create` accordingly — that is what the
 `operator` role is for, and why `viewer` does not have it.
+
+---
+
+## Port previews
+
+This is how a project started in the Terminal becomes a window in the desktop.
+
+The problem is a network boundary, not a missing feature. A dev server binds to `127.0.0.1` by
+default — Vite, webpack, `flask run`, `rails server`, all of them — and that address means _this
+machine only_. The backend runs in a container and is not on this machine, so it cannot reach that
+port, and a browser pointed at the VPS cannot either. The host agent runs on the machine itself, so
+it is the only thing that can both see the socket and connect to it.
+
+**What the Ports app shows.** `ports.list` reads `/proc/net/tcp` and `/proc/net/tcp6` — the kernel's
+own table of listening sockets — and joins each socket to the process that owns it through
+`/proc/<pid>/fd`, so a row can name the framework rather than an inode. Rows bound only to loopback
+are labelled as such: such a server is reachable through Aether and from nowhere else, and saying so
+is more useful than hiding the distinction.
+
+**How a preview is addressed.** A preview is served from _this same hostname on a spare port_
+(`https://example.com:8443`), not from a path under the desktop. Three things follow from that, and
+each of them is the reason for the choice:
+
+- The project sees itself at `/` of its own origin, so the absolute asset URLs every framework emits
+  resolve. Served under `/ports/5173/`, the same app requests `/assets/app.js` from the desktop's
+  root and comes up blank.
+- The previewed app is on a different origin, so nothing it runs can read the desktop's stored
+  session. A path under the desktop's origin would put a project's code — a dependency, a
+  postinstall script — inside reach of the token in `localStorage`.
+- It needs no DNS record and no certificate of its own: the hostname is unchanged, so the existing
+  certificate covers it, and only the port range has to be published and allowed through the
+  firewall.
+
+**What authorises a preview.** Not the session token: a page in an iframe fetches its own images,
+scripts and stylesheets, and none of those requests can carry an `Authorization` header. So opening
+a preview reserves one address for the user and sets an `HttpOnly` cookie named for that address,
+signed with a key derived from `SESSION_SECRET`. Every request on a preview address is checked
+against both halves — the cookie's owner and the reservation on that address — so a valid cookie
+cannot be pointed at somebody else's preview by editing a URL. Cookies ignore ports, which is what
+makes a cookie set by the desktop on `example.com` arrive at `example.com:8443`; that is also why
+the cookie is named per address rather than shared, since one name would have each new preview
+overwrite the last one's credential.
+
+A policy header from the project is kept rather than overridden. `X-Frame-Options` is removed —
+there is no value of it that permits a frame while still refusing a real cross-site one — and a
+`frame-ancestors` directive is rewritten to name the desktop, which keeps every other directive the
+app declared. So the project's own clickjacking protection survives, minus being framed by Aether
+itself.
+
+**What is relayed.** Requests and responses, byte for byte, including the request body, a project's
+own `Set-Cookie` headers, and WebSocket upgrades — a dev server's hot reload is a socket, and
+without it every edit would need a manual reload. Each browser connection gets its own tunnel to the
+project, so a slow response does not stall its siblings, and the tunnel is retired the moment its
+connection closes rather than waiting for an idle timer.
+
+**When it does not work.** In order of likelihood:
+
+| Symptom                               | Cause                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| The window stays empty, nothing loads | The preview port range is not published by Docker, or not open in the firewall.                  |
+| `Aether could not connect to port N`  | Nothing is listening on that port any more — the dev server exited after the list was read.      |
+| The page loads but assets 404         | The project is configured with a base path; set it to `/`.                                       |
+| Hot reload does not connect           | The dev server is not listening for a WebSocket on the same port, or it is bound to another one. |
+
+Preview addresses come from `AETHER_PREVIEW_PORT_START` and `AETHER_PREVIEW_PORT_COUNT`; see
+[Configuration](../reference/CONFIGURATION.md#port-previews) for what the installer does with them.
 
 ---
 

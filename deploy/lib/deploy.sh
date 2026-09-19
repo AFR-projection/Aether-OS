@@ -97,6 +97,118 @@ write_caddyfile() {
             info "Caddyfile installed (HTTP IP-only mode)"
         fi
     fi
+
+    install_preview_sites "$caddy_dir/Caddyfile"
+}
+
+# Adds one site block per preview port to the Caddyfile.
+#
+# Caddy has no loop, so the blocks are generated here. Without them a preview
+# address would be served by no site at all, and Caddy would answer the TLS
+# handshake with its own certificate and then 404 — which looks like the project
+# being broken rather than the proxy not being told about it.
+#
+# The blocks deliberately differ from the desktop's:
+#   - no X-Frame-Options and no frame-ancestors, because the desktop frames
+#     these pages and the whole point is that the frame is allowed;
+#   - no HSTS, because HSTS is not scoped to a port and the desktop's own block
+#     already sets it for this host;
+#   - no compression, because a dev server's hot reload and event streams are the
+#     traffic here and they are not meaningfully compressible.
+# `encode` is left off for the same reason the response is passed through in one
+# piece: what arrives is what the project sent.
+install_preview_sites() {
+    local caddyfile="$1"
+
+    if [ "${AETHER_PREVIEW_ENABLED:-true}" != "true" ]; then
+        info "Port previews are disabled — no preview site blocks added"
+        return 0
+    fi
+
+    if ! grep -q '^# AETHER_PREVIEW_SITES$' "$caddyfile"; then
+        warn "The Caddyfile has no preview marker; preview addresses will not be served"
+        return 0
+    fi
+
+    local start end port
+    start="$AETHER_PREVIEW_PORT_START"
+    end="$(preview_port_end)"
+
+    # The site address for one preview port, per install mode.
+    #
+    # HTTPS mode names no scheme: Caddy terminates TLS and answers with the
+    # certificate for the hostname, and a port is not part of a certificate's
+    # name — so this is the same certificate the desktop already has, reused.
+    # The other two modes are HTTP, where the scheme has to be spelled out
+    # because Caddy reads a bare hostname as a request for HTTPS.
+    local template
+    if [ -n "${AETHER_DOMAIN:-}" ] && [ "${AETHER_NO_HTTPS:-false}" != "true" ]; then
+        template='{$AETHER_DOMAIN}:PORT'
+    elif [ -n "${AETHER_DOMAIN:-}" ]; then
+        template='http://{$AETHER_DOMAIN}:PORT'
+    else
+        template=':PORT'
+    fi
+
+    local blocks
+    blocks=$(mktemp)
+
+    port="$start"
+    while [ "$port" -le "$end" ]; do
+        {
+            printf '%s {\n' "${template//PORT/$port}"
+            cat <<'BLOCK'
+	header {
+		# No X-Frame-Options here, and no frame-ancestors: the desktop frames
+		# this address, and a refusal would leave the preview window empty.
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	handle {
+		reverse_proxy backend:3000 {
+			# A preview carries a hot-reload socket for as long as the project
+			# runs, and a dev server's first response compiles the project.
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 0s
+				expect_continue_timeout 0s
+			}
+		}
+	}
+
+	# No `encode` and no HSTS: compression would rewrite a stream whose framing
+	# is the project's business, and HSTS is not scoped to a port — the desktop's
+	# own block already sets it for this host.
+	log {
+		output stdout
+		format json
+	}
+}
+
+BLOCK
+        } >> "$blocks"
+        port=$((port + 1))
+    done
+
+    # The marker line is kept and the blocks are inserted after it, so the file
+    # reads as a template that was filled in rather than one that was rewritten.
+    local assembled
+    assembled=$(mktemp)
+    sed "/^# AETHER_PREVIEW_SITES\$/r $blocks" "$caddyfile" > "$assembled"
+    rm -f "$blocks"
+    mv "$assembled" "$caddyfile"
+
+    # A Caddyfile with preview addresses and no upstream would take the whole
+    # proxy down on reload, so the substitution is asserted rather than assumed.
+    grep -q 'backend:3000' "$caddyfile" \
+        || fatal "The generated Caddyfile lost its backend upstream"
+    grep -q "${template//PORT/$start}" "$caddyfile" \
+        || fatal "Could not write the preview site blocks into the Caddyfile"
+
+    info "Preview addresses: $start-$end"
 }
 
 install_compose_file() {
@@ -110,10 +222,19 @@ install_compose_file() {
     # Symlinking `packages/` into the install root would be the obvious
     # alternative and does not work: Docker refuses a build-context path that
     # resolves through a symlink pointing outside the context.
+    #
+    # The preview port range is rewritten the same way. Compose cannot expand a
+    # loop, so the shipped file carries the default range and the installer
+    # writes the configured one over it — matching the Caddyfile blocks and the
+    # firewall rule that are generated from the same three values.
+    local preview_range
+    preview_range="$(preview_port_range)"
+
     sed \
         -e 's|^\( *\)context: \.$|\1context: ./src|' \
         -e 's|\( *- \)\./deploy/Caddyfile:|\1./caddy/Caddyfile:|' \
         -e 's|\( *- \)\./packages/frontend/dist:|\1./static:|' \
+        -e "s|'8443-8452:8443-8452'|'${preview_range}:${preview_range}'|" \
         "${AETHER_INSTALL_DIR}/src/docker-compose.prod.yml" \
         > "${AETHER_INSTALL_DIR}/docker-compose.yml"
 
@@ -127,6 +248,8 @@ install_compose_file() {
         || fatal "Could not rewrite the Caddyfile mount in docker-compose.yml"
     grep -q -- '- \./static:' "$generated" \
         || fatal "Could not rewrite the frontend bundle mount in docker-compose.yml"
+    grep -q "'${preview_range}:${preview_range}'" "$generated" \
+        || fatal "Could not rewrite the preview port range in docker-compose.yml"
 
     # Validates the YAML and the variable interpolation before anything is built
     # from it. `.env` is already written at this point, so this also proves the

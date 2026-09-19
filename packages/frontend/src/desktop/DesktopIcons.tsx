@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { APP_REGISTRY } from '../apps/registry.js';
+import { availableApps } from '../apps/registry.js';
 import { fetchSettings } from '../lib/system-api.js';
 import { useCurrentUser } from '../stores/auth.store.js';
 import { useDesktopStore } from '../stores/desktop.store.js';
@@ -38,10 +38,7 @@ export function DesktopIcons() {
   // GNOME has no desktop icons; the launcher (Activities) is the entry point.
   if (chrome.shell === 'topbar') return null;
 
-  const permitted = new Set(user.permissions);
-  const usable = APP_REGISTRY.filter(
-    (app) => app.requiredPermission === undefined || permitted.has(app.requiredPermission)
-  );
+  const usable = availableApps(user.permissions);
 
   const stored = settingsQuery.data?.settings.find(
     (entry) => entry.key === `desktop.pinnedApps.${username}`

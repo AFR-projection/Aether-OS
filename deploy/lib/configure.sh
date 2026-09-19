@@ -151,6 +151,19 @@ TERMINAL_MAX_SESSIONS=10
 AETHER_PROCESS_SIGNAL_ENABLED=true
 TRUST_PROXY_HOPS=1
 
+# Port previews. A server started on this machine — a dev server bound to
+# 127.0.0.1, which is what every framework does by default — is otherwise
+# unreachable from a browser. Each preview is served from this same host on one
+# of these ports, so the address is an origin of its own and the project sees
+# itself at the root of it.
+#
+# Adding these ports to the firewall and to the published range in
+# docker-compose.yml is what the installer does with them; the backend reads the
+# same three values to decide where a preview may be served from.
+AETHER_PREVIEW_ENABLED=true
+AETHER_PREVIEW_PORT_START=${AETHER_PREVIEW_PORT_START:-8443}
+AETHER_PREVIEW_PORT_COUNT=${AETHER_PREVIEW_PORT_COUNT:-10}
+
 AETHER_BOOTSTRAP_TOKEN=${SECRET_BOOTSTRAP_TOKEN}
 AETHER_INSTANCE_ID=${SECRET_INSTANCE_ID}
 

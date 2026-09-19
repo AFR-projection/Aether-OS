@@ -130,6 +130,29 @@ const envSchema = z.object({
    */
   AETHER_PROCESS_SIGNAL_ENABLED: booleanFromEnv.default(true),
 
+  // --- Port previews -------------------------------------------------------
+  /**
+   * Whether a port on the host may be opened in a desktop window.
+   *
+   * On by default: running a project and seeing it is the reason a terminal in a
+   * browser is worth having at all. Turning it off leaves the Ports app as a
+   * read-only list of what is listening.
+   */
+  AETHER_PREVIEW_ENABLED: booleanFromEnv.default(true),
+
+  /**
+   * The first port a preview is served from, and how many there are.
+   *
+   * Each preview occupies one of these ports on the public hostname, so a
+   * preview is a distinct origin from the desktop — `https://host:8443` and
+   * `https://host` are different origins even though they share a host — and an
+   * app served at the root of its own origin resolves its absolute asset URLs
+   * normally. The range has to be published by the reverse proxy and permitted
+   * by the firewall; `deploy/` does both.
+   */
+  AETHER_PREVIEW_PORT_START: z.coerce.number().int().min(1).max(65535).default(8443),
+  AETHER_PREVIEW_PORT_COUNT: z.coerce.number().int().min(1).max(100).default(10),
+
   // --- Static frontend -----------------------------------------------------
   /** Directory containing the built frontend. Served when it exists. */
   AETHER_STATIC_DIR: z.string().optional(),

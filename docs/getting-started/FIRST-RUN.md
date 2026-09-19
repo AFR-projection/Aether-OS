@@ -87,6 +87,7 @@ Full detail, including firing the agent up by hand: [HOST-AGENTS.md](../operatio
 | ------------------- | ------------------------------------------------------------------------ |
 | **Terminal**        | A real shell on the paired host. `whoami`, `df -h`. It is not a sandbox. |
 | **Files**           | The workspace only — `AETHER_WORKSPACE_ROOT`, not the whole filesystem.  |
+| **Ports**           | Servers running on the host, opened as windows. See below.               |
 | **System Monitor**  | Live CPU, memory, disk from the host's `/proc`.                          |
 | **Task Manager**    | Processes with memory and state. The CPU column is empty — see below.    |
 | **Code Studio**     | Edit a text file from the Files app. No syntax highlighting, by choice.  |
@@ -101,6 +102,38 @@ Two things that look broken but are not:
   [Known limitations](../status/KNOWN-LIMITATIONS.md#6-per-process-cpu-usage-is-always-reported-as-0).
 - **Code Studio has no syntax highlighting.** It is a textarea with a gutter. An honest plain editor
   beat a half-configured code editor component.
+
+---
+
+## 3a. Running a project
+
+This is the part that makes the desktop a place to work rather than a place to look.
+
+```bash
+# In the Terminal app, on the host
+mkdir -p ~/projects/hello && cd ~/projects/hello
+printf '<h1>hello from the host</h1>\n' > index.html
+python3 -m http.server 8000
+```
+
+Open the **Ports** app. Port `8000` is listed with the process that owns it. Press **Preview**: the
+server is reached through the host agent and the page appears in a window — and in a tab of your own
+browser, at the same address, if you would rather have it there.
+
+Anything that binds to loopback works the same way, which is all of them by default: `npm run dev`,
+`php -S localhost:8000`, `go run .`. A dev server keeps its hot reload too, because the WebSocket it
+uses is relayed along with everything else.
+
+Moving a project onto the host from your own machine is an ordinary file operation — the Files app
+uploads, or `scp`, or `git clone` in the Terminal.
+
+Two things worth knowing:
+
+- **A preview is its own origin.** It is served from this same hostname on a spare port, so the
+  project cannot read the desktop's session, and it must be configured with a base path of `/`.
+- **Previews are per user and expire.** Twelve hours, or until you press Stop. The address is not
+  guessable in a useful way and is checked against the reservation on every request — but it is a
+  bearer credential for the port it names, so it is not something to leave open on a shared machine.
 
 ---
 

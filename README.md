@@ -41,16 +41,17 @@ and four roles (`owner`, `admin`, `operator`, `viewer`) enforced server-side on 
 
 ### Applications
 
-| App             | What it does                                 |
-| --------------- | -------------------------------------------- |
-| Files           | File manager over the workspace              |
-| Terminal        | Multi-tab real shell                         |
-| Code Studio     | Plain-text editor with line numbers and save |
-| Task Manager    | Process list, memory use, search filter      |
-| System Monitor  | Live CPU / memory / disk graphs              |
-| Settings        | Account, sessions, users, host agents, about |
-| Security Center | Audit log and session review                 |
-| App Catalog     | The registry of installed apps               |
+| App             | What it does                                     |
+| --------------- | ------------------------------------------------ |
+| Files           | File manager over the workspace                  |
+| Terminal        | Multi-tab real shell                             |
+| Code Studio     | Plain-text editor with line numbers and save     |
+| Ports           | Servers listening on the host, opened as windows |
+| Task Manager    | Process list, memory use, search filter          |
+| System Monitor  | Live CPU / memory / disk graphs                  |
+| Settings        | Account, sessions, users, host agents, about     |
+| Security Center | Audit log and session review                     |
+| App Catalog     | The registry of installed apps                   |
 
 ---
 

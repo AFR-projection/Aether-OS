@@ -18,9 +18,17 @@ const log = subsystemLogger('agent-routes');
  * SHA-256 hash.
  */
 export function registerAgentRoutes(app: FastifyInstance): void {
-  /** List paired agents (no secrets), with live connection state. */
+  /**
+   * List paired agents (no secrets), with live connection state.
+   *
+   * Readable by every role, not just the ones that may pair a host. This is what
+   * the Terminal, Files and Ports apps ask to find out which machine they are
+   * working on, so gating it on `settings:manage` gave an operator a shell that
+   * could not be pointed at anything. Pairing and revoking stay administrative:
+   * the list carries no secret, and it is scoped to the caller's own agents.
+   */
   app.get('/api/agents', {
-    preHandler: [authenticate, requirePermission('settings:manage')],
+    preHandler: [authenticate, requirePermission('agents:read')],
     handler: async (request, reply) => {
       const principal = requirePrincipal(request);
       const agents = await listAgents(principal.user.id);
