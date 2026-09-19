@@ -145,8 +145,10 @@ COMPOSE_EOF
     # Guarded on "is the backend running": during a fresh install the container
     # does not exist yet and this is a no-op.
     if [ -f "$AETHER_INSTALL_DIR/docker-compose.yml" ] && command -v docker >/dev/null 2>&1; then
-        if compose_cmd -f "$AETHER_INSTALL_DIR/docker-compose.yml" ps --status running backend 2>/dev/null \
-            | grep -q backend; then
+        local running_backend
+        running_backend=$(compose_cmd -f "$AETHER_INSTALL_DIR/docker-compose.yml" \
+            ps --status running backend 2>/dev/null || true)
+        if matches "$running_backend" "backend"; then
             info "Re-binding the static mount into the running backend"
             compose_cmd -f "$AETHER_INSTALL_DIR/docker-compose.yml" \
                 up -d --force-recreate --no-deps backend >/dev/null 2>&1 \
@@ -214,7 +216,9 @@ preview_port_end() {
     printf '%s' "$last"
 }
 
-# `8443-8452` — the form both a compose port range and a ufw rule take.
+# `8443-8452` — the host half of a compose port mapping, which is written as
+# `8443-8452:8443-8452`. A ufw rule takes the range with a colon instead
+# (`8443:8452/tcp`), which is what ensure_preview_firewall_rule builds.
 preview_port_range() {
     printf '%s-%s' "$AETHER_PREVIEW_PORT_START" "$(preview_port_end)"
 }

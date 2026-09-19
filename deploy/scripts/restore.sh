@@ -310,9 +310,10 @@ verify_agent() {
     [ -n "$agent_id" ] || return 0
 
     info "Waiting for the host agent to reconnect"
+    local backend_logs
     while [ "$attempts" -gt 0 ]; do
-        if compose logs --since 5m backend 2>/dev/null \
-            | grep -q "\"agentId\":\"$agent_id\".*agent connected"; then
+        backend_logs=$(compose logs --since 5m backend 2>/dev/null || true)
+        if matches "$backend_logs" "\"agentId\":\"$agent_id\".*agent connected"; then
             info "Host agent reconnected"
             return 0
         fi

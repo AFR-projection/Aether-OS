@@ -145,11 +145,25 @@ check_ports() {
     local conflicts=()
     local port
 
+    local listening
     for port in 80 443; do
-        if command_exists ss && ss -ltn "( sport = :$port )" 2>/dev/null | grep -q LISTEN; then
-            conflicts+=("$port")
-        elif command_exists netstat && netstat -ltn 2>/dev/null | grep -q ":$port "; then
-            conflicts+=("$port")
+        # Each listing is read into a variable and tested without a pipeline.
+        # The match is near the start of output that can run to thousands of
+        # lines, which is exactly where `| grep -q` reports failure: see
+        # `matches` in core.sh.
+        if command_exists ss; then
+            listening=$(ss -ltn "( sport = :$port )" 2>/dev/null || true)
+            if matches "$listening" "LISTEN"; then
+                conflicts+=("$port")
+                continue
+            fi
+        fi
+
+        if command_exists netstat; then
+            listening=$(netstat -ltn 2>/dev/null || true)
+            if matches "$listening" ":$port "; then
+                conflicts+=("$port")
+            fi
         fi
     done
 

@@ -4,7 +4,8 @@
 # Drives a real installation on a throwaway Ubuntu host and asserts the whole
 # lifecycle: one-command install, status, doctor, backup/restore, update
 # (including "already up to date"), repair, adoption of a source tree that has
-# no Git history, and uninstall with and without --purge.
+# no Git history, reconciliation of the preview-port firewall rule, and
+# uninstall with and without --purge.
 #
 # It needs a real machine: root, systemd, and Docker, on Ubuntu. Anywhere else
 # it prints BLOCKED_BY_ENVIRONMENT and exits 77 (the conventional "skipped"
@@ -101,12 +102,26 @@ run_expect_failure() {
 
 expect_contains() {
     local desc="$1" needle="$2"
-    if printf '%s' "$LAST_OUTPUT" | grep -qF "$needle"; then
+    if grep -qF "$needle" <<<"$LAST_OUTPUT"; then
         pass "$desc"
     else
         fail "$desc (output did not contain: $needle)"
         printf '%s\n' "$LAST_OUTPUT" | tail -n 20 | sed 's/^/         /'
     fi
+}
+
+# True when $1 contains a line matching the pattern in the rest of the
+# arguments, which go to grep as they are (-F, -E, ...).
+#
+# Written with a here-string rather than `printf ... | grep -q`: grep exits at
+# the first match, the producer is killed by SIGPIPE, and this file's
+# `set -o pipefail` reports the pipeline as failed — so a check that found what
+# it was looking for fails whenever there was more to read. See `matches` in
+# deploy/lib/core.sh, which every deploy script uses for the same reason.
+text_has() {
+    local text="$1"
+    shift
+    grep --quiet "$@" <<<"$text"
 }
 
 expect_file() {
@@ -176,7 +191,7 @@ phase_status() {
     run "aether doctor passes" aether doctor
 
     run "aether version reports a commit" aether version
-    if printf '%s' "$LAST_OUTPUT" | grep -qE '^Commit: [0-9a-f]{40}$'; then
+    if text_has "$LAST_OUTPUT" -E '^Commit: [0-9a-f]{40}$'; then
         pass "version prints a full commit sha"
     else
         fail "version prints a full commit sha"
@@ -393,6 +408,54 @@ phase_rollback_injection() {
     cd /
 }
 
+# The preview ports are published by the compose file and permitted by a ufw
+# rule the installer writes. An instance whose ufw was enabled after it was
+# installed — or whose rules were reset — publishes ports nothing can reach,
+# and an update that only ever answers "Already up to date" would never repair
+# that. So the rule is removed here and an update with nothing to pull is asked
+# to put it back.
+phase_preview_firewall() {
+    section "Preview ports and the firewall"
+
+    # Only meaningful where a firewall is running: with ufw absent or inactive
+    # the ports are reachable and there is no rule to reconcile. Reported as a
+    # skip rather than a pass, so a run that never exercised this does not look
+    # like one that did.
+    if ! command -v ufw >/dev/null 2>&1 || ! text_has "$(ufw status 2>/dev/null || true)" '^Status: active'; then
+        printf '  [skip] ufw is not installed and active, so there is no rule to reconcile\n'
+        return 0
+    fi
+
+    local start count range
+    start=$(sed -n 's/^AETHER_PREVIEW_PORT_START=//p' "$INSTALL_DIR/.env" 2>/dev/null | tail -n1)
+    count=$(sed -n 's/^AETHER_PREVIEW_PORT_COUNT=//p' "$INSTALL_DIR/.env" 2>/dev/null | tail -n1)
+    start="${start:-8443}"
+    count="${count:-10}"
+    range="${start}:$((start + count - 1))"
+
+    if text_has "$(ufw status 2>/dev/null || true)" -F "$range/tcp"; then
+        pass "the installer opened the preview range $range/tcp"
+    else
+        fail "the installer opened the preview range $range/tcp"
+    fi
+
+    ufw --force delete allow "$range/tcp" >/dev/null 2>&1 || true
+    if text_has "$(ufw status 2>/dev/null || true)" -F "$range/tcp"; then
+        fail "the rule was removed for the check"
+    else
+        pass "the rule was removed for the check"
+    fi
+
+    run "an up-to-date update is still run" aether update --yes
+    expect_contains "it reports being up to date" "Already up to date"
+
+    if text_has "$(ufw status 2>/dev/null || true)" -F "$range/tcp"; then
+        pass "the rule was restored by an update that pulled nothing"
+    else
+        fail "the rule was restored by an update that pulled nothing"
+    fi
+}
+
 phase_uninstall() {
     section "Uninstall (keeps data)"
 
@@ -404,7 +467,7 @@ phase_uninstall() {
     expect_file "$INSTALL_DIR/.env" ".env preserved"
     expect_file "$INSTALL_DIR/local-agent.json" "agent identity preserved"
 
-    if systemctl list-unit-files 2>/dev/null | grep -q '^aether.service'; then
+    if text_has "$(systemctl list-unit-files 2>/dev/null || true)" '^aether.service'; then
         fail "aether.service removed"
     else
         pass "aether.service removed"
@@ -433,7 +496,7 @@ phase_reinstall_and_purge() {
     expect_no_file "$INSTALL_DIR" "install directory removed"
     expect_no_file "/usr/local/bin/aether" "CLI symlink removed"
 
-    if systemctl list-unit-files 2>/dev/null | grep -q '^aether-host-agent.service'; then
+    if text_has "$(systemctl list-unit-files 2>/dev/null || true)" '^aether-host-agent.service'; then
         fail "aether-host-agent.service removed"
     else
         pass "aether-host-agent.service removed"
@@ -461,6 +524,7 @@ main() {
     phase_rollback_injection
     phase_repair
     phase_adoption
+    phase_preview_firewall
     phase_uninstall
 
     if [ "$PURGE_PASS" = "true" ]; then

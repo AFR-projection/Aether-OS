@@ -151,15 +151,18 @@ write and delete as ports are opened and closed, and it is the backend that deci
 preview address answers, not the firewall.
 
 > **If this instance was installed before previews existed, the range is not open on it.**
-> `aether update` republishes the ports in Docker but does not edit firewall rules. Open the range
-> once by hand, with the values from `.env`:
+> `aether update` republishes the ports in Docker and reconciles this rule in the same run — the
+> reconciliation sits before the `Already up to date` check precisely so that an instance with
+> nothing to pull still has it applied. If a preview window loads nothing at all, check the rule
+> before assuming the project is broken:
 >
 > ```bash
-> sudo ufw allow 8443:8452/tcp
+> sudo ufw status | grep 8443
 > ```
 >
-> Without it a preview window loads nothing at all, which reads as the project being broken rather
-> than as the connection being refused.
+> Only ever added, never removed: the update does not delete rules and does not enable or disable
+> the firewall, so a host that deliberately runs without one stays that way. Set
+> `AETHER_PREVIEW_ENABLED=false` to disable previews, and no rule is written for them.
 
 ### The post-install check
 
@@ -314,6 +317,12 @@ re-installs the CLI from the tree it just updated, which means a fix to these sc
 one update after the one that delivers it. The files are replaced by rename rather than by copying
 over them, so re-installing `update.sh` cannot disturb the run that is doing it.
 
+That has a consequence worth knowing before it bites. The CLI is re-installed from the tree the
+update _fetched_, so a fix that exists only in someone's working tree — not in the branch the
+instance fetches from — is replaced by the unfixed version during the very update that used it. The
+instance stays healthy and the fix is gone, which looks like the fix never worked. The repair above
+puts it back; landing it on the fetched branch is what makes it stay.
+
 ### Already-installed instances whose updater predates this
 
 An instance installed before the source tree was kept updatable runs an old `update.sh`, and that
@@ -393,6 +402,16 @@ an installation ID you can quote in a bug report.
 **`aether update` left the stack unhealthy** It rolls back by itself and says so. If the automatic
 rollback failed too, it prints the archive:
 `aether rollback /opt/aether/backups/aether-backup-<timestamp>.tar.gz`
+
+**`aether update` rolled back over an instance that looks healthy** The rollback is decided by the
+agent check at the end of the update, which reads the backend's log and the agent's journal. Both
+were read with `... | grep -q`, and under `set -o pipefail` — which every deploy script sets —
+`grep -q` exiting at the first match kills the process writing into the pipe, so the pipeline
+reports failure even though the pattern was found. The bigger the log, the likelier that was, which
+is why a long-running instance rolled back and a freshly installed one did not. Fixed by reading
+each log into a variable and testing it without a pipeline (`matches` in `deploy/lib/core.sh`). An
+instance whose updater predates the fix keeps the behaviour until the fix reaches it: see
+[The update engine updates itself](#the-update-engine-updates-itself) for the one-time repair.
 
 **`aether update` says `Already up to date` but nothing changed** The source tree is already at
 `origin/main`; the running containers may still be older — a source tree at the right revision is

@@ -211,14 +211,15 @@ agent_unit_active() {
 }
 
 agent_journal_paired() {
-    $SUDO journalctl -u "$AETHER_AGENT_SERVICE" --since "-10min" --no-pager 2>/dev/null \
-        | grep -q "paired with backend"
+    local journal
+    journal=$($SUDO journalctl -u "$AETHER_AGENT_SERVICE" --since "-10min" --no-pager 2>/dev/null || true)
+    matches "$journal" "paired with backend"
 }
 
 backend_log_saw_agent() {
-    local agent_id="$1"
-    compose logs --since 10m backend 2>/dev/null \
-        | grep -q "\"agentId\":\"$agent_id\".*agent connected"
+    local agent_id="$1" logs
+    logs=$(compose logs --since 10m backend 2>/dev/null || true)
+    matches "$logs" "\"agentId\":\"$agent_id\".*agent connected"
 }
 
 # The only definition of "connected" in this codebase: the agent's own journal

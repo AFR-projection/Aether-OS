@@ -54,9 +54,10 @@ stop_services() {
     # Only the units Aether installs. `aether.service` brings the compose stack
     # up at boot; the host agent is its own unit. There is no aether-backend
     # unit — the backend is a container.
-    local unit
+    local unit units
+    units=$(systemctl list-unit-files 2>/dev/null || true)
     for unit in aether "$AGENT_SERVICE"; do
-        if systemctl list-unit-files 2>/dev/null | grep -q "^${unit}\.service"; then
+        if matches "$units" "^${unit}\.service"; then
             $SUDO systemctl stop "$unit" 2>/dev/null || true
             info "Stopped $unit.service"
         fi

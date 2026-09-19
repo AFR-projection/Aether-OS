@@ -527,7 +527,9 @@ EOF
 uninstall_agent() {
     stage_line "Uninstalling the Aether host agent"
 
-    if $SUDO systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+    local units
+    units=$($SUDO systemctl list-unit-files 2>/dev/null || true)
+    if matches "$units" "^${SERVICE_NAME}.service"; then
         $SUDO systemctl stop "$SERVICE_NAME" 2>/dev/null || true
         $SUDO systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     fi

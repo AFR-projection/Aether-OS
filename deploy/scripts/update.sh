@@ -382,12 +382,16 @@ verify_local_agent() {
 
     info "Waiting for the host agent to reconnect"
 
-    local agent_attempts=20
+    # Both logs are read into variables and tested without a pipeline. Reading
+    # them with `... | grep -q` is what made this check fail on instances that
+    # had a log worth reading: see `matches` in lib/core.sh.
+    local agent_attempts=20 backend_logs agent_journal
     while [ "$agent_attempts" -gt 0 ]; do
-        if compose logs --since 5m backend 2>/dev/null \
-            | grep -q "\"agentId\":\"$agent_id\".*agent connected" \
-            && $SUDO journalctl -u aether-host-agent --since "-5min" --no-pager 2>/dev/null \
-                | grep -q "paired with backend"; then
+        backend_logs=$(compose logs --since 5m backend 2>/dev/null || true)
+        agent_journal=$($SUDO journalctl -u aether-host-agent --since "-5min" --no-pager 2>/dev/null || true)
+
+        if matches "$backend_logs" "\"agentId\":\"$agent_id\".*agent connected" \
+            && matches "$agent_journal" "paired with backend"; then
             info "Host agent is connected (confirmed on both sides)"
             return 0
         fi
@@ -465,6 +469,41 @@ roll_back() {
 
 # --- Entry point -----------------------------------------------------------
 
+# Repairs the host-level settings that the configuration an update writes
+# depends on — today, the firewall rule without which the preview ports the
+# compose file publishes cannot be reached.
+#
+# It runs from the source tree that is on disk *now*, in a subshell, for the
+# same reason the CLI refresh below does: sourcing a second copy of these
+# libraries into this shell would redefine the functions this update is still
+# running on. A tree old enough to have no such function has nothing to
+# reconcile and says nothing, which is why this is called again once the updated
+# tree has been installed.
+reconcile_host_settings() {
+    [ -f "$AETHER_SRC_DIR/deploy/lib/finalize.sh" ] || return 0
+
+    # Read from .env rather than from the values the caller happens to have set,
+    # so the call is not order-dependent: the settings stage sets these later,
+    # and this may run before it.
+    AETHER_PREVIEW_ENABLED="$(env_value AETHER_PREVIEW_ENABLED "$AETHER_INSTALL_DIR/.env" || true)"
+    AETHER_PREVIEW_PORT_START="$(env_value AETHER_PREVIEW_PORT_START "$AETHER_INSTALL_DIR/.env" || true)"
+    AETHER_PREVIEW_PORT_COUNT="$(env_value AETHER_PREVIEW_PORT_COUNT "$AETHER_INSTALL_DIR/.env" || true)"
+    export AETHER_PREVIEW_ENABLED="${AETHER_PREVIEW_ENABLED:-true}"
+    export AETHER_PREVIEW_PORT_START="${AETHER_PREVIEW_PORT_START:-8443}"
+    export AETHER_PREVIEW_PORT_COUNT="${AETHER_PREVIEW_PORT_COUNT:-10}"
+
+    (
+        # shellcheck source=/dev/null
+        source "$AETHER_SRC_DIR/deploy/lib/core.sh"
+        # shellcheck source=/dev/null
+        source "$AETHER_SRC_DIR/deploy/lib/utils.sh"
+        # shellcheck source=/dev/null
+        source "$AETHER_SRC_DIR/deploy/lib/finalize.sh"
+        declare -F ensure_preview_firewall_rule >/dev/null || exit 0
+        ensure_preview_firewall_rule
+    ) || warn "The host firewall could not be reconciled; previews may not be reachable."
+}
+
 update_aether() {
     require_deployment
 
@@ -496,6 +535,12 @@ update_aether() {
 
     acquire_update_lock
     trap 'release_update_lock' EXIT
+
+    # Before the up-to-date check, so that an instance already on the newest
+    # revision is still repaired: ufw enabled after the install leaves the
+    # preview ports unreachable, and an update that only ever answers "Already
+    # up to date" would never fix it.
+    reconcile_host_settings
 
     if [ "$AETHER_PULL" = true ] && is_git_checkout; then
         require_clean_tree
@@ -580,6 +625,12 @@ update_aether() {
     else
         warn "Could not find deploy/lib/deploy.sh in updated source; keeping existing config"
     fi
+
+    # Again, now that the compose file naming these ports has been written and
+    # the updated source is in place: this is the call that opens them on an
+    # instance that was installed before previews existed, where the earlier one
+    # had no such function to find.
+    reconcile_host_settings
 
     # The management CLI is a *copy* of the scripts in the source tree, taken at
     # install time, and `aether update` execs that copy — so the update engine is

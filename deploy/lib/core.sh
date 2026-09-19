@@ -170,6 +170,33 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# True when the text in $1 contains a line matching the pattern in the rest of
+# the arguments, which are passed to grep as they are (`-E`, `-F`, `-w`, ...).
+#
+#   matches "$backend_logs" "\"agentId\":\"$id\".*agent connected"
+#   matches "$rules" -F "8443:8452/tcp"
+#
+# Written this way, and not as `printf '%s' "$text" | grep -q "$pattern"`, which
+# reads as the same thing and is not. `grep -q` exits at the first match, the
+# process on the other end of the pipe is killed by SIGPIPE, and every script
+# here runs under `set -o pipefail` — so a pipeline that found exactly what it
+# was looking for reports failure. Whether that happens depends on how much
+# output follows the match, which means it depends on the size of a log: the
+# same check passes against a freshly started service whose log ends at the
+# match, and fails against one that has been up long enough to log past it.
+#
+# It cost a real deployment: `aether update` confirmed the backend had accepted
+# the host agent, saw a non-zero status from the pipeline that proved it, and
+# rolled a healthy update back — restoring the pre-update database over it.
+#
+# A here-string is expanded by the shell into a file, so there is no second
+# process to signal and nothing to make the pipeline fail.
+matches() {
+    local text="$1"
+    shift
+    grep --quiet "$@" <<<"$text"
+}
+
 require_command() {
     local cmd="$1"
     if ! command_exists "$cmd"; then

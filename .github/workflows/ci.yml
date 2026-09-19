@@ -178,6 +178,14 @@ jobs:
       - name: Update path harness
         run: bash deploy/tests/update-adoption.sh
 
+      # The agent check that decides whether an update succeeded, and rolls the
+      # whole update back when it fails. It read two logs with `grep -q` at the
+      # end of a pipeline, which `set -o pipefail` turns into a failure whenever
+      # anything follows the match — so it rolled healthy updates back. Needs
+      # only bash.
+      - name: Agent verification harness
+        run: bash deploy/tests/agent-verification.sh
+
   build:
     name: Build
     runs-on: ubuntu-latest

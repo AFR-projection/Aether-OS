@@ -38,6 +38,62 @@ apply_permissions() {
     fi
 }
 
+# Opens the preview port range in the host firewall.
+#
+# A preview is served from one of these ports and the connection is made by the
+# operator's own browser rather than by the machine — so without the rule the
+# preview window fills with nothing at all, which reads as the project being
+# broken rather than as a missing firewall rule. The ports are published by the
+# compose file, and `aether update` regenerates that compose file, so the update
+# has to reconcile this rule too: an instance whose ufw was enabled after it was
+# installed would otherwise publish ports nothing can reach, and `aether update`
+# would keep reporting that it is up to date.
+#
+# The range is opened as a whole rather than per preview because ufw rules are
+# not something to write and delete as ports are opened and closed; the backend
+# is what decides whether a given address answers, and it answers only for the
+# user who asked for it.
+#
+# Additive by design: no rule is ever removed, and ufw is never enabled or
+# disabled here — whether the host runs a firewall is the operator's decision,
+# and configure_firewall is what asks. An inactive firewall blocks nothing, so
+# there is nothing to open and the function says nothing. The install path
+# passes --even-if-inactive because it opens the ports and *then* enables the
+# firewall, so the ports are allowed from the moment it comes up.
+ensure_preview_firewall_rule() {
+    local even_if_inactive=false
+    [ "${1:-}" = "--even-if-inactive" ] && even_if_inactive=true
+
+    if [ "${AETHER_PREVIEW_ENABLED:-true}" != "true" ]; then
+        return 0
+    fi
+
+    if ! command_exists ufw; then
+        return 0
+    fi
+
+    local status
+    status=$($SUDO ufw status 2>/dev/null || true)
+    if [ "$even_if_inactive" = false ] && ! matches "$status" '^Status: active'; then
+        return 0
+    fi
+
+    local preview_range="${AETHER_PREVIEW_PORT_START}:$(preview_port_end)"
+    local output
+    if ! output=$($SUDO ufw allow "$preview_range/tcp" 2>&1); then
+        warn "Could not open the preview ports $preview_range — previews will not be reachable."
+        return 0
+    fi
+
+    # ufw reports a rule that is already there as skipped rather than as a
+    # failure, so a second update stays quiet instead of claiming to have opened
+    # the ports again.
+    case "$output" in
+        *Skipping*) : ;;
+        *) info "Preview ports opened: $preview_range/tcp" ;;
+    esac
+}
+
 configure_firewall() {
     # Contract §4.3: backup, allow SSH FIRST, then 80/443; never disable.
     if ! command_exists ufw; then
@@ -55,21 +111,9 @@ configure_firewall() {
     $SUDO ufw allow 80/tcp
     $SUDO ufw allow 443/tcp
 
-    # Preview addresses. A project running on this host is served from one of
-    # these ports, and the connection is made by the operator's own browser
-    # rather than by the machine — so without the rule the preview window fills
-    # with nothing at all, which reads as the project being broken.
-    #
-    # The range is opened as a whole rather than per preview because ufw rules
-    # are not something to write and delete as ports are opened and closed; the
-    # backend is what decides whether a given address answers, and it answers
-    # only for the user who asked for it.
-    if [ "${AETHER_PREVIEW_ENABLED:-true}" = "true" ]; then
-        local preview_range="${AETHER_PREVIEW_PORT_START}:$(preview_port_end)"
-        $SUDO ufw allow "$preview_range/tcp" \
-            || warn "Could not open the preview ports $preview_range — previews will not be reachable."
-        info "Preview ports opened: $preview_range/tcp"
-    fi
+    # Opened before the firewall is enabled below, so the preview ports are
+    # allowed from the moment it comes up rather than needing a second pass.
+    ensure_preview_firewall_rule --even-if-inactive
 
     if [ "${AETHER_YES:-false}" = "true" ] || confirm "Enable UFW now?"; then
         $SUDO ufw --force enable

@@ -162,8 +162,10 @@ Two things the installer does with these values, and neither can be inferred at 
   loop, so the range is written into the file when it is generated; changing `.env` alone leaves
   Docker forwarding the old range.
 - **Firewall.** `ufw` gets one rule for the range, because the connection is made by the operator's
-  browser rather than by the machine. An instance installed before previews existed has no such
-  rule; see [the deployment guide](../operations/DEPLOYMENT.md#the-firewall).
+  browser rather than by the machine. `aether update` writes the same rule, so an instance installed
+  before previews existed — or whose `ufw` was enabled afterwards — ends up with it too, including
+  when the update has no source changes to apply; see
+  [the deployment guide](../operations/DEPLOYMENT.md#the-firewall).
 
 The backend reads the same three values to decide which addresses it will answer on, which is why a
 mismatch shows up as a preview that opens a connection nobody accepts.
