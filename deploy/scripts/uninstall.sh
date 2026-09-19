@@ -45,6 +45,12 @@ COMPOSE_FILE="$AETHER_INSTALL_DIR/docker-compose.yml"
 AGENT_SERVICE="aether-host-agent"
 AGENT_INSTALL_DIR="$AETHER_INSTALL_DIR/local-agent"
 
+# The frontend bundle is built by a second Compose project with a name of its
+# own (`aether-frontend-build`, written by install_frontend_bundle). It is not
+# part of the project the file above declares, so `compose down` on that file
+# never reaches it.
+FRONTEND_COMPOSE_FILE="$AETHER_INSTALL_DIR/state/docker-compose.frontend.yml"
+
 compose() { compose_cmd -f "$COMPOSE_FILE" "$@"; }
 
 # ---------------------------------------------------------------------------
@@ -80,13 +86,30 @@ remove_systemd_services() {
 # ---------------------------------------------------------------------------
 # Docker
 # ---------------------------------------------------------------------------
+# The frontend build project, taken down with the same flags as the main one.
+#
+# Its compose file lives under state/, which remove_runtime_files deletes and a
+# purge removes with the whole install directory — so this has to run before
+# either, or there is no file left to bring the project down with and the image
+# strands. A stranded build image is not small: it is the largest thing the
+# installer creates, about 1.1 GB, and it is rebuilt on every install.
+remove_frontend_build_project() {
+    if [ ! -f "$FRONTEND_COMPOSE_FILE" ]; then
+        return 0
+    fi
+
+    local flags=(down --remove-orphans)
+    [ "$AETHER_PURGE" = true ] && flags+=(-v --rmi local)
+
+    compose_cmd -f "$FRONTEND_COMPOSE_FILE" "${flags[@]}" 2>/dev/null \
+        || warn "docker compose down reported an error for the frontend build project"
+    info "Frontend build project removed"
+}
+
 remove_docker_resources() {
     if [ ! -f "$COMPOSE_FILE" ]; then
         info "No docker-compose.yml at $AETHER_INSTALL_DIR — nothing to bring down"
-        return
-    fi
-
-    if [ "$AETHER_PURGE" = true ]; then
+    elif [ "$AETHER_PURGE" = true ]; then
         # -v drops this project's named volumes (database, redis, caddy state);
         # --rmi local drops images Compose built here. Both are scoped to the
         # project in this file.
@@ -98,6 +121,8 @@ remove_docker_resources() {
             || warn "docker compose down reported an error; containers may already be gone"
         info "Containers removed; volumes and host data kept"
     fi
+
+    remove_frontend_build_project
 }
 
 # ---------------------------------------------------------------------------

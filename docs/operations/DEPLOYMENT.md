@@ -368,8 +368,14 @@ aether uninstall           # remove the runtime; keep data, secrets, and backups
 aether uninstall --purge   # remove everything, after confirming
 ```
 
-Both stop `aether.service` and `aether-host-agent.service`, run `docker compose down`, and remove
-the CLI symlink. Only the two units and this compose project are touched — nothing else on the host.
+Both stop `aether.service` and `aether-host-agent.service`, bring down the compose projects an
+install creates, and remove the CLI symlink. Only the two units and those projects are touched —
+nothing else on the host.
+
+There are two projects, not one. The stack lives in `docker-compose.yml`; the frontend bundle is
+built by `aether-frontend-build` in `state/docker-compose.frontend.yml`, whose project name does not
+match the main file's — so it has to be brought down by name as well. Leaving it out stranded its
+build image, about 1.1 GB and the largest thing an install creates, after every purge.
 
 The default path additionally snapshots `.env` and `secrets/` into `backups/uninstall-<timestamp>/`
 and leaves these in place: `data/`, `backups/`, `secrets/`, `.env`, `instance.json`, `local-agent/`,
@@ -377,8 +383,8 @@ and leaves these in place: `data/`, `backups/`, `secrets/`, `.env`, `instance.js
 existing identity.
 
 `--purge` removes the install directory (which contains the backups, since they live there), the
-compose volumes, and locally built images. If you want the data gone but the backups kept, copy
-`backups/` somewhere else first.
+compose volumes, and the images built by both projects. If you want the data gone but the backups
+kept, copy `backups/` somewhere else first.
 
 ---
 

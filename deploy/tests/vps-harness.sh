@@ -501,6 +501,34 @@ phase_reinstall_and_purge() {
     else
         pass "aether-host-agent.service removed"
     fi
+
+    # A purge says everything the installer created is gone, and Docker is where
+    # that promise was broken: the frontend bundle is built by a Compose project
+    # of its own (aether-frontend-build, written by install_frontend_bundle),
+    # whose name does not match the project in the compose file the uninstall
+    # downs. Its build image — about 1.1 GB, the largest thing an install
+    # creates — and its network survived every purge until they were taken down
+    # explicitly. `grep -c` reads its input to the end, so counting here cannot
+    # hit the SIGPIPE trap that `grep -q` at the end of a pipeline does.
+    if command -v docker >/dev/null 2>&1; then
+        local leftovers
+
+        leftovers=$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -c '^aether' || true)
+        if [ "$leftovers" = "0" ]; then
+            pass "no Aether images left behind"
+        else
+            fail "no Aether images left behind ($leftovers found)"
+            docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^aether' | sed 's/^/         /'
+        fi
+
+        leftovers=$(docker network ls --format '{{.Name}}' 2>/dev/null | grep -c '^aether' || true)
+        if [ "$leftovers" = "0" ]; then
+            pass "no Aether networks left behind"
+        else
+            fail "no Aether networks left behind ($leftovers found)"
+            docker network ls --format '{{.Name}}' 2>/dev/null | grep '^aether' | sed 's/^/         /'
+        fi
+    fi
 }
 
 # ---------------------------------------------------------------------------

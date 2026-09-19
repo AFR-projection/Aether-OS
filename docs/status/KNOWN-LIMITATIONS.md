@@ -222,11 +222,15 @@ talks to. Deploy them together.
 The installer, the CLI, and the update path are exercised by `deploy/tests/vps-harness.sh`: a full
 install, `status`/`doctor`/`version`, a backup and restore round-trip (including a deliberately
 corrupted archive that must be refused), an update that must report `Already up to date` on the
-second run, a repair, an uninstall that preserves data, and a reinstall-then-purge.
+second run, a repair, a preview firewall rule that an update restores, an uninstall that preserves
+data, and a reinstall-then-purge that must leave no Aether image or network behind.
 
 That harness needs a real host — root, systemd, Docker, Ubuntu — and it exits `77` with
-`BLOCKED_BY_ENVIRONMENT` anywhere else rather than reporting a pass. **It has not been run on a
-fresh VPS as of this commit.** Everything that could be checked without Docker was: shell syntax on
-every script, and `pnpm typecheck`, `lint`, `test`, and `build` across the workspace. Treat a first
+`BLOCKED_BY_ENVIRONMENT` anywhere else rather than reporting a pass. **The harness itself has not
+been run end to end.** Individual paths in it have been driven by hand on a real VPS: the one-liner
+install onto a host purged to the last image, a purge confirmed down to Docker images and networks,
+an authenticated login through the public HTTPS URL, and a host-scope directory listing and file
+read that reached `/etc`. Everything that could be checked without Docker was: shell syntax on every
+script, and `pnpm typecheck`, `lint`, `test`, and `build` across the workspace. Treat a first
 production install as something to watch, and run the harness on a throwaway host before trusting
 the update path on one that matters.
