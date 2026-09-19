@@ -315,8 +315,33 @@ build_agent() {
 
     cd "$AETHER_HOST_INSTALL_DIR"
 
+    # --ignore-scripts is deliberate, and it is not an optimisation.
+    #
+    # pnpm's --filter narrows what gets *linked*, not what gets *installed*:
+    # this tree still resolves the whole workspace, so with scripts enabled the
+    # desktop client's electron dependency runs its postinstall and downloads a
+    # ~260 MB browser binary the agent never uses. That download sits on the
+    # install's critical path, and electron's release CDN rate-limits often
+    # enough to sink an otherwise healthy install on a slow VPS.
+    #
+    # node-pty is the one dependency that genuinely needs its install script:
+    # it ships prebuilds for Windows and macOS only, so `node-gyp rebuild` is
+    # the only way its addon exists on Linux at all. It is rebuilt explicitly
+    # below — with the scripts skipped wholesale, node-pty would silently have
+    # no addon and every terminal session would fail at runtime.
     info "Installing dependencies with pnpm"
-    pnpm install --frozen-lockfile --filter "@aether/host-agent..." --filter @aether/shared
+    pnpm install --frozen-lockfile --ignore-scripts \
+        --filter "@aether/host-agent..." --filter @aether/shared
+
+    info "Building node-pty's native addon"
+    pnpm rebuild -r node-pty
+
+    # The terminal is the reason node-pty is here. Without its addon the agent
+    # still starts, connects, and passes a health check — and then every
+    # terminal session fails, a symptom a long way from its cause. Fail here,
+    # where the message can still say what is wrong.
+    [ -f "$AETHER_HOST_INSTALL_DIR/packages/host-agent/node_modules/node-pty/build/Release/pty.node" ] \
+        || fatal "node-pty built no native addon, so every terminal session would fail. Check that make, g++ and python3 are installed."
 
     info "Compiling"
     pnpm --filter @aether/shared build
