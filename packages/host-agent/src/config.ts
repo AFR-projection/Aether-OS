@@ -49,6 +49,29 @@ const envSchema = z.object({
   // force the process table read-only on this host.
   PROCESS_SIGNAL_ENABLED: booleanFromEnv.default(true),
 
+  // --- Port forwarding ---
+  /**
+   * Whether the desktop may open a connection to a port on this host.
+   *
+   * This is what lets a project started in the Terminal be opened in a browser.
+   * It is a real capability — the tunnel reaches anything bound to loopback,
+   * including services the operator never meant to publish — so it is guarded by
+   * the backend's `ports:forward` permission and can be turned off here for a
+   * host that should never be a preview target.
+   */
+  PORT_FORWARD_ENABLED: booleanFromEnv.default(true),
+  /** Concurrent tunnels this agent will hold open. */
+  PORT_TUNNEL_MAX: z.coerce.number().int().min(1).max(500).default(32),
+  /**
+   * How long a tunnel may sit with no reader before it is closed.
+   *
+   * The backend pumps a tunnel continuously while a preview is open, so a tunnel
+   * nobody is reading means the browser went away without saying so. Ten minutes
+   * is long enough to survive a laptop lid closing and short enough that a
+   * forgotten preview does not hold a socket to someone's dev server all night.
+   */
+  PORT_TUNNEL_IDLE_TIMEOUT: z.coerce.number().int().min(10_000).default(600_000),
+
   // --- Reconnection ---
   RECONNECT_BASE_DELAY_MS: z.coerce.number().int().min(1000).default(1000),
   RECONNECT_MAX_DELAY_MS: z.coerce.number().int().min(5000).default(30_000),

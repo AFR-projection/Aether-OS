@@ -34,6 +34,11 @@ export const agentCapabilities = [
   'files.delete',
   'files.mkdir',
   'files.rename',
+  'ports.list',
+  'ports.open',
+  'ports.read',
+  'ports.write',
+  'ports.close',
   'terminal.create',
   'terminal.input',
   'terminal.resize',
@@ -116,6 +121,38 @@ export const filesRenameParamsSchema = z
   })
   .strict();
 
+export const portsListParamsSchema = emptyParams;
+
+export const portsOpenParamsSchema = z
+  .object({
+    port: z.number().int().min(1).max(65_535),
+    /**
+     * Where to connect. Defaults to loopback on the agent side, because the
+     * tunnel exists for servers only this machine can reach — a server already
+     * bound to a public interface does not need Aether to reach it.
+     */
+    host: z.string().max(255).optional(),
+  })
+  .strict();
+
+export const portsReadParamsSchema = z
+  .object({
+    tunnelId: uuidSchema,
+    maxBytes: z.number().int().min(1).max(LIMITS.PORT_TUNNEL_CHUNK_BYTES),
+  })
+  .strict();
+
+export const portsWriteParamsSchema = z
+  .object({
+    tunnelId: uuidSchema,
+    // The encoded size of the largest legal chunk, plus room for the padding
+    // characters that push base64 a few bytes over 4/3.
+    contentBase64: z.string().max(Math.ceil((LIMITS.PORT_TUNNEL_CHUNK_BYTES * 4) / 3) + 8),
+  })
+  .strict();
+
+export const portsCloseParamsSchema = z.object({ tunnelId: uuidSchema }).strict();
+
 export const terminalCreateParamsSchema = z
   .object({
     cols: z.number().int().min(1).max(1000).default(80),
@@ -162,6 +199,11 @@ const requestParamsByType: Record<string, z.ZodTypeAny> = {
   'files.delete': filesDeleteParamsSchema,
   'files.mkdir': filesMkdirParamsSchema,
   'files.rename': filesRenameParamsSchema,
+  'ports.list': portsListParamsSchema,
+  'ports.open': portsOpenParamsSchema,
+  'ports.read': portsReadParamsSchema,
+  'ports.write': portsWriteParamsSchema,
+  'ports.close': portsCloseParamsSchema,
   'terminal.create': terminalCreateParamsSchema,
   'terminal.input': terminalInputParamsSchema,
   'terminal.resize': terminalResizeParamsSchema,

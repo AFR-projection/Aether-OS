@@ -10,6 +10,8 @@ import {
   writeFileChunk,
   writeFileContent,
 } from './capabilities/filesystem.js';
+import { closeTunnel, openTunnel, readTunnel, writeTunnel } from './capabilities/port-tunnel.js';
+import { listListeningPorts } from './capabilities/ports.js';
 import {
   ALLOWED_PROCESS_SIGNALS,
   listProcesses,
@@ -86,6 +88,25 @@ interface RenameParams {
   from: string;
   to: string;
   overwrite: boolean;
+}
+
+interface PortOpenParams {
+  port: number;
+  host?: string;
+}
+
+interface PortReadParams {
+  tunnelId: string;
+  maxBytes: number;
+}
+
+interface PortWriteParams {
+  tunnelId: string;
+  contentBase64: string;
+}
+
+interface PortCloseParams {
+  tunnelId: string;
 }
 
 interface TerminalCreateParams {
@@ -219,6 +240,39 @@ async function route(
         overwrite: params.overwrite,
       });
       return { renamed: true, entry };
+    }
+
+    case 'ports.list': {
+      return listListeningPorts(cfg);
+    }
+
+    case 'ports.open': {
+      const params = request.params as PortOpenParams;
+      return openTunnel(cfg, {
+        port: params.port,
+        ...(params.host !== undefined ? { host: params.host } : {}),
+        ownerUserId,
+      });
+    }
+
+    case 'ports.read': {
+      const params = request.params as PortReadParams;
+      return readTunnel(cfg, params.tunnelId, ownerUserId, params.maxBytes);
+    }
+
+    case 'ports.write': {
+      const params = request.params as PortWriteParams;
+      return writeTunnel(
+        cfg,
+        params.tunnelId,
+        ownerUserId,
+        Buffer.from(params.contentBase64, 'base64')
+      );
+    }
+
+    case 'ports.close': {
+      const params = request.params as PortCloseParams;
+      return closeTunnel(params.tunnelId, ownerUserId);
     }
 
     case 'terminal.create': {

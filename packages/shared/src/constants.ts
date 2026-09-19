@@ -18,6 +18,8 @@ export const PERMISSIONS = [
   'terminal:attach',
   'process:read',
   'process:manage',
+  'ports:read',
+  'ports:forward',
   'system:read',
   'settings:manage',
   'users:manage',
@@ -47,6 +49,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'terminal:attach',
     'process:read',
     'process:manage',
+    'ports:read',
+    'ports:forward',
     'system:read',
     'settings:manage',
     'audit:read',
@@ -57,9 +61,11 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'terminal:create',
     'terminal:attach',
     'process:read',
+    'ports:read',
+    'ports:forward',
     'system:read',
   ],
-  viewer: ['files:read', 'process:read', 'system:read'],
+  viewer: ['files:read', 'process:read', 'ports:read', 'system:read'],
 };
 
 /** Returns true when `role` grants `permission`. */
@@ -100,4 +106,27 @@ export const LIMITS = {
    * makes the agent reject them.
    */
   HOST_STREAM_CHUNK_BYTES: 512 * 1024,
+  /**
+   * Bytes moved per frame through a port tunnel.
+   *
+   * Smaller than the file-stream chunk above on purpose. A tunnel carries an
+   * interactive session — a page load is many small frames in both directions —
+   * so a large chunk buys nothing and delays the other direction by however long
+   * it takes to fill. This size keeps a burst of HTML and its assets moving
+   * without any one frame monopolising the socket.
+   */
+  PORT_TUNNEL_CHUNK_BYTES: 128 * 1024,
+  /**
+   * Bytes buffered on the agent for one tunnel before it is dropped.
+   *
+   * A tunnel is a raw TCP socket to a server the user started; that server may
+   * produce output faster than the WebSocket can carry it, and with no way to
+   * push back on a kernel socket through a message channel, the only bounded
+   * answers are "buffer up to a limit" and "close". This is the limit.
+   */
+  PORT_TUNNEL_MAX_BUFFER_BYTES: 8 * 1024 * 1024,
+  /** Listening sockets reported by one `ports.list`, newest first. */
+  MAX_LISTENING_PORTS: 200,
+  /** Concurrent port tunnels one agent will hold open. */
+  MAX_PORT_TUNNELS: 32,
 } as const;

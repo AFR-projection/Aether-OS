@@ -1,3 +1,4 @@
+import { closeAllTunnels } from './capabilities/port-tunnel.js';
 import { killAllSessions } from './capabilities/terminal.js';
 import { loadConfig } from './config.js';
 import { AgentConnection } from './connection.js';
@@ -33,6 +34,11 @@ function main(): void {
 
     const killed = killAllSessions('shutdown');
     if (killed > 0) log.info({ killed }, 'terminal sessions killed');
+
+    // A tunnel is a live socket to a service on this machine. Closing it here
+    // rather than relying on process exit means an orderly restart does not
+    // leave half-open connections on whatever the user was previewing.
+    closeAllTunnels();
 
     // Flush pino before exiting so the last lines are not lost.
     const logger = getLogger();
