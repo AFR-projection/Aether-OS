@@ -13,8 +13,10 @@ BASE_PACKAGES=(curl wget git openssl ca-certificates)
 # Installer prerequisites some minimal VPS images lack.
 DOCKER_HELPER_PACKAGES=(gnupg lsb-release dnsutils)
 
+# Every apt call goes through apt_get (utils.sh) so it waits for the dpkg lock
+# instead of failing on a fresh VPS whose unattended-upgrades still holds it.
 _apt_install() {
-    $SUDO apt-get install -y --no-install-recommends "$@"
+    apt_get install -y --no-install-recommends "$@"
 }
 
 install_base_packages() {
@@ -35,7 +37,7 @@ install_base_packages() {
     fi
 
     info "Installing: ${missing[*]}"
-    $SUDO apt-get update -qq
+    apt_get update -qq
     _apt_install "${missing[@]}"
 }
 
@@ -84,7 +86,7 @@ install_docker() {
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $codename stable" \
         | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
 
-    $SUDO apt-get update -qq
+    apt_get update -qq
     _apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
     $SUDO systemctl enable docker
@@ -111,6 +113,9 @@ configure_docker_group() {
 }
 
 install_dependencies() {
+    # Clear any boot-time apt job holding the lock before the first install of
+    # the run, so the very first apt-get does not have to wait it out.
+    aether_apt_prepare
     install_base_packages
     if ! check_docker; then
         confirm "Docker (Engine + Compose v2) must be installed. Install it now?" || fatal "Cannot continue without Docker."

@@ -46,6 +46,19 @@ else
     error() { printf '\033[0;31m[ERROR]\033[0m %s\n' "$*" >&2; }
     fatal() { error "$@"; exit 1; }
     command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+    # apt_get and aether_apt_prepare normally come from utils.sh. A standalone
+    # copy of this script has no libraries beside it, so define the same
+    # lock-aware behaviour here rather than falling back to a bare apt-get that
+    # dies when a boot-time unattended-upgrades still holds the dpkg lock.
+    aether_apt_prepare() { :; }
+    apt_get() {
+        $SUDO env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o DPkg::Lock::Timeout="${AETHER_APT_LOCK_TIMEOUT:-900}" \
+            -o Dpkg::Use-Pty=0 \
+            -o Acquire::Retries=3 \
+            "$@"
+    }
 fi
 
 SERVICE_NAME="aether-host-agent"
@@ -203,8 +216,11 @@ install_nodejs() {
     fi
 
     info "Installing Node.js ${NODE_MAJOR_REQUIRED}.x from NodeSource"
+    # The NodeSource script runs apt itself, so clear a held lock before it
+    # starts — apt_get below cannot help with work this pipeline does internally.
+    aether_apt_prepare
     curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR_REQUIRED}.x" | bash -
-    $SUDO apt-get install -y nodejs
+    apt_get install -y nodejs
 
     command_exists node || fatal "Node.js installation failed."
 }
@@ -222,8 +238,8 @@ ensure_build_tools() {
     fi
 
     info "Installing build tools needed to compile the terminal backend: ${missing[*]}"
-    $SUDO apt-get update -qq
-    $SUDO apt-get install -y "${missing[@]}"
+    apt_get update -qq
+    apt_get install -y "${missing[@]}"
 }
 
 # The repository is a pnpm workspace whose packages depend on each other with

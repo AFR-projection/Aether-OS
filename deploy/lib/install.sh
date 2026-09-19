@@ -13,6 +13,9 @@
 #   AETHER_YES           "true" = non-interactive, accept defaults
 #   AETHER_FORCE_BUILD   "true" = rebuild the frontend bundle
 #   AETHER_RESUME        "true" = skip stages already marked done
+#   AETHER_APT_LOCK_TIMEOUT  seconds apt waits for a held dpkg lock (default 900)
+#   AETHER_NO_SWAP       "true" = never create a swapfile on a low-memory host
+#   AETHER_SKIP_APT_PREPARE  "true" = do not pause boot-time apt jobs
 
 set -euo pipefail
 

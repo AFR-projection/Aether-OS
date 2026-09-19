@@ -76,12 +76,11 @@ check_resources() {
 
     # RAM is advisory: warn and recommend, never block. Below ~2 GB the
     # backend still runs, but the frontend build and Docker image builds can be
-    # tight, so point the operator at swap rather than turning them away.
+    # tight — so instead of telling the operator to go add swap, add it. See
+    # ensure_swap in utils.sh.
     if [ "$ram_mb" -lt "$MIN_RECOMMENDED_RAM_MB" ]; then
         warn "RAM is ${ram_mb} MB, below the recommended ${MIN_RECOMMENDED_RAM_MB} MB. Proceeding."
-        warn "  On a low-memory host, add swap so builds don't get OOM-killed, e.g.:"
-        warn "    fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile"
-        warn "  Make it permanent by adding '/swapfile none swap sw 0 0' to /etc/fstab."
+        ensure_swap "$ram_mb"
     fi
     if [ "$disk_gb" -lt "$MIN_RECOMMENDED_DISK_GB" ]; then
         # Warn, do not ask. A 20-40 GB disk is the common VPS size and is above

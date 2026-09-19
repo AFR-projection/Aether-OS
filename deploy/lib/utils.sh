@@ -179,6 +179,185 @@ env_value() {
 }
 
 # ---------------------------------------------------------------------------
+# APT — non-interactive, lock-aware
+# ---------------------------------------------------------------------------
+# apt and dpkg serialise through lock files under /var/lib. On a freshly
+# provisioned VPS those are held by boot-time jobs nobody is watching:
+# unattended-upgrades starts a security update on first boot, and cloud-init
+# runs apt while it finishes provisioning. A bare `apt-get install` at that
+# moment dies with "Could not get lock /var/lib/dpkg/lock-frontend" and takes
+# the whole install down with it — on a machine nobody is even using yet.
+#
+# Every apt call in Aether therefore goes through apt_get, which waits for the
+# lock, runs unattended, and retries.
+#
+# How long apt waits for the lock before giving up, in seconds. Longer than a
+# realistic unattended-upgrades run, shorter than a person's patience for a
+# hung install.
+AETHER_APT_LOCK_TIMEOUT="${AETHER_APT_LOCK_TIMEOUT:-900}"
+
+# Frees the lock a boot-time apt job is holding, so the install does not queue
+# behind a security update it never asked to wait for.
+#
+# Stopping these is deliberately neither destructive nor permanent: they are
+# timer-driven, so they return on their normal schedule, and
+# unattended-upgrades finishes its current dpkg transaction before exiting.
+# Nothing is disabled or masked.
+aether_apt_prepare() {
+    [ "${AETHER_SKIP_APT_PREPARE:-false}" = "true" ] && return 0
+
+    # cloud-init installs packages while a new VPS provisions. Wait for it
+    # rather than racing it — bounded, because a wedged cloud-init must not
+    # hang the install forever.
+    if systemctl is-active --quiet cloud-init 2>/dev/null && command_exists cloud-init; then
+        info "Waiting for cloud-init to finish before using apt"
+        timeout 300 cloud-init status --wait >/dev/null 2>&1 ||
+            warn "cloud-init did not report completion within 5 minutes; continuing"
+    fi
+
+    local unit
+    for unit in unattended-upgrades apt-daily.service apt-daily-upgrade.service; do
+        if systemctl is-active --quiet "$unit" 2>/dev/null; then
+            info "Pausing $unit to release the package lock (it resumes on its normal schedule)"
+            $SUDO systemctl stop "$unit" >/dev/null 2>&1 || true
+        fi
+    done
+}
+
+# Runs apt-get the way an unattended install needs it:
+#
+#   DEBIAN_FRONTEND=noninteractive  a debconf prompt would otherwise block a
+#                                   piped `curl | bash` forever, with no one
+#                                   attached to answer it
+#   DPkg::Lock::Timeout             wait for a held lock instead of dying
+#   Acquire::Retries                ride out a flaky mirror
+#
+# Retries the whole command on failure: a first-boot VPS routinely fails an apt
+# run with a transient mirror or lock error that succeeds seconds later.
+apt_get() {
+    local attempts="${AETHER_APT_ATTEMPTS:-3}"
+    local attempt=1 status=0
+
+    aether_apt_prepare
+
+    while true; do
+        status=0
+        # `$SUDO env …` rather than `env … $SUDO …`: sudo resets the
+        # environment, so a variable set before it is dropped for a non-root
+        # operator. Setting it on the far side of sudo reaches apt either way.
+        $SUDO env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o DPkg::Lock::Timeout="$AETHER_APT_LOCK_TIMEOUT" \
+            -o Dpkg::Use-Pty=0 \
+            -o Acquire::Retries=3 \
+            "$@" || status=$?
+
+        if [ "$status" -eq 0 ]; then
+            return 0
+        fi
+
+        if [ "$attempt" -ge "$attempts" ]; then
+            error "apt-get $* failed after ${attempt} attempt(s) (exit ${status})"
+            return "$status"
+        fi
+
+        warn "apt-get failed (exit ${status}); retrying in $((attempt * 5))s (attempt $((attempt + 1))/${attempts})"
+        sleep $((attempt * 5))
+        attempt=$((attempt + 1))
+    done
+}
+
+# ---------------------------------------------------------------------------
+# Swap
+# ---------------------------------------------------------------------------
+AETHER_SWAPFILE="${AETHER_SWAPFILE:-/swapfile}"
+# Total swap to aim for on a low-memory host. Many VPS images ship a small
+# provider-managed swap (a few hundred MB) which is not enough headroom on its
+# own, so this is a target for the total, not the size of a new file.
+AETHER_SWAP_TARGET_MB="${AETHER_SWAP_TARGET_MB:-2048}"
+
+# A 1–2 GB VPS has no headroom for a frontend image build plus the host agent's
+# node-pty compile. When it runs out, the kernel OOM-killer turns a healthy
+# build into a SIGABRT (exit 134) that reads like a compiler bug and costs the
+# operator an hour. Swap is the difference between an install that finishes and
+# one that fails for reasons that look like a code defect.
+#
+# Counts the swap the host already has — most VPS images ship a few hundred MB,
+# which is not enough on its own — and tops it up to the target. Never fatal: a
+# host that cannot take a swapfile still installs, just more slowly.
+ensure_swap() {
+    local ram_mb="$1"
+    local swap_mb add_mb
+
+    if [ "${AETHER_NO_SWAP:-false}" = "true" ]; then
+        warn "  Swap provisioning disabled (AETHER_NO_SWAP); builds on a ${ram_mb} MB host may be OOM-killed."
+        return 0
+    fi
+    if [ "${AETHER_DRY_RUN:-false}" = "true" ]; then
+        warn "  Dry run: would bring swap up to ${AETHER_SWAP_TARGET_MB} MB so builds are not OOM-killed."
+        return 0
+    fi
+
+    swap_mb=$(free -m | awk '/^Swap:/{print $2}')
+    swap_mb="${swap_mb:-0}"
+
+    if [ "$swap_mb" -ge "$AETHER_SWAP_TARGET_MB" ]; then
+        info "Swap is already ${swap_mb} MB (target ${AETHER_SWAP_TARGET_MB} MB); leaving it alone"
+        return 0
+    fi
+
+    add_mb=$((AETHER_SWAP_TARGET_MB - swap_mb))
+
+    # Leave the last gigabyte of disk to the install itself; shrink the file
+    # rather than skipping it, since partial swap still beats none.
+    local avail_mb
+    avail_mb=$(df -BM --output=avail / | tail -1 | tr -dc '0-9')
+    avail_mb="${avail_mb:-0}"
+    if [ "$avail_mb" -lt $((add_mb + 1024)) ]; then
+        add_mb=$((avail_mb - 1024))
+    fi
+    if [ "$add_mb" -lt 256 ]; then
+        warn "Not enough free disk to extend swap (${avail_mb} MB free)."
+        warn "  Builds on a ${ram_mb} MB host may be OOM-killed; add swap manually if one fails:"
+        warn "    fallocate -l 2G $AETHER_SWAPFILE && chmod 600 $AETHER_SWAPFILE && mkswap $AETHER_SWAPFILE && swapon $AETHER_SWAPFILE"
+        return 0
+    fi
+
+    if [ -e "$AETHER_SWAPFILE" ]; then
+        warn "$AETHER_SWAPFILE exists but is not active; leaving it untouched."
+        return 0
+    fi
+
+    info "Low memory (${ram_mb} MB) with ${swap_mb} MB swap — adding ${add_mb} MB so builds are not OOM-killed"
+
+    # fallocate is instant but unsupported on a few filesystems; dd always works.
+    if ! $SUDO fallocate -l "${add_mb}M" "$AETHER_SWAPFILE" 2>/dev/null; then
+        if ! $SUDO dd if=/dev/zero of="$AETHER_SWAPFILE" bs=1M count="$add_mb" status=none 2>/dev/null; then
+            warn "Could not create $AETHER_SWAPFILE; continuing without extra swap."
+            $SUDO rm -f "$AETHER_SWAPFILE" 2>/dev/null || true
+            return 0
+        fi
+    fi
+
+    $SUDO chmod 600 "$AETHER_SWAPFILE"
+
+    if ! $SUDO mkswap "$AETHER_SWAPFILE" >/dev/null 2>&1 || ! $SUDO swapon "$AETHER_SWAPFILE" 2>/dev/null; then
+        warn "Could not enable $AETHER_SWAPFILE; removing it and continuing without extra swap."
+        $SUDO swapoff "$AETHER_SWAPFILE" 2>/dev/null || true
+        $SUDO rm -f "$AETHER_SWAPFILE" 2>/dev/null || true
+        return 0
+    fi
+
+    # Record it, or a reboot drops the swap and brings the OOM failure back.
+    if grep -qs "^${AETHER_SWAPFILE}[[:space:]]" /etc/fstab; then
+        info "Swap extended to $((swap_mb + add_mb)) MB; /etc/fstab already lists it"
+    elif printf '%s none swap sw 0 0\n' "$AETHER_SWAPFILE" | $SUDO tee -a /etc/fstab >/dev/null 2>&1; then
+        info "Swap extended to $((swap_mb + add_mb)) MB and recorded in /etc/fstab"
+    else
+        warn "Swap extended to $((swap_mb + add_mb)) MB for this boot, but /etc/fstab could not be updated."
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # System utilities
 # ---------------------------------------------------------------------------
 check_command() {
