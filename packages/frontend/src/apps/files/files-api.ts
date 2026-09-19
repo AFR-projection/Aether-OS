@@ -23,7 +23,12 @@ export interface FsScope {
 
 /** True when the scope targets a host agent (and names one). */
 export function isHostScope(fs?: FsScope): fs is { scope: 'host'; agentId: string } {
-  return fs !== undefined && fs.scope === 'host' && typeof fs.agentId === 'string' && fs.agentId.length > 0;
+  return (
+    fs !== undefined &&
+    fs.scope === 'host' &&
+    typeof fs.agentId === 'string' &&
+    fs.agentId.length > 0
+  );
 }
 
 /** Stable string for query keys, so workspace and per-agent caches never collide. */

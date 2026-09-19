@@ -186,17 +186,15 @@ export function registerTerminalWebSocket(app: FastifyInstance): void {
         try {
           switch (result.data.type) {
             case 'input':
-              if (host) void writeHostInput(sessionId, userId, result.data.data).catch(onFrameError);
+              if (host)
+                void writeHostInput(sessionId, userId, result.data.data).catch(onFrameError);
               else writeInput(sessionId, userId, result.data.data);
               break;
             case 'resize':
               if (host)
-                void resizeHostSession(
-                  sessionId,
-                  userId,
-                  result.data.cols,
-                  result.data.rows
-                ).catch(onFrameError);
+                void resizeHostSession(sessionId, userId, result.data.cols, result.data.rows).catch(
+                  onFrameError
+                );
               else resizeSession(sessionId, userId, result.data.cols, result.data.rows);
               break;
             case 'signal':

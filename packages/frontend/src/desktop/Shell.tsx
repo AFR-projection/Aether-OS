@@ -126,7 +126,11 @@ function Win11Taskbar() {
             {now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
           </span>
           <span className="text-[10px] tabular-nums text-slate-400">
-            {now.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            {now.toLocaleDateString(undefined, {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })}
           </span>
         </div>
       </div>
@@ -203,7 +207,11 @@ function MacDock() {
   return (
     <div className="pointer-events-none flex h-20 shrink-0 items-end justify-center pb-2">
       <div className="pointer-events-auto flex items-end gap-2 rounded-2xl border border-white/15 bg-white/10 px-3 py-2 shadow-2xl backdrop-blur-2xl">
-        <DockIcon label="Launchpad" active={launcherOpen} onClick={() => setLauncherOpen(!launcherOpen)}>
+        <DockIcon
+          label="Launchpad"
+          active={launcherOpen}
+          onClick={() => setLauncherOpen(!launcherOpen)}
+        >
           <Grid3x3 size={26} strokeWidth={1.5} className="text-slate-100" aria-hidden="true" />
         </DockIcon>
 
@@ -214,7 +222,11 @@ function MacDock() {
           const Icon = app?.icon ?? Grid3x3;
           const running = window.id === focusedId && !window.minimized;
           return (
-            <DockIcon key={window.id} label={window.title} onClick={() => toggleMinimize(window.id)}>
+            <DockIcon
+              key={window.id}
+              label={window.title}
+              onClick={() => toggleMinimize(window.id)}
+            >
               <Icon size={26} strokeWidth={1.5} className="text-slate-100" aria-hidden="true" />
               <span
                 aria-hidden="true"

@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import { AppError, NotFoundError, ConflictError, ServiceUnavailableError } from '../utils/errors.js';
+import {
+  AppError,
+  NotFoundError,
+  ConflictError,
+  ServiceUnavailableError,
+} from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
 
 const log = subsystemLogger('agent-rpc');

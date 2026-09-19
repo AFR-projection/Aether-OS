@@ -293,7 +293,12 @@ export function CodeStudioApp({ windowId, props }: AppProps) {
           <Undo2 size={14} className="mr-1 inline" aria-hidden="true" />
           Revert
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => void reload()} disabled={activePath === ''}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void reload()}
+          disabled={activePath === ''}
+        >
           <RotateCw size={14} className="mr-1 inline" aria-hidden="true" />
           Reload
         </Button>
@@ -388,7 +393,10 @@ export function CodeStudioApp({ windowId, props }: AppProps) {
                 {activeQuery?.isPending ? (
                   <LoadingState label="Reading file…" />
                 ) : activeQuery?.isError ? (
-                  <ErrorState error={activeQuery.error} onRetry={() => void activeQuery.refetch()} />
+                  <ErrorState
+                    error={activeQuery.error}
+                    onRetry={() => void activeQuery.refetch()}
+                  />
                 ) : isBinary ? (
                   <EmptyState
                     title="Binary file"

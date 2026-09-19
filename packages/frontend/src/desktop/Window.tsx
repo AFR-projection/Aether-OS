@@ -136,7 +136,9 @@ export function Window({
           </>
         ) : (
           <>
-            {chrome.titleAlign === 'center' ? <span aria-hidden="true" className="w-20 shrink-0" /> : null}
+            {chrome.titleAlign === 'center' ? (
+              <span aria-hidden="true" className="w-20 shrink-0" />
+            ) : null}
             {title}
             {controls}
           </>

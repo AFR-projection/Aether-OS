@@ -41,9 +41,24 @@ function iconForEntry(entry: FileEntry): LucideIcon {
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'].includes(ext)) return ImageIcon;
   if (['json', 'jsonc'].includes(ext)) return FileJson;
   if (
-    ['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'py', 'go', 'rs', 'rb', 'java', 'c', 'cpp', 'cs', 'php', 'sh'].includes(
-      ext
-    )
+    [
+      'js',
+      'jsx',
+      'ts',
+      'tsx',
+      'mjs',
+      'cjs',
+      'py',
+      'go',
+      'rs',
+      'rb',
+      'java',
+      'c',
+      'cpp',
+      'cs',
+      'php',
+      'sh',
+    ].includes(ext)
   ) {
     return FileCode2;
   }
@@ -223,7 +238,15 @@ function FileRow({
   );
 }
 
-function Row({ depth, muted, children }: { depth: number; muted?: boolean; children: React.ReactNode }) {
+function Row({
+  depth,
+  muted,
+  children,
+}: {
+  depth: number;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div
       className={['py-1 pr-2 text-xs', muted ? 'text-slate-600' : 'text-slate-300'].join(' ')}

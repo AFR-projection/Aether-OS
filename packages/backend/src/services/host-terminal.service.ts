@@ -116,7 +116,11 @@ export async function attachHostSession(
   return { session: { ...record.session }, unsubscribe };
 }
 
-export async function writeHostInput(sessionId: string, userId: string, data: string): Promise<void> {
+export async function writeHostInput(
+  sessionId: string,
+  userId: string,
+  data: string
+): Promise<void> {
   const record = requireOwned(sessionId, userId);
   await sendAgentRequest(record.agentId, 'terminal.input', { id: sessionId, data });
 }

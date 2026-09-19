@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 
-import { DEFAULT_THEME, isThemeId, themeDefinition, type ThemeDefinition, type ThemeId } from '../lib/themes.js';
+import {
+  DEFAULT_THEME,
+  isThemeId,
+  themeDefinition,
+  type ThemeDefinition,
+  type ThemeId,
+} from '../lib/themes.js';
 
 /**
  * The selected OS theme.

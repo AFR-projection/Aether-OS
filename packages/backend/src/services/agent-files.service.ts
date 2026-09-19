@@ -1,7 +1,12 @@
 import { Buffer } from 'node:buffer';
 import path from 'node:path';
 
-import { LIMITS, type DirectoryListing, type FileEntry, type ReadFileResponse } from '@aether/shared';
+import {
+  LIMITS,
+  type DirectoryListing,
+  type FileEntry,
+  type ReadFileResponse,
+} from '@aether/shared';
 
 import { sendAgentRequest } from './agent-rpc.service.js';
 import { getMimeType } from './files.service.js';
@@ -81,13 +86,21 @@ export async function hostListDirectory(
     return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
   });
 
-  const parent = relative === '' ? null : path.posix.dirname(relative) === '.' ? '' : path.posix.dirname(relative);
+  const parent =
+    relative === ''
+      ? null
+      : path.posix.dirname(relative) === '.'
+        ? ''
+        : path.posix.dirname(relative);
 
   return { path: relative, parent, entries, truncated };
 }
 
 export async function hostReadFile(agentId: string, relative: string): Promise<ReadFileResponse> {
-  const reply = expectRecord(await sendAgentRequest(agentId, 'files.read', { path: relative }), 'read');
+  const reply = expectRecord(
+    await sendAgentRequest(agentId, 'files.read', { path: relative }),
+    'read'
+  );
   if (typeof reply.contentBase64 !== 'string') {
     throw new ServiceUnavailableError('The host agent returned no file content');
   }
@@ -95,7 +108,9 @@ export async function hostReadFile(agentId: string, relative: string): Promise<R
   const buffer = Buffer.from(reply.contentBase64, 'base64');
   const mimeType = getMimeType(relative);
   const looksTextual =
-    mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/xml';
+    mimeType.startsWith('text/') ||
+    mimeType === 'application/json' ||
+    mimeType === 'application/xml';
   const encoding: 'utf8' | 'base64' = looksTextual ? 'utf8' : 'base64';
 
   const readLimit = Math.min(buffer.length, LIMITS.MAX_FILE_READ_BYTES);
@@ -119,7 +134,10 @@ export interface HostWriteOptions {
   createOnly: boolean;
 }
 
-export async function hostWriteFile(agentId: string, options: HostWriteOptions): Promise<FileEntry> {
+export async function hostWriteFile(
+  agentId: string,
+  options: HostWriteOptions
+): Promise<FileEntry> {
   const buffer = Buffer.from(options.content, options.encoding === 'utf8' ? 'utf8' : 'base64');
 
   // The agent write always overwrites, so "create only" is enforced here with a

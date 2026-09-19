@@ -27,8 +27,7 @@ import type { ThemeId } from '../lib/themes.js';
 const WALLPAPERS: Record<ThemeId, string> = {
   win11:
     'radial-gradient(120% 120% at 70% 15%, #1a4da8 0%, #123a7a 32%, #0a1f47 70%, #060f26 100%)',
-  macos:
-    'linear-gradient(150deg, #2b1b4d 0%, #3d2a6b 22%, #6d3f8a 45%, #b5527a 68%, #e08b5f 100%)',
+  macos: 'linear-gradient(150deg, #2b1b4d 0%, #3d2a6b 22%, #6d3f8a 45%, #b5527a 68%, #e08b5f 100%)',
   gnome:
     'radial-gradient(130% 130% at 30% 20%, #4a5fd0 0%, #3a3f9e 38%, #2a2c66 72%, #1a1c3d 100%)',
 };

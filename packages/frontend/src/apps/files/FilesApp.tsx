@@ -738,8 +738,8 @@ export function FilesApp({ windowId, props }: AppProps) {
               {entryIsAetherSystem(host, selectedEntry.path) ? (
                 <p className="mt-2 flex items-center gap-1.5 text-xs text-rose-300">
                   <ShieldAlert size={13} aria-hidden="true" />
-                  This is part of Aether&rsquo;s own system files. Removing it can break this running
-                  instance and require a reinstall.
+                  This is part of Aether&rsquo;s own system files. Removing it can break this
+                  running instance and require a reinstall.
                 </p>
               ) : null}
             </>

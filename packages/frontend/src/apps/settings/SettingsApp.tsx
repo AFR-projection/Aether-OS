@@ -348,7 +348,15 @@ function ThemePreview({ id }: { id: ThemeId }) {
     ) : (
       <svg width="26" height="6" viewBox="0 0 26 6" className="text-slate-300" aria-hidden="true">
         <line x1="0" y1="3" x2="5" y2="3" stroke="currentColor" strokeWidth="1" />
-        <rect x="10" y="0.5" width="5" height="5" fill="none" stroke="currentColor" strokeWidth="1" />
+        <rect
+          x="10"
+          y="0.5"
+          width="5"
+          height="5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1"
+        />
         <line x1="21" y1="0.5" x2="26" y2="5.5" stroke="currentColor" strokeWidth="1" />
         <line x1="26" y1="0.5" x2="21" y2="5.5" stroke="currentColor" strokeWidth="1" />
       </svg>
@@ -387,7 +395,10 @@ function ThemePreview({ id }: { id: ThemeId }) {
         </div>
         <div className="space-y-1 p-1.5">
           <span className="block h-1 w-full rounded-full bg-white/10" />
-          <span className="block h-1 w-2/3 rounded-full" style={{ background: 'rgb(var(--accent))' }} />
+          <span
+            className="block h-1 w-2/3 rounded-full"
+            style={{ background: 'rgb(var(--accent))' }}
+          />
         </div>
       </div>
 

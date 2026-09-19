@@ -67,7 +67,8 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   macos: {
     id: 'macos',
     label: 'macOS',
-    description: 'A translucent menu bar, a magnifying Dock, and traffic-light controls on the left.',
+    description:
+      'A translucent menu bar, a magnifying Dock, and traffic-light controls on the left.',
     chrome: {
       windowRadius: 10,
       titlebarHeight: 38,
