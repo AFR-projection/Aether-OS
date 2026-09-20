@@ -517,6 +517,14 @@ phase_rollback_injection() {
         echo 'ENTRYPOINT ["/app/broken-entrypoint.sh"]' >> "$dockerfile"
     fi
 
+    # A marker in the bundle the instance is serving, so the rollback can be
+    # checked for the version skew it would otherwise keep. The update's frontend
+    # build replaces this directory wholesale, so by the time roll_back runs the
+    # marker is gone — and it is back afterwards only if the rollback put the
+    # pre-update bundle back in place.
+    local marker="$INSTALL_DIR/static/ROLLBACK-PROOF"
+    printf 'this file was in the bundle the instance served before the update\n' >"$marker"
+
     # The revision the update will start from, captured here rather than before
     # the injection above: that is the state a rollback restores, because it is
     # the state the update found. The injected commit is part of it — it was
@@ -534,6 +542,14 @@ phase_rollback_injection() {
     # rollback started, and it is printed whichever way the rollback then goes.
     expect_contains "rollback executed" "Rolling back to"
 
+    # Non-vacuity for the marker check below. A bundle that was never replaced
+    # would leave the marker in place for the rollback to "restore", and the
+    # check would pass without the rollback having done anything. The line is
+    # the one install_frontend_bundle prints at the end of a swap, so this is
+    # what proves the failed update really did put a new bundle in front of the
+    # previous API and data.
+    expect_contains "the failed update did replace the served bundle" "Frontend bundle installed to"
+
     # Restore the Dockerfile
     if [ -f "${dockerfile}.backup" ]; then
         mv "${dockerfile}.backup" "$dockerfile"
@@ -548,11 +564,18 @@ phase_rollback_injection() {
         fail "rollback restored the revision the update started from (was $pre_update_commit, now $after_rollback)"
     fi
 
+    if [ -f "$marker" ]; then
+        pass "the rollback put back the frontend bundle the instance was serving"
+    else
+        fail "the rollback left the failed update's frontend bundle in place"
+    fi
+
     run "instance is healthy after rollback" aether status
     expect_contains "agent still connected after rollback" "Host Agent:         connected"
 
     # Clean up the injected commit
     git -C "$INSTALL_DIR/src" reset --hard HEAD~1 2>/dev/null || true
+    rm -f "$marker"
     cd /
 }
 

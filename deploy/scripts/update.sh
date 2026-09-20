@@ -513,6 +513,28 @@ roll_back() {
         warn "The instance may still be running the build that failed. After fixing: aether repair"
     fi
 
+    # The bundle the instance was serving when the update started, back in place
+    # before the data is restored: the restore's `compose up -d` recreates the
+    # backend for the rebuilt image, and the recreated container binds the
+    # directory this puts back. The `mv` swaps the inode, so a container that is
+    # still up is recreated here as well — otherwise it would keep serving the
+    # failed revision's bundle from the unlinked one it is still mounted on.
+    if [ -d "$AETHER_INSTALL_DIR/static.pre-update" ]; then
+        rm -rf "$AETHER_INSTALL_DIR/static"
+        mv "$AETHER_INSTALL_DIR/static.pre-update" "$AETHER_INSTALL_DIR/static"
+        info "Restored the frontend bundle the instance was serving at $prev_short."
+        if [ -f "$AETHER_INSTALL_DIR/docker-compose.yml" ] && command -v docker >/dev/null 2>&1; then
+            local running_backend
+            running_backend=$(compose ps --status running backend 2>/dev/null || true)
+            if matches "$running_backend" "backend"; then
+                compose up -d --force-recreate --no-deps backend >/dev/null 2>&1 ||
+                    warn "Could not recreate the backend to pick up the restored bundle; run 'aether restart'."
+            fi
+        fi
+    else
+        warn "No pre-update frontend bundle was kept; the instance may still serve the bundle the failed update built."
+    fi
+
     if [ -n "$archive" ] && [ -f "$archive" ]; then
         stage "Restoring the pre-update backup"
         if AETHER_INSTALL_DIR="$AETHER_INSTALL_DIR" AETHER_YES=true bash "$SCRIPT_DIR/restore.sh" "$archive"; then
@@ -755,6 +777,30 @@ update_aether() {
         warn "Could not find deploy/lib/finalize.sh in the updated source; keeping the installed CLI."
     fi
 
+    # Keep the bundle the instance is serving right now, for the rollback below to
+    # put back.
+    #
+    # install_frontend_bundle swaps the new build into <install>/static and deletes
+    # the one it replaced, so by the time a failed update reaches roll_back the UI
+    # that was running is gone. restore.sh does not bring one back either: its
+    # archive carries no bundle by design, and it rebuilds one only when the static
+    # directory is missing entirely. The instance would then come out of a rollback
+    # serving the failed revision's UI in front of the previous revision's API and
+    # data — the version skew the restore path is written to avoid, arrived at from
+    # the other direction.
+    #
+    # A copy rather than a move: the running backend is bind-mounted on this
+    # directory, and a move would leave it serving an unlinked inode until the
+    # container is recreated. Nothing else touches the snapshot — an update that
+    # succeeds deletes it.
+    local static_dir="$AETHER_INSTALL_DIR/static"
+    local static_snapshot="$AETHER_INSTALL_DIR/static.pre-update"
+    rm -rf "$static_snapshot"
+    if [ -d "$static_dir" ]; then
+        cp -a "$static_dir" "$static_snapshot" ||
+            warn "Could not keep a copy of the current frontend bundle; a rollback would leave the new UI in place."
+    fi
+
     # From here on, any failure is rolled back rather than left half-applied.
     if ! (build_frontend && rebuild_backend && run_migrations && restart_stack && health_check); then
         roll_back "$before" "$before_short" "$archive" || true
@@ -789,6 +835,10 @@ update_aether() {
         rm -rf "$ADOPTED_PREVIOUS_SRC"
         ADOPTED_PREVIOUS_SRC=""
     fi
+
+    # Same for the pre-update bundle: the new one is built, in place, and served,
+    # and the health check above proved the stack came up on it.
+    rm -rf "$AETHER_INSTALL_DIR/static.pre-update"
 
     printf '\n'
     info "Update complete: $before_short → $(current_revision_short)"
