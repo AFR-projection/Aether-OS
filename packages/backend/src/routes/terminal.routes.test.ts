@@ -261,6 +261,21 @@ describe('session status is the agent\'s, not this process\'s', () => {
     expect(listed?.exitCode).toBe(0);
   });
 
+  it('tells the same story about one session as it does about the list', async () => {
+    await createHostSession();
+    agentSessions = [sessionRecord({ status: 'exited', exitCode: 130, pid: null })];
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/sessions/${SESSION_ID}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ data: { status: string; exitCode: number | null } }>().data).toMatchObject(
+      { status: 'exited', exitCode: 130 }
+    );
+  });
+
   it('leaves the record alone when the agent cannot answer', async () => {
     await createHostSession();
     listFails = true;

@@ -137,9 +137,16 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
   // registry; looking it up locally only finds nothing and answers 404 for a
   // session the caller owns and can see in `GET /api/terminal/sessions`. The
   // delete handler below already branches this way.
-  app.get('/api/terminal/sessions/:id', { preHandler: guards }, (request) => {
+  app.get('/api/terminal/sessions/:id', { preHandler: guards }, async (request) => {
     const principal = requirePrincipal(request);
     const params = parseOrThrow(terminalIdParamSchema, request.params, 'session id');
+
+    // Reconciled for the same reason the list is: this must not answer "running"
+    // for a shell the agent has already watched exit, or the two endpoints
+    // disagree about the same session. It only ever touches this caller's own
+    // records, so an id that is not theirs still reaches the ownership check
+    // below and 404s there.
+    await reconcileHostSessionsForUser(principal.user.id);
 
     const hostRecord = getOwnedHostSession(params.id, principal.user.id);
     if (hostRecord !== null) return { data: hostRecord.session };
