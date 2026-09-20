@@ -197,6 +197,9 @@ clean_old_backups() {
 # Entry point
 # ---------------------------------------------------------------------------
 create_backup() {
+    # One header for the whole operation, so it is numbered against a total that
+    # is certainly right: this is the only stage() this script reaches.
+    stage_total 1
     stage "Creating Aether backup"
     require_deployment
 

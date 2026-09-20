@@ -179,6 +179,8 @@ remove_directory() {
 # Entry point
 # ---------------------------------------------------------------------------
 uninstall_aether() {
+    # The only stage() this script reaches, so the total is exact.
+    stage_total 1
     stage "Uninstalling Aether Cloud OS"
 
     if [ "$AETHER_PURGE" = true ]; then

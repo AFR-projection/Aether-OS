@@ -242,8 +242,28 @@ mark_done() {
 # On the off chance one of those runs under an active panel (it does not today),
 # the header is routed through the log/activity path so it cannot corrupt a
 # frame; otherwise it prints the same bold line it always did.
-STAGE_TOTAL=7
+#
+# The denominator is not a constant. It was one — STAGE_TOTAL=7 — and it was
+# wrong for every path but one: `aether update` runs eight sections on the
+# ordinary pull path and six with --no-pull, so its last header read
+# "[8/7] Restarting the stack". A counter that overruns its own total is the
+# same class of untruth as a percentage that was never measured, and it is what
+# the operator reads to decide whether the thing is nearly done.
+#
+# So a script declares its own total with `stage_total`, and only where the
+# number is exact for the path it is on. Undeclared (the default) means the
+# script cannot state a total — it branches, or it calls stage() through a
+# library — and the header then carries the step number alone. A bare number
+# claims nothing; a fraction that is not the real one claims something false.
+STAGE_TOTAL=0
 STAGE_CURRENT=0
+
+# Declares how many stage() headers this run will print, so they can be
+# numbered. Call it before the first one, or again if a branch changes the plan —
+# a rollback, for instance, prints sections the success path never reaches.
+stage_total() {
+    STAGE_TOTAL="$1"
+}
 
 stage() {
     STAGE_CURRENT=$((STAGE_CURRENT + 1))
@@ -251,7 +271,11 @@ stage() {
         info "$*"
         return 0
     fi
-    printf '\n\033[1m[%d/%d] %s\033[0m\n' "$STAGE_CURRENT" "$STAGE_TOTAL" "$*"
+    if [ "$STAGE_TOTAL" -gt 0 ]; then
+        printf '\n\033[1m[%d/%d] %s\033[0m\n' "$STAGE_CURRENT" "$STAGE_TOTAL" "$*"
+    else
+        printf '\n\033[1m[%d] %s\033[0m\n' "$STAGE_CURRENT" "$*"
+    fi
 }
 
 # ---------------------------------------------------------------------------

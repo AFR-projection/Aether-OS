@@ -38,6 +38,11 @@
 #       that goes stale silently, because adding a UI function does not make
 #       anyone think about the older installation. This is exactly the case no
 #       one runs by hand.
+#   19. A stage's recorded span covers the whole stage, and a stage is opened by
+#       the function that owns it, exactly once.
+#   20. A stage header never names a total it does not have. The standalone CLI
+#       numbered its headers against a constant that was wrong for every path
+#       but one, so `aether update` printed "[8/7] Restarting the stack".
 #
 # Needs only bash, sed, awk, and grep. Runs anywhere:
 #
@@ -782,6 +787,118 @@ else
     else
         fail "the capture lost its header, so the output cannot be attributed"
     fi
+fi
+
+# ---------------------------------------------------------------------------
+# 20. A stage header never names a total it does not have
+# ---------------------------------------------------------------------------
+# The header the standalone CLI prints is `[n/total] what it is doing`, and the
+# total used to be a constant — STAGE_TOTAL=7 — while `aether update` runs eight
+# sections on the ordinary pull path. So the last line of every successful update
+# read "[8/7] Restarting the stack": a counter that overruns its own denominator,
+# which is the same defect as a percentage nobody measured, and it is what the
+# operator reads to decide whether the thing is nearly done.
+#
+# The total is now declared by the script that knows it, and a script that
+# cannot state one declares none and gets the step number alone. Both halves are
+# checked here by running the real stage() out of core.sh in a child process —
+# core.sh sets -euo, which this file must not inherit.
+section "20. A stage header never names a total it does not have"
+
+STAGE_HEADERS="$(
+    # shellcheck disable=SC2016 # the child's variables are its own; $REPO_DIR is
+    # expanded by the parent on purpose, and everything else is child-side.
+    REPO_DIR="$REPO_DIR" AETHER_LOG_FILE="$WORK/stage-header.log" bash -c '
+set -euo pipefail
+source "$REPO_DIR/deploy/lib/core.sh"
+
+# Guarded, because this file is also run against the core.sh from before this
+# fix, to prove that the checks below fail there. Without the guard the child
+# dies on "stage_total: command not found" — under core.sh'"'"'s own set -e — and
+# prints no headers at all, which is a run the assertions below cannot say
+# anything about.
+if type -t stage_total >/dev/null 2>&1; then
+    stage_total 3
+fi
+stage "one"
+stage "two"
+stage "three"
+
+# Nothing declared: the script branches, or calls stage() through a library and
+# cannot say how many headers it will print. It then prints the step number
+# alone. This is the regression — eight headers, no invented denominator.
+STAGE_TOTAL=0
+STAGE_CURRENT=0
+for i in 1 2 3 4 5 6 7 8; do
+    stage "section $i"
+done
+' 2>&1 | sed $'s/\033\\[[0-9;]*m//g'
+)"
+
+# The sed above is ANSI-C quoted for a reason: a `\033` written inside ordinary
+# single quotes is not an escape to every sed — Git Bash's ignores it and strips
+# nothing — and the headers would then keep the bold sequence in front of the
+# `[1/3]` the assertions below look for at the start of a line. The same problem
+# expect_no_escape describes for a control character in a grep pattern.
+
+# Every assertion below reads this output, so an output that is empty — a child
+# that died, a core.sh that could not be sourced — would satisfy "does not
+# contain [8/7]" and pass without testing anything, which is the same silent
+# green as the bug being hunted. The run is required to have printed the eleven
+# headers it was asked for before it is read.
+HEADER_COUNT="$(printf '%s\n' "$STAGE_HEADERS" | grep -cE '^\[[0-9]+(/[0-9]+)?\]')"
+if [ "$HEADER_COUNT" -eq 11 ]; then
+    ok "stage() printed the eleven headers this case drives it with"
+else
+    fail "the header run produced $HEADER_COUNT headers, not 11; the checks below cannot conclude"
+fi
+
+expect_has "a declared total numbers its headers against it" "[3/3] three" "$STAGE_HEADERS"
+expect_has "and counts from one" "[1/3] one" "$STAGE_HEADERS"
+expect_has "an undeclared total prints the step number alone" "[8] section 8" "$STAGE_HEADERS"
+expect_lacks "no header invents a denominator" "[8/7]" "$STAGE_HEADERS"
+
+# The generic form of the same guarantee, so a future constant that is wrong for
+# some *other* path is caught too: across every header this run printed, no
+# numerator may exceed its denominator.
+OVER_RUN="$(
+    printf '%s\n' "$STAGE_HEADERS" |
+        grep -oE '\[[0-9]+/[0-9]+\]' |
+        tr -d '[]' |
+        awk -F/ '$1 > $2 { print }'
+)"
+if [ -z "$OVER_RUN" ] && [ "$HEADER_COUNT" -eq 11 ]; then
+    ok "and no header anywhere counts past its own total"
+elif [ -n "$OVER_RUN" ]; then
+    fail "headers that overrun their total: $(printf '%s' "$OVER_RUN" | tr '\n' ' ')"
+else
+    fail "no headers were printed, so nothing was checked for overrun"
+fi
+
+# And the static half: a script that states a *constant* total must print
+# exactly that many headers. This is what would have caught STAGE_TOTAL=7 in the
+# first place, on the day the eighth stage() call was added.
+MISCOUNTED=""
+for SCRIPT in "$REPO_DIR"/deploy/scripts/*.sh; do
+    DECLARED="$(grep -oE '^[[:space:]]*stage_total [0-9]+' "$SCRIPT" | awk '{ print $2 }' | sort -u)"
+    [ -n "$DECLARED" ] || continue
+    # A script that also extends its total mid-run is branchy by construction and
+    # cannot be checked this way; it is the dynamic declarations in update.sh and
+    # restore.sh, which the runtime checks above cover.
+    case "$(grep -cE '^[[:space:]]*stage_total \$\(' "$SCRIPT")" in
+        0) ;;
+        *) continue ;;
+    esac
+    HEADERS="$(grep -cE '^[[:space:]]*stage ' "$SCRIPT")"
+    for n in $DECLARED; do
+        [ "$n" = "$HEADERS" ] ||
+            MISCOUNTED+="$(basename "$SCRIPT") declares $n but prints $HEADERS headers; "
+    done
+done
+if [ -z "$MISCOUNTED" ]; then
+    ok "a constant total matches the headers the script prints"
+else
+    fail "$MISCOUNTED"
 fi
 
 # ---------------------------------------------------------------------------

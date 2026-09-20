@@ -254,6 +254,9 @@ restore_frontend() {
         return 0
     fi
 
+    # Conditional, so the entry point could not count it: the plan is extended
+    # here, where the condition above has already decided that it runs.
+    stage_total $((STAGE_CURRENT + 1))
     stage "Rebuilding the frontend bundle (not stored in backups)"
     if install_frontend_bundle; then
         return 0
@@ -341,6 +344,8 @@ verify_agent() {
 restore_backup() {
     local archive="$1"
 
+    # The restore itself; restore_frontend extends this if it has to run.
+    stage_total 1
     stage "Restoring Aether backup"
     require_deployment
     verify_archive "$archive"

@@ -496,6 +496,17 @@ roll_back() {
     # A failure here is reported and the rollback continues to the data: the
     # backup is the one thing the operator cannot rebuild, so it is restored
     # either way.
+    # A failure is not the plan the success path declared, and this walk back
+    # prints headers that plan never had. The total is extended to cover them so
+    # the numbering stays a true count of what this run is doing rather than a
+    # number the rollback overruns — the update stopped wherever it stopped, and
+    # these two sections are what remains.
+    local rollback_stages=1 # rebuilding from the restored source
+    if [ -n "$archive" ] && [ -f "$archive" ]; then
+        rollback_stages=$((rollback_stages + 1)) # restoring the pre-update backup
+    fi
+    stage_total $((STAGE_CURRENT + rollback_stages))
+
     stage "Rebuilding the backend from the restored source"
     if ! compose build backend; then
         warn "The backend image could not be rebuilt from the restored source."
@@ -627,6 +638,20 @@ update_aether() {
 
     # Back up before touching anything. This is a real backup — database
     # included — and it is what makes the rollback below possible.
+    #
+    # The header counter is declared here, because this is the first point at
+    # which the run's path is settled: the pull branch above has either performed
+    # its check or not, and every section from here on is fixed — the backup, at
+    # most one source section, configuration, then the four that build and
+    # restart. Eight headers on the pull path, six with --no-pull, and a single
+    # constant could only ever be right about one of them.
+    local remaining=1 # backing up before the update
+    if [ "$AETHER_PULL" = true ]; then
+        remaining=$((remaining + 1)) # updating/syncing/adopting the source
+    fi
+    remaining=$((remaining + 1 + 4)) # configuration, then build, migrate, restart
+    stage_total $((STAGE_CURRENT + remaining))
+
     stage "Backing up before the update"
     local archive
     archive=$(AETHER_INSTALL_DIR="$AETHER_INSTALL_DIR" bash "$SCRIPT_DIR/backup.sh" 2>&1 \
