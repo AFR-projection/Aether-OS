@@ -10,7 +10,7 @@
 import { apiRequest } from './api-client.js';
 import { isHostScope, type FsScope } from '../apps/files/files-api.js';
 
-import type { TerminalSession } from '@aether/shared';
+import type { TerminalSession, TerminalSessionSummary } from '@aether/shared';
 
 export interface CreateTerminalOptions {
   cols: number;
@@ -40,6 +40,21 @@ export function createTerminalSession(options: CreateTerminalOptions): Promise<T
       ...scope,
     },
   });
+}
+
+/**
+ * Lists the caller's live terminal sessions across every scope.
+ *
+ * The backend reconciles each session against the agent that owns it before it
+ * answers, so a session reported here is one the host still has — a shell that
+ * exited on its own comes back with `status: 'exited'`, not as running. This is
+ * what lets the desktop rebind a terminal window to its real shell after a
+ * browser refresh instead of orphaning it.
+ */
+export function listTerminalSessions(): Promise<TerminalSessionSummary[]> {
+  return apiRequest<{ sessions: TerminalSessionSummary[] }>('/api/terminal/sessions', {
+    method: 'GET',
+  }).then((data) => data.sessions);
 }
 
 export function killTerminalSession(sessionId: string): Promise<void> {

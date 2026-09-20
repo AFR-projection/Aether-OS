@@ -6,7 +6,11 @@ import {
 import { NotFoundError, ServiceUnavailableError } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
 
-import type { TerminalServerMessage, TerminalSession } from '@aether/shared';
+import type {
+  TerminalServerMessage,
+  TerminalSession,
+  TerminalSessionSummary,
+} from '@aether/shared';
 
 const log = subsystemLogger('host-terminal');
 
@@ -87,10 +91,12 @@ function requireOwned(sessionId: string, userId: string): HostSessionRecord {
   return record;
 }
 
-export function listHostSessionsForUser(userId: string): TerminalSession[] {
-  const result: TerminalSession[] = [];
+export function listHostSessionsForUser(userId: string): TerminalSessionSummary[] {
+  const result: TerminalSessionSummary[] = [];
   for (const record of hostSessions.values()) {
-    if (record.ownerUserId === userId) result.push({ ...record.session });
+    if (record.ownerUserId === userId) {
+      result.push({ ...record.session, scope: 'host', agentId: record.agentId });
+    }
   }
   return result;
 }

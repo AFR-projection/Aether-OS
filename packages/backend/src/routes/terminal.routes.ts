@@ -3,6 +3,7 @@ import {
   resizeBodySchema,
   terminalIdParamSchema,
   terminalInputBodySchema,
+  type TerminalSessionSummary,
 } from '@aether/shared';
 
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
@@ -82,12 +83,17 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
       // the record here is written once from the create reply.
       await reconcileHostSessionsForUser(principal.user.id);
 
+      // Workspace sessions carry no scope of their own — they are always
+      // workspace-scoped — so they are tagged here to match the shape host
+      // sessions already report, giving the client one uniformly-typed list it
+      // can use to rebind a window to the right endpoint after a refresh.
+      const workspace: TerminalSessionSummary[] = listSessionsForUser(principal.user.id).map(
+        (session) => ({ ...session, scope: 'workspace' })
+      );
+
       return {
         data: {
-          sessions: [
-            ...listSessionsForUser(principal.user.id),
-            ...listHostSessionsForUser(principal.user.id),
-          ],
+          sessions: [...workspace, ...listHostSessionsForUser(principal.user.id)],
         },
       };
     },

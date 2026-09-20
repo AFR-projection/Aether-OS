@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { DesktopIcons } from './DesktopIcons.js';
 import { Launcher } from './Launcher.js';
 import { Shell } from './Shell.js';
+import { useTerminalRecovery } from './useTerminalRecovery.js';
 import { Window } from './Window.js';
 import { APP_REGISTRY } from '../apps/registry.js';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary.js';
@@ -55,9 +56,20 @@ export function Desktop() {
     return () => observer.disconnect();
   }, [setDesktopSize]);
 
-  if (user === null) return null;
-
   const registry = new Map(APP_REGISTRY.map((app) => [app.id, app]));
+
+  // Reattach live shells after a browser refresh. Gated on the terminal
+  // permission — a user who cannot create a terminal has no sessions to recover,
+  // and passing `undefined` makes the hook a no-op. Called before the
+  // `user === null` guard so it is never conditional.
+  const terminalApp = registry.get('terminal');
+  const canUseTerminal =
+    user !== null &&
+    (terminalApp?.requiredPermission === undefined ||
+      user.permissions.includes(terminalApp.requiredPermission));
+  useTerminalRecovery(canUseTerminal ? terminalApp : undefined);
+
+  if (user === null) return null;
 
   return (
     <div

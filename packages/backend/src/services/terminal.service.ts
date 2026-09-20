@@ -2,11 +2,15 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import {
+  DEFAULT_TERM,
   LIMITS,
+  buildShellArgv,
+  buildShellEnvironment,
   type TerminalServerMessage,
   type TerminalSession,
   type TerminalStatus,
 } from '@aether/shared';
+import { resolveHostIdentity } from '@aether/shared/node';
 
 import { config } from '../config.js';
 import { getWorkspaceRoot, joinToRoot, resolveExistingPath } from '../security/workspace.js';
@@ -133,6 +137,8 @@ export async function createSession(options: CreateSessionOptions): Promise<Term
   const pty = await loadPty();
   const root = await getWorkspaceRoot();
 
+  const identity = resolveHostIdentity();
+
   let cwd = root;
   if (options.cwd) {
     const resolved = await resolveExistingPath(options.cwd);
@@ -142,15 +148,20 @@ export async function createSession(options: CreateSessionOptions): Promise<Term
     cwd = resolved.absolute;
   }
 
-  const shell = resolveShell(options.shell);
+  const shell = resolveShell(options.shell, identity.shell);
   const id = randomUUID();
 
-  const child = pty.spawn(shell, options.command ? ['-c', options.command] : [], {
-    name: 'xterm-256color',
+  // The same login-shell model as the host agent, from the one shared
+  // definition: `-l` so the profile chain runs, an allowlisted environment so no
+  // backend secret (`DATABASE_URL`, `JWT_SECRET`, `ENCRYPTION_KEY`) reaches the
+  // shell, and `PWD` set to the directory actually started in — the workspace
+  // terminal runs in the backend container, but it is the same code path.
+  const child = pty.spawn(shell, buildShellArgv(options.command), {
+    name: DEFAULT_TERM,
     cols: options.cols,
     rows: options.rows,
     cwd,
-    env: buildChildEnvironment(root),
+    env: buildShellEnvironment({ ...identity, shell }, { cwd, ambient: process.env }),
   });
 
   const now = new Date().toISOString();
@@ -223,7 +234,7 @@ export async function createSession(options: CreateSessionOptions): Promise<Term
  * The requested shell must appear in `TERMINAL_ALLOWED_SHELLS`. Without this
  * allowlist a caller could ask for any executable on the host as the "shell".
  */
-function resolveShell(requested?: string): string {
+function resolveShell(requested?: string, preferred?: string): string {
   const allowed = config.TERMINAL_ALLOWED_SHELLS;
 
   if (requested) {
@@ -233,7 +244,9 @@ function resolveShell(requested?: string): string {
     return requested;
   }
 
-  const preferred = process.env.SHELL;
+  // The account's login shell from passwd, if the allowlist permits it. See the
+  // host agent's copy for why a rejected preference (e.g. `/usr/sbin/nologin`)
+  // falls through to the allowlist default.
   if (preferred && allowed.includes(preferred)) return preferred;
 
   const fallback = allowed[0];
@@ -241,31 +254,6 @@ function resolveShell(requested?: string): string {
     throw new ServiceUnavailableError('No shell is configured for terminal sessions');
   }
   return fallback;
-}
-
-/**
- * Builds the environment for the spawned shell.
- *
- * A minimal environment is passed rather than inheriting `process.env`
- * wholesale: the backend process holds `DATABASE_URL`, `JWT_SECRET`, and
- * `ENCRYPTION_KEY`, and a shell running as the same user would be able to read
- * all of them with a single `env` command.
- */
-function buildChildEnvironment(root: string): Record<string, string> {
-  const user = process.env.USER ?? process.env.USERNAME ?? 'aether';
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? root;
-
-  return {
-    TERM: 'xterm-256color',
-    COLORTERM: 'truecolor',
-    USER: user,
-    LOGNAME: user,
-    HOME: home,
-    PWD: root,
-    SHELL: process.env.SHELL ?? '/bin/bash',
-    LANG: process.env.LANG ?? 'C.UTF-8',
-    PATH: process.env.PATH ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-  };
 }
 
 function requireSession(sessionId: string): TerminalRuntime {

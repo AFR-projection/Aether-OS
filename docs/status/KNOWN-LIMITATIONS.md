@@ -187,6 +187,29 @@ read as not connected. The install is one replica by default; this only matters 
 backend, in which case verify with `aether logs backend | grep "agent connected"` on the replica you
 care about. (Related: #19.)
 
+### 18b. A terminal PTY does not survive its owner restarting, and reattach is process-level
+
+**→ see [EXECUTION-MODEL.md](../architecture/EXECUTION-MODEL.md)**
+
+A shell's PTY is owned by the process that opened it — the host agent (or the backend, for a
+workspace terminal). A **browser refresh** now recovers cleanly: the backend was not restarted, the
+shells are still there, and the desktop rediscovers them via `GET /api/terminal/sessions` and rebinds
+(scenario 2). But:
+
+- **Agent restart or host reboot ends the shells.** The kernel sends `SIGHUP` when the master fd
+  closes; the shell dies, as it would on any machine. Aether reports such a session as **gone, never
+  as alive** — it does not fake survival. Making a shell outlive its owner needs a session broker
+  (tmux, or a dedicated PTY-owning daemon); the trade-offs are assessed in EXECUTION-MODEL.md and the
+  broker is scheduled as its own roadmap item, not built yet (scenarios 5 and 6).
+- **A backend-only restart is an honest gap.** The agent tracks one owner per connection while
+  multiple backend users can hold sessions on one agent, so adopting the agent's session list blindly
+  would leak one user's shell to another. Rather than fake ownership, those sessions are reported
+  gone after a backend restart even though the shells live on the agent. Closing this needs per-session
+  ownership across the agent protocol, scheduled with the broker.
+- **Reattach is process-level, not screen-level.** It preserves the process and up to 256 KB of
+  scrollback; xterm.js rebuilds the screen from that. Exact screen state for a full-screen program
+  (an editor, `top`) is not reproduced.
+
 ### 19. No horizontal scaling of the WebSocket layer beyond Redis
 
 Redis makes WebSocket _tickets_ portable between replicas, so a client can connect to any replica.
@@ -280,6 +303,18 @@ read that reached `/etc`. Everything that could be checked without Docker was: s
 script, and `pnpm typecheck`, `lint`, `test`, and `build` across the workspace. Treat a first
 production install as something to watch, and run the harness on a throwaway host before trusting
 the update path on one that matters.
+
+The terminal's host-environment behaviour is covered by `deploy/tests/host-environment.sh` and the
+`@aether/shared` and host-agent suites. The shared unit tests (argv, environment allowlist, passwd
+identity) and the host-agent real-PTY integration tests (the profile-chain / `~/.local/bin` case, its
+negative without `-l`, the secret non-leak, and session-lifecycle honesty) run in CI on
+`ubuntu-latest`; the integration tests skip on a host with no `node-pty` or POSIX shell, so they have
+**not** been executed on Windows. `deploy/tests/host-environment.sh` runs its host-shell portion
+anywhere bash and a POSIX shell exist and was run here (six checks pass, proving the login-shell fix
+and reproducing the no-`-l` defect); its API portion needs `AETHER_BASE_URL`/`AETHER_USERNAME`/
+`AETHER_PASSWORD` and was **skipped**, not run, so the live-instance lifecycle and refresh-discovery
+checks are delivered runnable but unexecuted against a real instance. See
+[EXECUTION-MODEL.md](../architecture/EXECUTION-MODEL.md).
 
 The installer interface (limitation #21) is covered separately by `deploy/tests/installer-ui.sh`,
 which drives the real renderer and the real stage registry against eighteen guarantees — the

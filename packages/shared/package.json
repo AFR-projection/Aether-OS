@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/host-identity.d.ts",
+      "default": "./dist/host-identity.js"
     }
   },
   "scripts": {

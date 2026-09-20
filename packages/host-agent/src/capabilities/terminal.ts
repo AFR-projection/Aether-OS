@@ -2,10 +2,14 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import {
+  DEFAULT_TERM,
+  buildShellArgv,
+  buildShellEnvironment,
   type TerminalServerMessage,
   type TerminalSession,
   type TerminalStatus,
 } from '@aether/shared';
+import { resolveHostIdentity } from '@aether/shared/node';
 
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '../errors.js';
 import { subsystemLogger } from '../logger.js';
@@ -146,7 +150,12 @@ export async function createSession(
   const pty = await loadPty();
   const root = await getWorkspaceRoot(cfg);
 
-  let cwd = await defaultCwd(cfg, root);
+  // Who the host says this process is — from the passwd database, not the
+  // daemon's environment. This is the source for HOME, USER and the login-shell
+  // preference; see `@aether/shared/node`.
+  const identity = resolveHostIdentity();
+
+  let cwd = await defaultCwd(cfg, root, identity.home);
   if (options.cwd) {
     const resolved = await resolveExistingPath(cfg, options.cwd);
     if (!resolved.exists) {
@@ -155,15 +164,22 @@ export async function createSession(
     cwd = resolved.absolute;
   }
 
-  const shell = resolveShell(cfg, options.shell);
+  const shell = resolveShell(cfg, options.shell, identity.shell);
   const id = randomUUID();
 
-  const child = pty.spawn(shell, options.command ? ['-c', options.command] : [], {
-    name: 'xterm-256color',
+  // `buildShellArgv` adds `-l`, so the host's own `/etc/profile` → `~/.profile`
+  // → `~/.bashrc` chain runs and the shell has the PATH a login would — which is
+  // how a user-installed tool in `~/.local/bin` becomes reachable. The
+  // environment is the shared allowlist: nothing from `process.env` crosses into
+  // the shell except the named non-sensitive variables, so the agent's pairing
+  // token stays unreadable. The reported SHELL is the shell actually spawned,
+  // not the passwd preference, which can differ when the allowlist overrides it.
+  const child = pty.spawn(shell, buildShellArgv(options.command), {
+    name: DEFAULT_TERM,
     cols: options.cols,
     rows: options.rows,
     cwd,
-    env: buildChildEnvironment(cwd),
+    env: buildShellEnvironment({ ...identity, shell }, { cwd, ambient: process.env }),
   });
 
   const now = new Date().toISOString();
@@ -236,7 +252,7 @@ export async function createSession(
  * The requested shell must appear in `TERMINAL_ALLOWED_SHELLS`. Without this
  * allowlist a caller could ask for any executable on the host as the "shell".
  */
-export function resolveShell(cfg: AgentConfig, requested?: string): string {
+export function resolveShell(cfg: AgentConfig, requested?: string, preferred?: string): string {
   const allowed = cfg.TERMINAL_ALLOWED_SHELLS;
 
   if (requested) {
@@ -246,7 +262,11 @@ export function resolveShell(cfg: AgentConfig, requested?: string): string {
     return requested;
   }
 
-  const preferred = process.env.SHELL;
+  // The account's login shell from passwd, but only if the allowlist permits it.
+  // A service account's shell is often `/usr/sbin/nologin`, which must never be
+  // spawned; the allowlist is what refuses it, and the fallback below is used
+  // instead — which is exactly why the caller reports the resolved shell rather
+  // than the passwd preference as SHELL.
   if (preferred && allowed.includes(preferred)) return preferred;
 
   const fallback = allowed[0];
@@ -265,11 +285,12 @@ export function resolveShell(cfg: AgentConfig, requested?: string): string {
  * can sit outside the workspace root, though, and starting a shell there would
  * put it outside the tree the agent is scoped to — so the root is used instead
  * of escaping.
+ *
+ * The home comes from the host identity (passwd), not from `process.env.HOME`,
+ * for the same reason the environment does: the daemon's `HOME` may be unset,
+ * and its old fallback to the working directory landed a full-host shell in `/`.
  */
-async function defaultCwd(cfg: AgentConfig, root: string): Promise<string> {
-  const home = process.env.HOME ?? process.env.USERPROFILE;
-  if (!home) return root;
-
+async function defaultCwd(cfg: AgentConfig, root: string, home: string): Promise<string> {
   const relative = path.relative(root, home);
   if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return root;
 
@@ -281,34 +302,6 @@ async function defaultCwd(cfg: AgentConfig, root: string): Promise<string> {
   } catch {
     return root;
   }
-}
-
-/**
- * Builds the environment for the spawned shell.
- *
- * A minimal environment is passed rather than inheriting `process.env`
- * wholesale: the agent process holds `AETHER_PAIRING_TOKEN`, and a shell
- * running as the same user would be able to read it with a single `env`
- * command.
- */
-function buildChildEnvironment(cwd: string): Record<string, string> {
-  const user = process.env.USER ?? process.env.USERNAME ?? 'aether';
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? cwd;
-
-  return {
-    TERM: 'xterm-256color',
-    COLORTERM: 'truecolor',
-    USER: user,
-    LOGNAME: user,
-    HOME: home,
-    // The shell's own idea of its working directory. Reporting the workspace
-    // root here while the process actually starts somewhere else made `pwd`
-    // disagree with the prompt until the first `cd`.
-    PWD: cwd,
-    SHELL: process.env.SHELL ?? '/bin/bash',
-    LANG: process.env.LANG ?? 'C.UTF-8',
-    PATH: process.env.PATH ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-  };
 }
 
 function requireSession(sessionId: string): TerminalRuntime {

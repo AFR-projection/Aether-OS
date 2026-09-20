@@ -1,4 +1,5 @@
 export * from './constants.js';
+export * from './execution-environment.js';
 
 export * from './types/agent.js';
 export * from './types/api.js';

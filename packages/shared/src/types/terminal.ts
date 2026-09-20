@@ -17,6 +17,21 @@ export interface TerminalSession {
   attachedClients: number;
 }
 
+/**
+ * A session as the listing endpoint reports it.
+ *
+ * `GET /api/terminal/sessions` merges workspace and host sessions, and a client
+ * that wants to re-open a window bound to one needs to know which scope it lives
+ * in — and, for a host session, which agent owns it. Those two fields are
+ * backend bookkeeping that the bare `TerminalSession` does not carry, so they
+ * are added here rather than onto the session the PTY layer produces.
+ */
+export interface TerminalSessionSummary extends TerminalSession {
+  scope: 'workspace' | 'host';
+  /** The owning agent, for a host session. Absent for a workspace session. */
+  agentId?: string;
+}
+
 export interface CreateTerminalRequest {
   cols?: number;
   rows?: number;

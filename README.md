@@ -21,8 +21,14 @@ is not built — see [Known limitations](docs/status/KNOWN-LIMITATIONS.md).
 **Desktop shell** — window manager (drag, resize, minimize, maximise, snap), taskbar and launcher,
 notification centre, light/dark themes, session persistence across reloads.
 
-**Terminal** — a real PTY (`node-pty`) running `bash`/`sh` on the host, streamed over a WebSocket
-with a short-lived ticket rather than the access token in the URL. Multiple tabs.
+**Terminal** — a real PTY (`node-pty`) running `bash`/`sh` on the host as a **login shell**, streamed
+over a WebSocket with a short-lived ticket rather than the access token in the URL. Because it is a
+login shell, the host's own profile chain runs, so a tool a user installs into `~/.local/bin` (via a
+`curl | bash` installer, `pipx`, `cargo install`, `nvm`, `rustup`…) is on `PATH` exactly as it is
+over SSH — nothing is special-cased per tool. Its environment is built from an allowlist, never
+inherited wholesale, so no Aether secret reaches the shell. A browser refresh rediscovers and rebinds
+your live shells rather than orphaning them. Multiple tabs. See
+[docs/architecture/EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md).
 
 **Files** — browse, read, write, rename, delete, upload, download, and search the workspace tree.
 Every path is confined to `AETHER_WORKSPACE_ROOT`; nothing outside it is reachable.
