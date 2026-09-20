@@ -352,6 +352,54 @@ phase_update_safety() {
     rm -f "$lock_file"
 }
 
+# An update whose remote cannot be reached must refuse, not "succeed".
+#
+# The comparison answered "ahead" whenever the two revisions differed, and it
+# read the remote revision from FETCH_HEAD — which a failed fetch does not write.
+# So a host that could not reach its remote printed "Update available: <rev> →"
+# with nothing after the arrow, then took a full backup, rebuilt the frontend,
+# restarted the stack, and closed with "Update complete: <rev> → <rev>". Nothing
+# in that sequence was false on its own; the sum of it was a lie.
+#
+# The origin is pointed at a path that does not exist, which is what an
+# unreachable remote looks like to git, and restored afterwards.
+phase_unreachable_remote() {
+    section "Update against an unreachable remote"
+
+    local origin_url before after
+    origin_url=$(git -C "$INSTALL_DIR/src" remote get-url origin)
+    before=$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD)
+
+    git -C "$INSTALL_DIR/src" remote set-url origin /nonexistent/aether-no-such-remote.git
+
+    run_expect_failure "update with an unreachable remote is refused" aether update --yes
+    expect_contains "says there is no revision to update to" "there is no revision to update to"
+    expect_contains "offers the --no-pull repair path" "--no-pull"
+
+    after=$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD)
+    if [ "$before" = "$after" ]; then
+        pass "the refusal left the source where it was ($before)"
+    else
+        fail "the refusal left the source where it was (was $before, now $after)"
+    fi
+
+    run "update is still healthy afterwards" aether status
+
+    # A check that cannot reach the remote is not a failed check: it cannot
+    # answer, so it says that, changes nothing, and exits 0.
+    run "update --check survives an unreachable remote" aether update --check
+    expect_contains "reports the available revision as unknown" "the available revision is unknown"
+
+    git -C "$INSTALL_DIR/src" remote set-url origin "$origin_url"
+
+    run "update --check answers again once the remote is back" aether update --check
+    if text_has "$LAST_OUTPUT" "the available revision is unknown"; then
+        fail "the check no longer reports an unknown revision"
+    else
+        pass "the check no longer reports an unknown revision"
+    fi
+}
+
 phase_idempotency() {
     section "Installer idempotency"
 
@@ -643,6 +691,7 @@ main() {
     phase_backup_restore
     phase_update
     phase_update_safety
+    phase_unreachable_remote
     phase_idempotency
     phase_rollback_injection
     phase_repair
