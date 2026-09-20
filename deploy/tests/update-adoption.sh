@@ -175,6 +175,26 @@ check "the remote branch is read without a local repository" \
 check "a branch that does not exist is reported as unreachable" \
     "$(remote_branch_revision nope >/dev/null 2>&1 && echo reachable || echo unreachable)" "unreachable"
 
+section "An unreachable remote"
+# The state that made a failed fetch read as an available update: the comparison
+# answered "ahead" whenever the two revisions differed, and a failed fetch left
+# the remote revision empty — so the difference was always exactly that, and
+# `aether update` went on to back up, rebuild and restart against source that had
+# not moved, closing with "Update complete: <rev> → <rev>".
+AETHER_SRC_DIR="$INSTALL/src"
+
+check "a reachable remote with nothing new is 'same'" "$(fetch_and_compare main)" "same"
+
+git -C "$AETHER_SRC_DIR" remote set-url origin "$WORK/no-such-remote.git"
+check "an unreachable remote is answered as unknown, not as an update" \
+    "$(fetch_and_compare main 2>/dev/null)" "unknown"
+
+# "unknown" must be an answer about the remote, not the answer to every
+# question. With the remote back, the comparison still decides.
+git -C "$AETHER_SRC_DIR" remote set-url origin "$ORIGIN"
+check "the comparison answers again once the remote is reachable" \
+    "$(fetch_and_compare main)" "same"
+
 printf '\n\033[1m== Summary\033[0m\n'
 printf '  %d checks, %d failed\n\n' "$((PASS + FAIL))" "$FAIL"
 [ "$FAIL" -eq 0 ]

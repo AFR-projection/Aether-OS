@@ -7,8 +7,17 @@
 
 # `install_local_agent` (the local host agent stage) lives in its own file so it
 # can also be run on its own: deploy/lib/local-agent.sh
+#
+# Resolved from this file, not from $SCRIPT_DIR. Every other source in this tree
+# is written against the SCRIPT_DIR of the script that owns it, and install.sh
+# sets that to this directory — but `aether update` sources this file from the
+# *installed* CLI, whose SCRIPT_DIR is $AETHER_INSTALL_DIR/scripts. That
+# directory has no local-agent.sh, so every update printed
+# "finalize.sh: line 11: /opt/aether/scripts/local-agent.sh: No such file or
+# directory" and installed no agent functions. This file is the one library that
+# is sourced across trees, so it resolves its own sibling.
 # shellcheck source=./local-agent.sh
-source "$SCRIPT_DIR/local-agent.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/local-agent.sh"
 
 apply_permissions() {
     info "Hardening permissions"

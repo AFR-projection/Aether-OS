@@ -136,7 +136,9 @@ require_clean_tree() {
     fatal "Refusing to update. Commit or discard them in $AETHER_SRC_DIR first."
 }
 
-# Fetches origin/<branch> in a way that leaves ancestry intact.
+# Fetches origin/<branch> in a way that leaves ancestry intact. Non-zero means
+# the fetch itself failed — see fetch_and_compare, which must not read that as an
+# answer about the remote.
 #
 # A `--depth 1` fetch onto the installer's shallow clone leaves the local HEAD
 # and the fetched commit as two independent grafted roots with no shared
@@ -144,16 +146,21 @@ require_clean_tree() {
 # even a legitimate fast-forward. Deepening the history (--unshallow on a shallow
 # repo) makes the real parent chain visible so the fast-forward succeeds.
 fetch_origin() {
-    local branch="$1"
+    local branch="$1" git_dir
     command_exists git || fatal "git is required to update a git-based install."
-    local git_dir
     git_dir=$(git -C "$AETHER_SRC_DIR" rev-parse --git-dir 2>/dev/null || echo "$AETHER_SRC_DIR/.git")
-    if [ -f "$git_dir/shallow" ]; then
-        git -C "$AETHER_SRC_DIR" fetch --quiet --unshallow origin "$branch" 2>/dev/null \
-            || git -C "$AETHER_SRC_DIR" fetch --quiet origin "$branch"
-    else
-        git -C "$AETHER_SRC_DIR" fetch --quiet origin "$branch"
+
+    # The deepening is an optimisation on top of the fetch, never a substitute
+    # for it: a remote that cannot serve the graft — a history that was rewritten
+    # as this repository's was, an older server — still has the branch, and
+    # fetching that is what the caller asked for. Only when neither attempt
+    # reaches origin is this a failure.
+    if [ -f "$git_dir/shallow" ] &&
+        git -C "$AETHER_SRC_DIR" fetch --quiet --unshallow origin "$branch"; then
+        return 0
     fi
+
+    git -C "$AETHER_SRC_DIR" fetch --quiet origin "$branch"
 }
 
 # The revision origin/<branch> is at, read without a local repository so that
@@ -166,13 +173,33 @@ remote_branch_revision() {
     printf '%s' "${output%%[[:space:]]*}"
 }
 
-# Compares with origin/<branch> and prints the decision: "same" or "ahead".
+# Compares with origin/<branch> and prints "same", "ahead", or "unknown" when the
+# remote could not be reached and the question cannot be answered.
+#
+# "unknown" is a decision of its own, not a silent "ahead". It used to answer
+# "ahead" whenever the two revisions differed — and a failed fetch left the
+# remote revision empty, so the difference was always exactly that. On a host
+# whose remote could not be reached the operator got "Update available: <rev> →"
+# with nothing after the arrow, followed by the whole update cycle — backup,
+# frontend rebuild, restart — against source that had not changed, and a closing
+# "Update complete: <rev> → <rev>".
 fetch_and_compare() {
     local branch="$1"
-    fetch_origin "$branch"
+    if ! fetch_origin "$branch"; then
+        printf 'unknown'
+        return 0
+    fi
+
     local local_rev remote_rev
-    local_rev=$(git -C "$AETHER_SRC_DIR" rev-parse HEAD)
-    remote_rev=$(git -C "$AETHER_SRC_DIR" rev-parse FETCH_HEAD)
+    local_rev=$(git -C "$AETHER_SRC_DIR" rev-parse HEAD 2>/dev/null || true)
+    # A fetch that reported success has written FETCH_HEAD, so an empty one here
+    # is a fetch that did not do what it said. Answered as unknown rather than as
+    # a revision to move to.
+    remote_rev=$(git -C "$AETHER_SRC_DIR" rev-parse FETCH_HEAD 2>/dev/null || true)
+    if [ -z "$local_rev" ] || [ -z "$remote_rev" ]; then
+        printf 'unknown'
+        return 0
+    fi
 
     if [ "$local_rev" = "$remote_rev" ]; then
         printf 'same'
@@ -542,6 +569,12 @@ update_aether() {
             decision=$(fetch_and_compare "$AETHER_UPDATE_BRANCH")
             if [ "$decision" = "same" ]; then
                 info "Already up to date ($before_short)"
+            elif [ "$decision" = "unknown" ]; then
+                # A check that cannot reach the remote is not a failed check: it
+                # is a check that cannot answer, and it says so. Nothing was
+                # changed either way, so this is not an error exit.
+                warn "Could not fetch from $AETHER_REPO_URL, so the available revision is unknown."
+                info "The instance is unchanged. Use --no-pull to rebuild the source already on disk."
             else
                 info "Update available: $before_short → $(git -C "$AETHER_SRC_DIR" rev-parse --short FETCH_HEAD)"
             fi
@@ -575,6 +608,19 @@ update_aether() {
         if [ "$decision" = "same" ]; then
             info "Already up to date ($before_short)"
             return 0
+        fi
+        if [ "$decision" = "unknown" ]; then
+            # Stop here rather than carry on. Everything below assumes there is a
+            # revision to move to: the backup, the rebuild, the restart, and the
+            # "Update complete: X → Y" at the end. With no reachable remote, Y
+            # does not exist, and the whole cycle would run against source that
+            # had not moved while reporting that it had. Nothing has been touched
+            # at this point, so stopping costs the operator nothing.
+            error "Could not fetch from $AETHER_REPO_URL, so there is no revision to update to."
+            error "The instance is unchanged. Check DNS, the network, and that this host can"
+            error "reach $AETHER_REPO_URL — or re-run with --no-pull to rebuild the source"
+            error "already on disk."
+            fatal "Update aborted before any change."
         fi
         info "Update available: $before_short → $(git -C "$AETHER_SRC_DIR" rev-parse --short FETCH_HEAD)"
     fi
