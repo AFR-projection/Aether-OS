@@ -32,15 +32,23 @@ create_master_user() {
     # Wait for backend container to be ready
     info "Waiting for backend container to be ready..."
     local attempts=60
+    local total="$attempts" used=0
     local wait_interval=3
+    # Real denominator: a fixed number of probes, each of which either found the
+    # backend accepting a command or did not. Reported against FINALIZATION, which
+    # is the stage this runs under; on a host where the backend is slow to accept
+    # exec, this loop is minutes of otherwise unexplained waiting.
     while [ "$attempts" -gt 0 ]; do
+        ui_progress FINALIZATION "$used" "$total" "probes"
         if compose_cmd -f "$AETHER_INSTALL_DIR/docker-compose.yml" \
             exec -T backend node -e "process.exit(0)" >/dev/null 2>&1; then
             break
         fi
         attempts=$((attempts - 1))
+        used=$((used + 1))
         sleep "$wait_interval"
     done
+    ui_progress_clear FINALIZATION
 
     if [ "$attempts" -eq 0 ]; then
         error "Backend container not ready after 3 minutes"

@@ -62,6 +62,9 @@ Options:
                          read and write the entire disk through the GUI.
   --no-full-host-access  confine the host agent to its workspace directory and
                          run it unprivileged (Files shows only the workspace)
+  --quiet                no progress on screen; write only to the log file
+  --verbose              stream every command's output instead of the live panel
+  --no-animation         draw the panel without the spinner or timed repaint
   --version              show installer version
   --help                 show this message
 
@@ -83,6 +86,9 @@ parse_args() {
             --no-https) AETHER_NO_HTTPS=true; shift ;;
             --full-host-access) AETHER_FULL_HOST_ACCESS=true; AETHER_FULL_HOST_ACCESS_EXPLICIT=true; shift ;;
             --no-full-host-access) AETHER_FULL_HOST_ACCESS=false; AETHER_FULL_HOST_ACCESS_EXPLICIT=true; shift ;;
+            --quiet) AETHER_UI_QUIET=true; shift ;;
+            --verbose) AETHER_UI_VERBOSE=true; shift ;;
+            --no-animation) AETHER_UI_ANIMATION=false; shift ;;
             --version) printf '%s\n' "$AETHER_VERSION"; exit 0 ;;
             --help) usage; exit 0 ;;
             *) printf 'Unknown option: %s\n\n' "$1" >&2; usage; exit 2 ;;
@@ -102,6 +108,8 @@ parse_args() {
         AETHER_NO_HTTPS="${AETHER_NO_HTTPS:-false}" \
         AETHER_FULL_HOST_ACCESS="${AETHER_FULL_HOST_ACCESS:-true}" \
         AETHER_FULL_HOST_ACCESS_EXPLICIT="${AETHER_FULL_HOST_ACCESS_EXPLICIT:-}" \
+        AETHER_UI_QUIET="${AETHER_UI_QUIET:-}" AETHER_UI_VERBOSE="${AETHER_UI_VERBOSE:-}" \
+        AETHER_UI_ANIMATION="${AETHER_UI_ANIMATION:-}" \
         AETHER_INSTALL_DIR AETHER_SECRETS_DIR
 }
 
@@ -113,6 +121,31 @@ run_stage() {
     fi
     "$@"
     mark_done "$key"
+}
+
+# Runs on every exit. Its first duty is the one the installer always had —
+# release the lock so the next run can start. Its second, only when the rich UI
+# is active, is to guarantee a failed run ends with the error panel and a
+# restored terminal, even when the failure was a bare `set -e` abort deep in a
+# library that never reached fatal(). A run that already drew a panel — the
+# success panel, a fatal(), or an interrupt — set UI_FINALIZED, and is left
+# exactly as it was. Rich mode implies bash 4, so the stage arrays this reads are
+# real associative arrays; in plain and quiet mode fatal() already printed the
+# reason and this branch is skipped.
+on_exit() {
+    local rc=$?
+    if [ "${AETHER_UI_AVAILABLE:-false}" = "true" ] && [ "${UI_MODE:-plain}" = "rich" ] &&
+        [ "$rc" -ne 0 ] && [ "${UI_FINALIZED:-false}" != "true" ]; then
+        local stage="${UI_CURRENT_STAGE:-}" msg="${AETHER_FATAL_MESSAGE:-}"
+        if [ -z "$msg" ] && [ -n "$stage" ]; then
+            msg="${UI_STAGE_MSG[$stage]:-}"
+        fi
+        [ -n "$msg" ] || msg="the installer exited before finishing (code $rc)"
+        [ -n "$stage" ] && ui_stage_fail "$stage" "$msg" "$rc"
+        ui_error_panel "$stage" "$msg" "$rc"
+        ui_shutdown
+    fi
+    release_lock
 }
 
 main() {
@@ -127,8 +160,27 @@ main() {
     touch "$AETHER_LOG_FILE"
     chmod 600 "$AETHER_LOG_FILE" 2>/dev/null || true
 
+    # Bring the presentation layer up before anything is logged: it detects the
+    # terminal's capabilities, resets the stage registry, and points the state
+    # mirror at the install directory. When the UI files are absent (an older
+    # installation's lib directory) this is a no-op and the installer keeps its
+    # original line output.
+    if [ "${AETHER_UI_AVAILABLE:-false}" = "true" ]; then
+        ui_init
+        ui_banner
+    fi
+
     acquire_lock
-    trap 'release_lock' EXIT
+    # on_exit both releases the lock and, in rich mode, renders the failure panel
+    # for an unhandled abort. The INT and TERM traps hand off to the UI's own
+    # interrupt handler, which stops any running child, marks the stage, restores
+    # the terminal, and exits 130/143 — after which this EXIT trap still runs and
+    # releases the lock, so a Ctrl+C never strands one behind.
+    trap on_exit EXIT
+    if [ "${AETHER_UI_AVAILABLE:-false}" = "true" ]; then
+        trap 'ui_on_interrupt INT' INT
+        trap 'ui_on_interrupt TERM' TERM
+    fi
 
     info "Aether Cloud OS install ${AETHER_VERSION} (id ${AETHER_INSTALLATION_ID})"
     info "Install dir: ${AETHER_INSTALL_DIR} | Log: ${AETHER_LOG_FILE}"
@@ -158,12 +210,26 @@ main() {
         prompt_for_settings
         info "Dry run complete. Everything above would be executed on a real install."
         info "Install dir: $AETHER_INSTALL_DIR | Domain: $AETHER_DOMAIN | Email: $AETHER_ADMIN_EMAIL"
+        # A dry run exits cleanly, so the EXIT trap's failure path never runs;
+        # restore the terminal here so a rich preflight panel does not stay drawn.
+        if [ "${AETHER_UI_AVAILABLE:-false}" = "true" ]; then
+            ui_shutdown
+        fi
         exit 0
     fi
 
     # The stage total covers configure through finalize; preflight and
     # dependencies already called stage() themselves.
     run_stage preflight run_preflight
+
+    # Hand the terminal back before the conversational part of the install. In
+    # rich mode this erases the live panel and holds further repaints, so the
+    # domain, email and master-account prompts — and the existing-install prompt
+    # below — print cleanly and do not race a background log line. The next stage
+    # (dependencies) redraws the panel. In every other mode this is a no-op.
+    if [ "${AETHER_UI_AVAILABLE:-false}" = "true" ]; then
+        ui_prompt_prepare
+    fi
 
     # Interactive setup: prompt for domain (with DNS validation) and master account
     # This runs BEFORE dependencies installation so user knows what will be configured
@@ -196,8 +262,19 @@ main() {
     run_stage deploy deploy_application
     run_stage finalize finalize_installation
 
-    print_summary
     state_set status completed
+
+    # The success panel is drawn only now — after finalize_installation, which
+    # includes the health verification. It is the WOW moment the spec asks for,
+    # and it is never shown before the run actually finished. It also tears the
+    # live panel down and restores the cursor, so print_summary's credentials and
+    # next-steps block prints normally beneath it. print_summary keeps the
+    # one-time master password on screen; it is deliberately not redacted.
+    if [ "${AETHER_UI_AVAILABLE:-false}" = "true" ]; then
+        ui_success_panel "$(installation_url 2>/dev/null || true)"
+    fi
+
+    print_summary
     info "Installation complete."
 }
 

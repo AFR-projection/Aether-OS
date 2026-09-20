@@ -179,6 +179,38 @@ phase_install() {
     expect_file "$INSTALL_DIR/src/.git" "source is a git checkout (needed for updates)"
     expect_file "$INSTALL_DIR/data/workspace" "workspace directory created"
     expect_file "$INSTALL_DIR/local-agent.json" "local agent recorded"
+
+    # The install above ran with both streams redirected, so this is the case the
+    # installer's UI layer is most likely to break and the one nothing else here
+    # covers: no terminal, and a log someone will read later. The stage lines have
+    # to be the ones the installer always printed, byte for byte, with not one
+    # escape sequence among them — the requirement is that a pipe, a redirect, and
+    # CI see what they saw before the interface existed.
+    #
+    # Only the installer's own lines are checked: `[timestamp] [LEVEL] message` and
+    # the `== Stage ==` headers. A build tool writing to the same log is not the
+    # installer, and holding it to this would make the check fail for something the
+    # installer did not do.
+    local installer_lines
+    installer_lines="$(grep -E '^(\[[0-9]{4}-|== )' /tmp/aether-harness-install-1.log || true)"
+    if [ -z "$installer_lines" ]; then
+        fail "a non-TTY install still prints its own progress lines"
+    else
+        pass "a non-TTY install still prints its own progress lines"
+    fi
+    case "$installer_lines" in
+        *$'\033'*)
+            fail "a non-TTY install prints no escape sequences"
+            ;;
+        *) pass "a non-TTY install prints no escape sequences" ;;
+    esac
+
+    # The layer reaches an installation through install_cli, which is also what
+    # `aether update` runs to refresh the CLI. If these two files do not land, the
+    # panel is absent from the instance the harness just installed — and, worse,
+    # an instance installed before the layer existed would never receive it.
+    expect_file "$INSTALL_DIR/lib/ui.sh" "the UI layer reached the installed lib directory"
+    expect_file "$INSTALL_DIR/lib/ui-state.sh" "the stage registry reached the installed lib directory"
 }
 
 phase_status() {

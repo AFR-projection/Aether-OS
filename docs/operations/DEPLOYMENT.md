@@ -75,20 +75,73 @@ Runs preflight and reports what it would do, touching nothing.
 
 ### Options
 
-| Flag              | Effect                                          |
-| ----------------- | ----------------------------------------------- |
-| `--domain DOMAIN` | Public domain for TLS and routing               |
-| `--email EMAIL`   | Admin email for certificate notices             |
-| `--dir PATH`      | Install directory (default `/opt/aether`)       |
-| `--yes`           | Non-interactive; accept defaults                |
-| `--resume`        | Skip stages already completed in this directory |
-| `--dry-run`       | Validate everything, change nothing             |
-| `--no-https`      | Serve HTTP only (domain still optional)         |
-| `--version`       | Print the installer version                     |
-| `--help`          | Usage                                           |
+| Flag              | Effect                                              |
+| ----------------- | --------------------------------------------------- |
+| `--domain DOMAIN` | Public domain for TLS and routing                   |
+| `--email EMAIL`   | Admin email for certificate notices                 |
+| `--dir PATH`      | Install directory (default `/opt/aether`)           |
+| `--yes`           | Non-interactive; accept defaults                    |
+| `--resume`        | Skip stages already completed in this directory     |
+| `--dry-run`       | Validate everything, change nothing                 |
+| `--no-https`      | Serve HTTP only (domain still optional)             |
+| `--quiet`         | Nothing on screen; write only to the log file       |
+| `--verbose`       | Stream every command's output instead of the panel  |
+| `--no-animation`  | Draw the panel without the spinner or timed repaint |
+| `--version`       | Print the installer version                         |
+| `--help`          | Usage                                               |
 
 Environment overrides: `AETHER_INSTALL_DIR`, `AETHER_DOMAIN`, `AETHER_ADMIN_EMAIL`, `AETHER_YES`,
-`AETHER_RESUME`, `AETHER_FORCE_BUILD`, `AETHER_REPO_URL`, `AETHER_SETUP_URL`.
+`AETHER_RESUME`, `AETHER_FORCE_BUILD`, `AETHER_REPO_URL`, `AETHER_SETUP_URL`, `AETHER_UI_MODE`.
+
+---
+
+## The installer interface
+
+On a terminal the installer draws a live panel: the thirteen stages it will run, each with a real
+status, a real duration, and a bar. Long operations go through a runner that keeps the panel redrawn
+while the command runs, and the command's full output is written to the log file.
+
+Everything it shows is a value the run actually produced.
+
+- **The analysis rows.** Under the title is a deployment profile, and under the activity feed are
+  the facts. The profile states what is being installed — the deployment shape, the environment mode
+  read back out of the generated `.env`, the scope the host agent was paired with, and a resource
+  verdict when the measured CPU, memory or disk is below the recommended minimum. The facts state
+  what was measured: the platform, architecture, CPU, memory and free disk on one row, the Docker
+  and Compose versions on the next. A profile line appears only once the engine has observed the
+  condition it describes; before that the row is blank, and the panel will not describe a host it
+  has not measured or a deployment it has not configured.
+- **The panel fits the terminal it is drawn on.** The rows adapt rather than overflow: the runtime
+  versions are dropped below 22 rows, the activity feed gives up one of its three lines in the 22-29
+  row band to pay for them, and the profile wraps onto a second row only from 26 rows up. A frame
+  taller than the screen scrolls, which moves the text out from under the cursor the panel is
+  anchored to and tears it — the height is asserted in the test suite, not left to chance.
+- **No invented percentages.** A bar shows a percentage only where a real denominator exists — the
+  Nth package of a known list, the Nth probe of a bounded loop, the Nth container of a fixed set.
+  While a stage is still running, its percentage is held below 100; a bar that reads 100% for work
+  that has not finished is the specific lie this is built to avoid. Where there is no denominator,
+  the bar is an indeterminate sweep and the elapsed time carries the information.
+- **No assumed outcomes.** A stage that never ran says `SKIPPED` with the reason; a stage that
+  failed says `FAILED` with the exit code that happened. Nothing reports success before the work is
+  verified, and a resumed install does not downgrade an earlier success to a skip.
+- **Secrets are redacted** on their way to both the screen and the log: labelled values
+  (`PASSWORD=`, `postgres://user:pw@`, `Bearer ...`), private key blocks, and the literal values the
+  installer holds in variables — the pairing token among them. The one deliberate exception is the
+  master password in the closing summary, which is a one-time display.
+
+The interface degrades rather than fails. `--quiet` prints nothing and logs; `--verbose` is a
+pass-through that streams the raw output; `--no-animation` keeps the panel but drops the spinner and
+the timed repaint. When there is no terminal — a pipe, a redirect, CI, a `curl | bash` with output
+captured — the installer prints the same plain lines it always did, byte for byte. `NO_COLOR` and
+`TERM=dumb` are honoured, and a non-UTF-8 locale gets the same layout drawn in ASCII.
+
+Ctrl+C during a run stops the running command, records the interrupted stage as `FAILED` with the
+signal's exit code, restores the cursor, and leaves the log and the resume state intact.
+
+The interface is presentation only. It observes the stages; it does not decide them. Resume keys,
+rollback, migrations, pairing, and every other deployment behaviour are unchanged, and with the UI
+files absent — an installation created before it existed — the installer falls back to its original
+line output.
 
 ---
 

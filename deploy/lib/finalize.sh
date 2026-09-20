@@ -151,6 +151,25 @@ install_cli() {
     # need to be readable.
     install_script_file "${AETHER_INSTALL_DIR}/src/deploy/lib/core.sh" "$lib_dir/core.sh" 644
     install_script_file "${AETHER_INSTALL_DIR}/src/deploy/lib/utils.sh" "$lib_dir/utils.sh" 644
+
+    # The presentation layer core.sh sources when it finds it. This is the only
+    # place that decides what lands in an installation's lib directory, and it is
+    # used both by the installer and by `aether update` — so copying them here is
+    # what makes the UI reach an instance that was installed before it existed.
+    #
+    # Copied one at a time and skipped when absent, rather than copied
+    # unconditionally: `aether update` refreshes the CLI from the source tree it
+    # just fetched, and a tree older than this layer has neither file. A `cp` of a
+    # missing source would fail, and under `set -e` that failure would abort the
+    # whole CLI refresh — leaving the operator with the old CLI because of a
+    # cosmetic file. core.sh already handles the files being absent.
+    local ui_file
+    for ui_file in ui-state.sh ui.sh; do
+        if [ -f "${AETHER_INSTALL_DIR}/src/deploy/lib/${ui_file}" ]; then
+            install_script_file "${AETHER_INSTALL_DIR}/src/deploy/lib/${ui_file}" "$lib_dir/${ui_file}" 644
+        fi
+    done
+
     for helper in backup.sh restore.sh update.sh uninstall.sh; do
         install_script_file "${AETHER_INSTALL_DIR}/src/deploy/scripts/$helper" "$cli_dir/$helper" 755
     done
@@ -203,6 +222,14 @@ health_check() {
     domain="${AETHER_DOMAIN:-}"
     no_https="${AETHER_NO_HTTPS:-false}"
 
+    # HEALTH_CHECK is one of the two stages in the whole install with a real
+    # denominator: a fixed, known number of probes, each of which either answered
+    # or did not. So the bar carries a percentage here, and it is driven by the
+    # attempt counter that was already doing the bounding — nothing is estimated.
+    ui_stage_begin_notify HEALTH_CHECK "Health verification"
+    local total_attempts="$attempts" used=0
+    ui_progress HEALTH_CHECK "$used" "$total_attempts" "probes"
+
     # Caddy is the only ingress (the backend publishes no host port), so this
     # goes through it. With a domain, Caddy matches on Host, hence --resolve:
     # it pins the name to loopback without needing public DNS to be live yet.
@@ -223,8 +250,15 @@ health_check() {
             break
         fi
         attempts=$((attempts - 1))
+        used=$((used + 1))
+        ui_progress HEALTH_CHECK "$used" "$total_attempts" "probes"
         sleep 3
     done
+
+    # Cleared as the counted phase ends: the security check below is a different
+    # kind of work with no denominator, and leaving "7/60 probes" over it would
+    # be a stale number claiming to describe something it does not.
+    ui_progress_clear HEALTH_CHECK
 
     if [ $attempts -eq 0 ]; then
         warn "Stack is not answering on ${url}."
@@ -246,10 +280,21 @@ health_check() {
 
     # Post-install security check (contract §6.2): internal ports must NOT be
     # reachable from the host's public interfaces.
+    ui_note HEALTH_CHECK "Checking that no internal service port is exposed"
     local leaked=()
+    local listening
     for port in 5432 6379 3000; do
-        if command_exists ss && ss -ltn "( sport = :$port )" 2>/dev/null | grep -q LISTEN; then
-            leaked+=("$port")
+        # Read into a variable and test it, rather than piping into `grep -q`.
+        # The pipeline is not the same thing: `grep -q` exits at the first match,
+        # the listing on the other end is killed by SIGPIPE, and under
+        # `set -o pipefail` the pipeline then reports failure — so a port that IS
+        # listening can be reported as not listening. See `matches` in core.sh,
+        # which exists for exactly this and cost a real deployment once already.
+        if command_exists ss; then
+            listening=$(ss -ltn "( sport = :$port )" 2>/dev/null || true)
+            if matches "$listening" "LISTEN"; then
+                leaked+=("$port")
+            fi
         fi
     done
     if [ ${#leaked[@]} -gt 0 ]; then
@@ -257,6 +302,21 @@ health_check() {
     else
         info "Security check passed: no internal service ports exposed"
     fi
+
+    # Completed only here, after the whole check — not the moment the first probe
+    # answered. The message names the scheme the probe really used, so a
+    # --no-https install does not read as a TLS deployment, and it carries the
+    # port warning when there was one rather than reporting a clean bill of
+    # health over a finding the line above just raised.
+    local scheme="http"
+    if [ -n "$domain" ] && [ "$no_https" != "true" ]; then
+        scheme="https"
+    fi
+    local verdict="Caddy → backend healthy over $scheme"
+    if [ ${#leaked[@]} -gt 0 ]; then
+        verdict="$verdict · internal port exposed: ${leaked[*]}"
+    fi
+    ui_stage_done_notify HEALTH_CHECK "$verdict"
 }
 
 write_initial_deployment_metadata() {
@@ -288,10 +348,27 @@ EOF
 
 finalize_installation() {
     stage "Finalizing installation"
+
+    # FINALIZATION is the enclosing stage of the closing phase: it opens here and
+    # closes at the end of this function, and HEALTH_CHECK and HOST_AGENT are
+    # reported as sub-stages inside it. That is why its duration covers them — the
+    # phase really did take that long — while each of those two keeps its own row
+    # and its own real duration. Its message is refreshed before each step, so
+    # whichever stage is current, the operation line names what is running.
+    ui_stage_begin_notify FINALIZATION "Finalizing installation"
+
+    ui_note FINALIZATION "Hardening file permissions"
     apply_permissions
+
+    ui_note FINALIZATION "Configuring the host firewall"
     configure_firewall
+
+    ui_note FINALIZATION "Installing the management CLI"
     install_cli
+
+    ui_note FINALIZATION "Installing the systemd service unit"
     create_systemd_unit
+
     health_check
 
     # Create the master account BEFORE the host agent. The login account is what
@@ -303,6 +380,13 @@ finalize_installation() {
     # Order it so the account always exists once the stack is healthy.
     if [ -n "${AETHER_MASTER_USERNAME:-}" ] && [ -n "${AETHER_MASTER_PASSWORD:-}" ]; then
         stage "Creating master administrator account"
+        # Registered for redaction before the account is created. The one place
+        # this password is meant to be legible is print_summary's one-time
+        # display, and that prints it directly rather than through the log path —
+        # so redacting it everywhere else costs nothing and covers any line that
+        # could echo it.
+        ui_secret_add "${AETHER_MASTER_PASSWORD:-}"
+        ui_note FINALIZATION "Creating the master administrator account"
         create_master_user "$AETHER_MASTER_USERNAME" "$AETHER_MASTER_PASSWORD"
     fi
 
@@ -314,7 +398,10 @@ finalize_installation() {
     install_local_agent
 
     # Write deployment metadata after successful install
+    ui_note FINALIZATION "Recording deployment metadata"
     write_initial_deployment_metadata
+
+    ui_stage_done_notify FINALIZATION "installation finalized"
 
     mark_done finalize
 }

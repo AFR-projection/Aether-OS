@@ -107,16 +107,28 @@ wait_for_backend() {
     info "Waiting for the backend to accept connections"
 
     local attempts="${1:-60}"
+    local total="$attempts" used=0
+
+    # A real denominator: a fixed number of probes, each of which either answered
+    # with a reachable database or did not. Reported against HOST_AGENT, which is
+    # the stage this always runs under — the stack is already verified healthy by
+    # now, and what this waits for is the backend being ready to accept the
+    # pairing that is about to happen.
+    ui_note HOST_AGENT "Waiting for the backend to accept connections"
     while [ "$attempts" -gt 0 ]; do
+        ui_progress HOST_AGENT "$used" "$total" "probes"
         if compose exec -T backend node -e \
             "fetch('http://127.0.0.1:3000/api/health').then(r=>r.json()).then(j=>process.exit(j.checks&&j.checks.database&&j.checks.database.ok?0:1)).catch(()=>process.exit(1))" \
             >/dev/null 2>&1; then
             info "Backend is up and its database is reachable"
+            ui_progress_clear HOST_AGENT
             return 0
         fi
         attempts=$((attempts - 1))
+        used=$((used + 1))
         sleep 3
     done
+    ui_progress_clear HOST_AGENT
 
     fatal "The backend did not become ready. Check: aether logs --tail 100 backend"
 }
@@ -183,7 +195,11 @@ pair_local_agent() {
 
     info "Registering the local agent with the backend"
 
-    compose run --rm --no-deps \
+    # ui_run: a container start plus a database write, whose output nothing reads
+    # back. `compose` is a shell function here and ui_run takes it the same way it
+    # takes a command name.
+    ui_run "Registering the local agent with the backend" \
+        compose run --rm --no-deps \
         -e AETHER_AGENT_ID="$agent_id" \
         -e AETHER_AGENT_LABEL="Local host" \
         -e AETHER_AGENT_TOKEN_HASH="$token_hash" \
@@ -228,18 +244,28 @@ backend_log_saw_agent() {
 verify_agent_connection() {
     local agent_id="$1"
     local attempts="${2:-20}"
+    local total="$attempts" used=0
 
     info "Verifying the agent on both sides"
 
+    # A real denominator: a fixed number of checks, each of which either passed on
+    # both sides or did not. A percentage is worth showing here precisely because
+    # this is the only definition of "connected" the codebase has — the thing
+    # being counted is the thing that matters.
+    ui_note HOST_AGENT "Confirming the agent connected on both sides"
     while [ "$attempts" -gt 0 ]; do
+        ui_progress HOST_AGENT "$used" "$total" "checks"
         if agent_journal_paired && backend_log_saw_agent "$agent_id"; then
             info "Agent journal: paired with backend"
             info "Backend log: agent connected ($agent_id)"
+            ui_progress_clear HOST_AGENT
             return 0
         fi
         attempts=$((attempts - 1))
+        used=$((used + 1))
         sleep 3
     done
+    ui_progress_clear HOST_AGENT
 
     error "The agent is not confirmed connected on both sides."
     error "  agent side:   sudo journalctl -u $AETHER_AGENT_SERVICE -n 50 --no-pager"
@@ -266,11 +292,20 @@ local_agent_healthy() {
 # ---------------------------------------------------------------------------
 
 install_local_agent() {
+    # HOST_AGENT opens here and closes at the end of this function. Everything
+    # below — waiting for the backend, preparing the service account, pairing,
+    # building the runtime, confirming the connection — is this one stage; the two
+    # bounded probe loops inside it report their own real attempt counts.
+    ui_stage_begin_notify HOST_AGENT "Host agent"
+
     require_deployment
     wait_for_backend
 
     if local_agent_healthy; then
         info "The local host agent is already installed and connected"
+        # SKIPPED with the reason, not SUCCESS: nothing was built or paired in this
+        # run, and a SUCCESS here would claim that it was.
+        ui_stage_skipped_notify HOST_AGENT "already installed and connected"
         return 0
     fi
 
@@ -291,16 +326,29 @@ install_local_agent() {
 
     token_hash=$(hash_token "$token")
 
+    # Registered for redaction the moment it exists. This token grants full
+    # control of the host; the only place it is allowed to appear in the clear is
+    # the mode-600 EnvironmentFile setup-host.sh writes. Registered before the
+    # build whose output is captured to the log file, so nothing that echoes it
+    # can land there unredacted.
+    ui_secret_add "$token"
+
     # Full host access (the default): the agent runs as root over the whole
     # filesystem, so every file on this VPS shows in Files and Terminal — the
     # "real computer" experience. Confined mode runs it unprivileged, limited to
     # its workspace directory. The choice only changes the service user and the
     # workspace root handed to setup-host.sh; the pairing is identical.
+    ui_note HOST_AGENT "Preparing the agent service account"
     local agent_service_user agent_workspace
     if [ "${AETHER_FULL_HOST_ACCESS:-true}" = "true" ]; then
         agent_service_user="root"
         agent_workspace="/"
         info "Host agent scope: FULL (root, whole filesystem) — the entire VPS is manageable from the GUI"
+        # The profile line says which agent this install pairs, and the answer is
+        # decided right here, so this is where it is published — from the same
+        # variable the branch above tested, not from a second reading of the
+        # flags somewhere else that could drift out of step with it.
+        ui_profile_set agent "Host agent: root"
         # The backend container still bind-mounts <install>/data and runs as uid
         # 1001, so that directory must still be owned by 1001. prepare_data_dirs
         # (deploy stage) already did that; a root agent needs no extra identity.
@@ -308,6 +356,7 @@ install_local_agent() {
         agent_service_user="$AETHER_AGENT_USER"
         agent_workspace="$AETHER_LOCAL_WORKSPACE_DIR"
         info "Host agent scope: CONFINED (unprivileged, workspace only)"
+        ui_profile_set agent "Host agent: confined"
         ensure_agent_identity
     fi
 
@@ -321,6 +370,7 @@ install_local_agent() {
     # local-agent.json, so `aether doctor`/`status`/`repair` could not even tell
     # an agent existed here — reporting "record is missing" instead of guiding a
     # retry. Recording it first makes the failure recoverable.
+    ui_note HOST_AGENT "Recording the pairing before the runtime is built"
     write_agent_record "$agent_id"
 
     # setup-host.sh owns one implementation of: copy the source, build the
@@ -328,19 +378,27 @@ install_local_agent() {
     # and workspace chosen above decide whether this is the root full-filesystem
     # agent or the unprivileged workspace-only one.
     info "Installing the agent runtime into $AETHER_AGENT_DIR"
-    bash "$AETHER_SRC_DIR/deploy/scripts/setup-host.sh" \
+    # The long one: it copies the source and compiles the agent's native module,
+    # minutes on a 1 vCPU host, so it runs through ui_run and the panel stays
+    # live. setup-host.sh asks nothing on stdin during an install — its only read
+    # is on the uninstall path, behind a `[ -t 0 ]` test that is false under
+    # ui_run's /dev/null.
+    ui_run "Building and installing the host agent runtime" \
+        bash "$AETHER_SRC_DIR/deploy/scripts/setup-host.sh" \
         --backend-url "$(backend_ws_url)" \
         --token "$token" \
         --agent-id "$agent_id" \
         --workspace "$agent_workspace" \
         --install-dir "$AETHER_AGENT_DIR" \
         --repo-dir "$AETHER_SRC_DIR" \
-        --service-user "$agent_service_user"
+        --service-user "$agent_service_user" \
+        || fatal "The host agent runtime could not be built. Full output is in $AETHER_LOG_FILE"
 
     verify_agent_connection "$agent_id" \
         || fatal "Local host agent installation failed: the connection was not confirmed on both sides."
 
     info "Local host agent installed and verified"
+    ui_stage_done_notify HOST_AGENT "paired and verified"
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

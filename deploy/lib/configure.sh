@@ -177,6 +177,23 @@ AETHER_NO_HTTPS=${AETHER_NO_HTTPS:-false}
 AETHER_VERSION=${AETHER_VERSION}
 EOF
     chmod 600 "$env_file"
+
+    # The profile line states what this deployment is, and the environment is the
+    # only place that says so. Read back out of the file just written rather than
+    # from the heredoc above, so the panel reports what landed on disk — if the
+    # mode is ever made configurable, this line follows the file instead of
+    # quietly continuing to claim production. A value this does not recognise is
+    # printed as it is rather than rounded to the nearest known word; `${x^}`
+    # would do the tidying, and is bash 4 only, which this installer cannot be.
+    local node_env
+    node_env="$(sed -n 's/^NODE_ENV=//p' "$env_file" | head -n1)"
+    case "$node_env" in
+        production) ui_profile_set mode "Production mode" ;;
+        development) ui_profile_set mode "Development mode" ;;
+        test) ui_profile_set mode "Test mode" ;;
+        "") ui_profile_set mode "NODE_ENV unset" ;;
+        *) ui_profile_set mode "NODE_ENV ${node_env}" ;;
+    esac
 }
 
 write_instance_metadata() {
@@ -197,17 +214,60 @@ EOF
 configure_system() {
     stage "Configuring installation"
 
+    # The conversational part first, with the terminal handed back. In the normal
+    # flow the domain was already answered in interactive setup, so this prompts
+    # nothing — but if it does reach a read (a --dir install with no domain), the
+    # panel is suspended so the prompt is not drawn over. check_dns_resolution's
+    # info/warn lines land in the activity feed and appear when the panel redraws.
+    ui_prompt_prepare
     prompt_for_settings
     check_dns_resolution
 
+    # Now the file-writing work, which is what the CONFIGURATION stage shows.
+    # begin clears the prompt hold and draws the panel fresh. Nothing here has a
+    # real denominator — mkdir, secret generation and a heredoc are straight-line
+    # statements — so there is no progress bar, only notes.
+    ui_stage_begin_notify CONFIGURATION "System configuration"
+
+    # Publish the two config choices the operator just settled. These are not
+    # host measurements, so they belong here and not in preflight; ui_fact_set
+    # no-ops on an empty value, so IP-only mode simply omits the domain fact.
+    if [ -n "${AETHER_DOMAIN:-}" ]; then
+        ui_fact_set domain "$AETHER_DOMAIN"
+    fi
+    if [ "${AETHER_NO_HTTPS:-false}" = "true" ]; then
+        ui_fact_set tls "HTTP only"
+    else
+        ui_fact_set tls "HTTPS (Let's Encrypt)"
+    fi
+
+    ui_note CONFIGURATION "Preparing directories under $AETHER_INSTALL_DIR"
     mkdir -p "$AETHER_INSTALL_DIR/data/workspace" "$AETHER_INSTALL_DIR/data/uploads"
     mkdir -p "$AETHER_INSTALL_DIR/logs" "$AETHER_INSTALL_DIR/backups"
     mkdir -p "$AETHER_INSTALL_DIR/caddy" "$AETHER_INSTALL_DIR/secrets"
     chmod 700 "$AETHER_INSTALL_DIR/secrets"
 
+    ui_note CONFIGURATION "Generating secrets"
     generate_all_secrets
+
+    # Register the generated secrets for redaction before the .env that contains
+    # them is written and before any later log line could echo one. generate_all_secrets
+    # already logs names only, but this adds literal-value redaction everywhere.
+    # The instance id is deliberately not registered — it is not a secret and is
+    # meant to stay legible in logs and instance.json for support.
+    ui_secret_add "${SECRET_DB_PASSWORD:-}"
+    ui_secret_add "${SECRET_REDIS_PASSWORD:-}"
+    ui_secret_add "${SECRET_JWT:-}"
+    ui_secret_add "${SECRET_ENCRYPTION_KEY:-}"
+    ui_secret_add "${SECRET_SESSION:-}"
+    ui_secret_add "${SECRET_BOOTSTRAP_TOKEN:-}"
+
+    ui_note CONFIGURATION "Writing environment file"
     generate_env_file
+
+    ui_note CONFIGURATION "Recording instance metadata"
     write_instance_metadata
 
     info "Configuration written to $AETHER_INSTALL_DIR"
+    ui_stage_done_notify CONFIGURATION "Configuration written to $AETHER_INSTALL_DIR"
 }

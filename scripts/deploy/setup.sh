@@ -20,12 +20,69 @@ set -euo pipefail
 AETHER_REPO_URL="${AETHER_REPO_URL:-https://github.com/AFR-projection/Aether-OS.git}"
 AETHER_SETUP_URL="${AETHER_SETUP_URL:-https://raw.githubusercontent.com/AFR-projection/Aether-OS/main/scripts/deploy/setup.sh}"
 
+# Whether the wordmark is drawn at all. Only --quiet sets this, and it is read
+# here rather than by the installer because the banner is drawn before the
+# installer exists. The installer parses the same flag from the same argv.
+AETHER_UI_QUIET=false
+
 info() { printf '\033[0;36m[INFO]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[0;33m[WARN]\033[0m %s\n' "$*" >&2; }
 error() { printf '\033[0;31m[ERROR]\033[0m %s\n' "$*" >&2; }
 fatal() {
     error "$@"
     exit 1
+}
+
+# --- Presentation -----------------------------------------------------------
+# The first thing the operator sees, and it is drawn here rather than by the
+# installer because this script runs for seconds before the installer exists —
+# it clones the repository. Making the one-liner sit silent through that download
+# and only then draw a wordmark would put the branding in the wrong place: the
+# wait is the first thing that happens, so it is the thing that needs to look
+# deliberate.
+#
+# Deliberately self-contained. Nothing in the repository can be sourced yet, so
+# the capability test and the few escape sequences are repeated here instead of
+# shared. It says AETHER_UI_BANNER_SHOWN so the installer does not draw a second
+# wordmark two lines below this one.
+print_banner() {
+    [ "$AETHER_UI_QUIET" != "true" ] || return 0
+    # Non-TTY gets nothing: this is output meant for a person, and a redirect, a
+    # CI log, and a pipe all have somewhere better to put the bytes.
+    [ -t 1 ] || return 0
+    case "${TERM:-}" in
+        "" | dumb) return 0 ;;
+    esac
+
+    local colour="" bold="" dim="" reset="" rule="-" width cols
+    if [ -z "${NO_COLOR:-}" ]; then
+        colour=$'\033[38;5;39m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
+    fi
+    case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+        *UTF-8* | *UTF8* | *utf-8* | *utf8*) rule='─' ;;
+    esac
+
+    cols="${COLUMNS:-}"
+    if [ -z "$cols" ] && command -v tput >/dev/null 2>&1; then
+        cols="$(tput cols 2>/dev/null || true)"
+    fi
+    case "$cols" in
+        '' | *[!0-9]*) cols=80 ;;
+    esac
+    # The same clamp ui_term_width applies, so the rule below is the same length
+    # as the one the installer's own banner draws a moment later. Two rules of
+    # different lengths two lines apart is the kind of detail that reads as a bug.
+    [ "$cols" -lt 64 ] && cols=64
+    [ "$cols" -gt 100 ] && cols=100
+    width=$cols
+
+    printf '\n%s%s  AETHER CLOUD OS%s\n' "$bold" "$colour" "$reset"
+
+    local line
+    printf -v line '%*s' "$width" ''
+    printf '%s  %s%s\n' "$dim" "${line// /$rule}" "$reset"
+
+    export AETHER_UI_BANNER_SHOWN=true
 }
 
 # --- Privileges ------------------------------------------------------------
@@ -136,7 +193,18 @@ resolve_repo() {
 }
 
 main() {
+    local arg
+    for arg in "$@"; do
+        if [ "$arg" = "--quiet" ]; then
+            AETHER_UI_QUIET=true
+        fi
+    done
+
     require_root
+
+    # After require_root, so the re-launched root process is the one that draws
+    # it and the operator sees one wordmark, not two.
+    print_banner
 
     # resolve_repo prints the path on fd 1 and, when it clones, records the temp
     # dir in AETHER_CLONE_DIR. Capturing its stdout with `$(...)` would run it in

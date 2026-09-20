@@ -207,6 +207,52 @@ services — needs root. That is the deliberate difference: privilege is granted
 operator explicitly opted into running an agent on a host they own, using a token they copied
 themselves. Do not read the local agent's hardening as a property of the product as a whole.
 
+### 21. The installer's progress bar is indeterminate more often than it is a percentage
+
+The installer draws a live panel on a terminal. Its bar shows a percentage only where a real
+denominator exists: the Nth package of a known list, the Nth probe of a bounded loop, the Nth
+container of a fixed set. An image build, an npm install, and a certificate issuance have no such
+denominator, and inventing one is the thing the interface was built to avoid — so those show an
+indeterminate sweep with the real elapsed time and the command's own last line of output instead. An
+operator expecting a smooth 0-100 across a whole install will not get one. That is the design, not a
+gap to be closed later.
+
+The rest of the panel's honest limits:
+
+- **Durations are whole seconds**, truncated. A stage that took 900 ms shows `0s`.
+- **The layout is clamped to 80 columns**, between 64 and 100. A terminal narrower than 64 columns
+  gets a panel wider than the window; nothing reflows below that.
+- **The panel repaints at most every 0.4 s while a command runs**, and only when the rendered frame
+  actually changed. That is a `tail` of the run log per poll — deliberate, but non-zero, on the 1
+  vCPU host this is sized for.
+- **An interrupted run leaves not-yet-reached stages as `WAITING`** in `state/ui.state`. Only a
+  completed run settles them. `WAITING` is the truth: those stages really were not reached.
+- **`state/ui.state` is a report, not a resume mechanism.** Resume still reads `install.state` and
+  its six stage keys, exactly as before. Deleting `ui.state` costs nothing but the panel's memory of
+  the run.
+- **The panel is drawn from a fixed vocabulary of thirteen stages** that does not change with the
+  install's actual shape. On a host that already has Docker the dependency work is smaller; the row
+  is still there, and it says `SKIPPED` with the reason rather than disappearing.
+- **The analysis rows are traded against the terminal's height, not added to it.** The Docker and
+  Compose versions need a row, and a 24-row SSH window has none to spare, so they are paid for by
+  one of the activity feed's three lines — the feed runs three lines from 30 rows up, two from 22,
+  one below that, and the runtime versions are dropped entirely under 22 rows. The deployment
+  profile wraps onto a second row only from 26 rows up; in a narrow window below that the last item
+  is cut, marked with an ellipsis, and on the values this is written against all four items fit one
+  row of an 80-column terminal exactly — with no column to spare, a 64-79 column window will not fit
+  them.
+- **The profile says nothing about resources when the host meets the recommended minimums.** The
+  measured numbers are on the facts row; a standing "meets recommended" would spend the width saying
+  nothing. Only the shortfall is named.
+- **The activity feed is not a log.** It keeps the last few lines in memory and drops the rest; the
+  log file is the record. A line you saw scroll past is in `logs/install.log`, not in the panel.
+- **The Unicode decision is made from the locale, not from the terminal.** A UTF-8 locale is taken
+  to mean a terminal that renders box-drawing characters and `·`; a serial console or a font-less
+  terminal behind a UTF-8 locale still gets them, and the panel would draw mojibake. Nothing in a
+  shell script can ask a terminal what its font supports. Where the locale says otherwise, every
+  character it draws — borders, status glyphs, separators, the truncation mark — falls back to
+  ASCII, and the plain non-TTY path emits none of them at all.
+
 ---
 
 ## Versioning
@@ -234,3 +280,13 @@ read that reached `/etc`. Everything that could be checked without Docker was: s
 script, and `pnpm typecheck`, `lint`, `test`, and `build` across the workspace. Treat a first
 production install as something to watch, and run the harness on a throwaway host before trusting
 the update path on one that matters.
+
+The installer interface (limitation #21) is covered separately by `deploy/tests/installer-ui.sh`,
+which drives the real renderer and the real stage registry against eighteen guarantees — the
+plain-path fallbacks, the percentage rules, failure reporting, redaction, the interrupt path, and
+the height of the frame on a 24-row terminal. It needs only bash and runs in the `deploy` job of CI.
+Four of its cases need a pseudo-terminal and are reported as **skipped** where there is no `script`
+command (Git Bash, for one); a skip is never counted as a pass, and the summary prints passed,
+failed, and skipped as three separate numbers. What none of that covers is a real terminal on a real
+host: the pseudo-terminal cases exercise the detection, not the drawing, so the panel's appearance
+on an actual SSH session has not been verified here.

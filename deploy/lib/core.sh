@@ -64,10 +64,75 @@ fi
 AETHER_INSTALLATION_ID="${AETHER_INSTALLATION_ID:-unknown}"
 
 # ---------------------------------------------------------------------------
+# UI layer
+# ---------------------------------------------------------------------------
+# The installer's presentation layer. ui-state.sh must load first — ui.sh calls
+# into it. Both are optional: an installation created before this existed has
+# neither file in its lib directory, and core.sh there is expected to keep
+# working. When they are absent AETHER_UI_AVAILABLE stays false and _log/stage
+# fall back to exactly the output they produced before, so nothing that sources
+# core.sh — the installer or the standalone CLI — changes behaviour.
+#
+# Loading the UI does not activate it: the entry point that wants the live panel
+# calls ui_init. Until then UI_MODE is "plain", which reproduces the line output,
+# so `aether status`, `aether doctor`, uninstall, backup and restore look the
+# same as always while still gaining secret redaction on their log lines.
+if [ -f "$AETHER_LIB_DIR/ui-state.sh" ] && [ -f "$AETHER_LIB_DIR/ui.sh" ]; then
+    # shellcheck source=./ui-state.sh
+    source "$AETHER_LIB_DIR/ui-state.sh"
+    # shellcheck source=./ui.sh
+    source "$AETHER_LIB_DIR/ui.sh"
+    AETHER_UI_AVAILABLE=true
+else
+    AETHER_UI_AVAILABLE=false
+    # The stage libraries call the engine-facing UI functions directly, so those
+    # names must resolve even when the UI files are absent from this lib
+    # directory — an installation created before the UI layer existed, updated in
+    # place, has core.sh but not ui.sh. Under `set -u`/`set -e` an undefined
+    # function is a fatal "command not found", so define passthrough shims.
+    #
+    # ui_run is the one that matters: it *runs* the operation, so its shim must
+    # execute the command and return the real exit code, not swallow it. The rest
+    # are pure presentation and become no-ops. This is the same behaviour the
+    # installer had before instrumentation — a plain command, run directly.
+    #
+    # This list has to hold every ui_* name the stage libraries call, and it is
+    # the one thing here that goes stale silently: a new UI function called from
+    # preflight/dependencies/configure/deploy/finalize/local-agent without a shim
+    # added below is fine on a fresh install and "command not found" — fatal under
+    # set -e — on an installation updated in place from one that predates ui.sh.
+    # Re-check with:
+    #
+    #   for f in $(grep -hoE '\bui_[a-z_]+[ (]' deploy/lib/{preflight,dependencies,configure,deploy,finalize,local-agent,create-master-user}.sh | grep -oE 'ui_[a-z_]+' | sort -u); do
+    #       grep -qE "^$f\(\)" deploy/lib/ui.sh || grep -qE "^    $f\(\)" deploy/lib/core.sh || echo "unshimmed: $f"
+    #   done
+    #
+    # deploy/tests/installer-ui.sh asserts the same thing, so the count is checked
+    # rather than remembered.
+    ui_run() { shift; [ "$#" -gt 0 ] || return 0; "$@"; }
+    ui_stage_begin_notify() { :; }
+    ui_stage_done_notify() { :; }
+    ui_stage_failed_notify() { :; }
+    ui_stage_skipped_notify() { :; }
+    ui_stage_skip_range() { :; }
+    ui_note() { :; }
+    ui_progress() { :; }
+    ui_progress_clear() { :; }
+    ui_fact_set() { :; }
+    ui_profile_set() { :; }
+    ui_secret_add() { :; }
+    ui_prompt_prepare() { :; }
+fi
+
+# ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 _log() {
     local level="$1"; shift
+    if [ "$AETHER_UI_AVAILABLE" = true ]; then
+        ui_write_log "$level" "$*"
+        return 0
+    fi
     local ts
     ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     printf '[%s] [%s] %s\n' "$ts" "$level" "$*" | tee -a "$AETHER_LOG_FILE"
@@ -76,7 +141,26 @@ _log() {
 info()  { _log "INFO " "$@"; }
 warn()  { _log "WARN " "$@"; }
 error() { _log "ERROR" "$@"; }
-fatal() { _log "FATAL" "$@"; exit 1; }
+# A fatal error must leave the terminal usable and say why it failed exactly
+# once. During a rich install the live panel owns the bottom of the screen and
+# hides the cursor, so the message is not printed over it: it is recorded to the
+# log file, stashed for the installer's EXIT trap to render as the error panel
+# (which tears the panel down and restores the cursor), and the process exits.
+# Routing it through _log instead would push the line into the activity feed and
+# repaint the very panel the teardown is about to erase.
+#
+# When the UI is not active — a bash-3 host, or any standalone CLI command that
+# sources core.sh but never calls ui_init, so UI_MODE is still "plain" — this is
+# the original behaviour: the message is printed and the process exits 1.
+fatal() {
+    if [ "${AETHER_UI_AVAILABLE:-false}" = true ] && [ "${UI_MODE:-plain}" = "rich" ]; then
+        AETHER_FATAL_MESSAGE="$*"
+        ui_log_line "FATAL" "$*"
+        exit 1
+    fi
+    _log "FATAL" "$@"
+    exit 1
+}
 
 # ---------------------------------------------------------------------------
 # Lock file — prevents concurrent installs.
@@ -142,14 +226,21 @@ mark_done() {
 # ---------------------------------------------------------------------------
 # Progress display
 # ---------------------------------------------------------------------------
-# The maximum number of stages a full install prints. A host that already has
-# Docker skips "Installing Docker Engine" and finishes at 6 — the counter never
-# exceeds the total, because a denominator that is too small reads as a bug.
+# The installer proper drives the UI directly with ui_stage_* by id. stage()
+# survives for the standalone CLI — uninstall, backup, restore, update — which
+# prints a single free-text header per operation and never runs the live panel.
+# On the off chance one of those runs under an active panel (it does not today),
+# the header is routed through the log/activity path so it cannot corrupt a
+# frame; otherwise it prints the same bold line it always did.
 STAGE_TOTAL=7
 STAGE_CURRENT=0
 
 stage() {
     STAGE_CURRENT=$((STAGE_CURRENT + 1))
+    if [ "${AETHER_UI_AVAILABLE:-false}" = true ] && [ "${UI_MODE:-plain}" = "rich" ]; then
+        info "$*"
+        return 0
+    fi
     printf '\n\033[1m[%d/%d] %s\033[0m\n' "$STAGE_CURRENT" "$STAGE_TOTAL" "$*"
 }
 
@@ -160,6 +251,13 @@ confirm() {
     local prompt="${1:-Continue?}"
     if [ "${AETHER_YES:-false}" = "true" ]; then
         return 0
+    fi
+    # Hand the terminal back before prompting: a live panel hides the cursor and
+    # owns the lines at the bottom of the screen, and a y/N read underneath an
+    # invisible cursor is how a "hung" installer gets reported. The panel redraws
+    # itself on the next state change.
+    if [ "${AETHER_UI_AVAILABLE:-false}" = true ]; then
+        ui_prompt_prepare
     fi
     printf '%s [y/N]: ' "$prompt"
     read -r answer

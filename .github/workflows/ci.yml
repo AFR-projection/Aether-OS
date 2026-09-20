@@ -186,6 +186,20 @@ jobs:
       - name: Agent verification harness
         run: bash deploy/tests/agent-verification.sh
 
+      # The installer's eighteen UI guarantees. Every one of them fails silently
+      # in production — a percentage that is not real, a stage that claims SUCCESS
+      # for work that did not happen, a secret on the screen, a terminal left
+      # broken after Ctrl+C, a panel that outgrows the terminal and tears, a UI
+      # call with no shim for an installation that predates the UI layer — so they
+      # are asserted here against the real renderer and the real stage registry
+      # rather than left to review.
+      #
+      # The runner's stdout is not a terminal, so the four pseudo-terminal cases
+      # (2-5) exercise a real pty through `script`; where that is unavailable they
+      # are reported as skipped and never counted as passes.
+      - name: Installer UI harness
+        run: bash deploy/tests/installer-ui.sh
+
   build:
     name: Build
     runs-on: ubuntu-latest

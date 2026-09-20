@@ -43,6 +43,11 @@ check_platform() {
         x86_64|amd64) info "Detected architecture: $arch (supported)" ;;
         *) fatal "Unsupported CPU architecture: $arch. Aether currently supports x86_64 (amd64) only." ;;
     esac
+
+    # Real measurements, published for the panel's facts line. os_id is
+    # guaranteed "ubuntu" here — a non-Ubuntu id already hit fatal above.
+    ui_fact_set platform "Ubuntu ${os_version}"
+    ui_fact_set arch "$arch"
 }
 
 check_init_system() {
@@ -62,6 +67,14 @@ check_resources() {
     disk_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
 
     info "CPU: ${cpu_cores} cores | RAM: ${ram_mb} MB | Disk: ${disk_gb} GB free"
+
+    # The measured host, published before the hard blocks so the numbers on the
+    # panel are exactly the ones tested against the floor below. A host that then
+    # fails a floor has its dashboard torn down by fatal(), so a fact is only ever
+    # rendered for a host that passed — truthful either way.
+    ui_fact_set cpu "${cpu_cores} vCPU"
+    ui_fact_set ram "${ram_mb} MB"
+    ui_fact_set disk "${disk_gb} GB free"
 
     # Hard blocks first. RAM is not among them — see below.
     if [ "$cpu_cores" -lt "$MIN_BLOCK_CPU_CORES" ]; then
@@ -89,6 +102,22 @@ check_resources() {
         # ran without a terminal to answer on.
         warn "Free disk is ${disk_gb} GB, below the recommended ${MIN_RECOMMENDED_DISK_GB} GB. Proceeding."
         warn "Keep an eye on usage: aether backup archives accumulate under ${AETHER_INSTALL_DIR}/backups."
+    fi
+
+    # The deployment profile's resource verdict, from the numbers measured above
+    # and the same three thresholds the warnings used, so the panel cannot call a
+    # host resource-constrained that this function judged healthy, or the reverse.
+    #
+    # Nothing is published when the host meets the recommended minimums. The
+    # measured numbers are on the facts line already, and a bullet that appears
+    # only when something is tight reads as exactly what it is; a standing "meets
+    # recommended resources" would spend the line's width saying nothing. It is
+    # published first among the profile items because the line truncates on a
+    # narrow terminal and this is the one item that changes what to expect.
+    if [ "$cpu_cores" -lt "$MIN_RECOMMENDED_CPU_CORES" ] ||
+        [ "$ram_mb" -lt "$MIN_RECOMMENDED_RAM_MB" ] ||
+        [ "$disk_gb" -lt "$MIN_RECOMMENDED_DISK_GB" ]; then
+        ui_profile_set resources "Constrained VPS"
     fi
 }
 
@@ -262,15 +291,49 @@ check_existing_installation() {
 }
 
 run_preflight() {
+    # PRECHECK is a sequence of heterogeneous, sub-second gates, not a uniform
+    # set being iterated — there is no honest denominator here, so there is no
+    # progress bar. Each note names the check about to run; the indeterminate bar
+    # and the live elapsed clock carry the rest. A blocking check calls fatal(),
+    # which exits, so the EXIT trap marks this stage FAILED with the real reason.
+    ui_stage_begin_notify PRECHECK "Preflight checks"
     info "Running preflight checks…"
+
+    ui_note PRECHECK "Verifying required tools (curl, openssl)"
     require_command curl
     require_command openssl
+
+    ui_note PRECHECK "Checking OS and architecture"
     check_platform
+
+    ui_note PRECHECK "Checking init system"
     check_init_system
+
+    ui_note PRECHECK "Measuring CPU, memory and disk"
     check_resources
+
+    # Not a measurement: this installer brings the entire stack — backend,
+    # frontend, PostgreSQL, Redis, Caddy and the host agent — up as containers on
+    # the machine it runs on, so every install it produces is single-node. It is
+    # published rather than assumed because the panel is describing the
+    # deployment, and it is published after check_resources so the resource
+    # verdict, when there is one, comes first on a truncating line.
+    ui_profile_set topology "Single-node"
+
+    ui_note PRECHECK "Checking privileges"
     check_permissions
+
+    ui_note PRECHECK "Validating install directory"
     check_install_dir
+
+    ui_note PRECHECK "Checking ports 80 and 443"
     check_ports
+
+    ui_note PRECHECK "Testing outbound HTTPS connectivity"
     check_network
+
+    ui_note PRECHECK "Checking for an existing installation"
     check_existing_installation || true
+
+    ui_stage_done_notify PRECHECK "host meets requirements"
 }
