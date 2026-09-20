@@ -451,6 +451,30 @@ roll_back() {
 
     reset_to_revision "$prev_revision"
 
+    # Rebuild from the source that was just restored, before the data goes back
+    # and the stack is started. The image the failed update built is still on
+    # disk, and everything that follows — the restore's `compose up -d`, and any
+    # later restart — reuses it, so reverting the tree alone leaves the instance
+    # serving the new build under a source tree that says otherwise. That is the
+    # difference between claiming a rollback and performing one: a build that
+    # cannot start cannot be rolled back by putting the source back, because the
+    # source is not what runs.
+    #
+    # No --pull, unlike the update's own build: the point is to rebuild from the
+    # restored source, not to refresh base images, and a rollback that needs the
+    # registry cannot run on a host whose network or registry is why the update
+    # failed. The layers built before the update are still cached, so this is
+    # normally seconds rather than the minutes the update's own build took.
+    #
+    # A failure here is reported and the rollback continues to the data: the
+    # backup is the one thing the operator cannot rebuild, so it is restored
+    # either way.
+    stage "Rebuilding the backend from the restored source"
+    if ! compose build backend; then
+        warn "The backend image could not be rebuilt from the restored source."
+        warn "The instance may still be running the build that failed. After fixing: aether repair"
+    fi
+
     if [ -n "$archive" ] && [ -f "$archive" ]; then
         stage "Restoring the pre-update backup"
         if AETHER_INSTALL_DIR="$AETHER_INSTALL_DIR" AETHER_YES=true bash "$SCRIPT_DIR/restore.sh" "$archive"; then
