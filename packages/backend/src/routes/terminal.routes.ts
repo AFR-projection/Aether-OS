@@ -13,6 +13,8 @@ import {
   getOwnedHostSession,
   killHostSession,
   listHostSessionsForUser,
+  resizeHostSession,
+  writeHostInput,
 } from '../services/host-terminal.service.js';
 import {
   createSession,
@@ -121,9 +123,19 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
     return reply.status(201).send({ data: session });
   });
 
+  // These three carry the same session id as the socket path and must serve
+  // both scopes, exactly as the socket does. A host-scope session is a shell on
+  // the agent, so it lives in host-terminal.service and not in the local
+  // registry; looking it up locally only finds nothing and answers 404 for a
+  // session the caller owns and can see in `GET /api/terminal/sessions`. The
+  // delete handler below already branches this way.
   app.get('/api/terminal/sessions/:id', { preHandler: guards }, (request) => {
     const principal = requirePrincipal(request);
     const params = parseOrThrow(terminalIdParamSchema, request.params, 'session id');
+
+    const hostRecord = getOwnedHostSession(params.id, principal.user.id);
+    if (hostRecord !== null) return { data: hostRecord.session };
+
     return { data: getOwnedSession(params.id, principal.user.id) };
   });
 
@@ -132,7 +144,13 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
     const params = parseOrThrow(terminalIdParamSchema, request.params, 'session id');
     const body = parseOrThrow(terminalInputBodySchema, request.body, 'terminal input');
 
-    writeInput(params.id, principal.user.id, body.data);
+    // A host frame has to travel back over the agent connection, so it is
+    // written asynchronously; a local one is applied to the in-process PTY.
+    if (getOwnedHostSession(params.id, principal.user.id) !== null) {
+      await writeHostInput(params.id, principal.user.id, body.data);
+    } else {
+      writeInput(params.id, principal.user.id, body.data);
+    }
     return reply.status(204).send();
   });
 
@@ -141,7 +159,11 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
     const params = parseOrThrow(terminalIdParamSchema, request.params, 'session id');
     const body = parseOrThrow(resizeBodySchema, request.body, 'terminal resize');
 
-    resizeSession(params.id, principal.user.id, body.cols, body.rows);
+    if (getOwnedHostSession(params.id, principal.user.id) !== null) {
+      await resizeHostSession(params.id, principal.user.id, body.cols, body.rows);
+    } else {
+      resizeSession(params.id, principal.user.id, body.cols, body.rows);
+    }
     return reply.status(204).send();
   });
 
