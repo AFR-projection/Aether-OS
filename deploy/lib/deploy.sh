@@ -83,6 +83,15 @@ build_frontend_bundle() {
         return 0
     fi
 
+    # FRONTEND is opened here and closed below, which is what the stage-ownership
+    # note in deploy_application says it does. It did not: only the done and
+    # skipped notifications were ever sent, so a real install closed this stage
+    # with no start time at all — the panel drew a tick with no duration, and
+    # while the bundle was building for fourteen minutes the row still read as
+    # not-yet-reached. A missing open is invisible in the final panel and wrong
+    # in the live one.
+    ui_stage_begin_notify FRONTEND "Building the frontend bundle"
+
     stage "Building frontend bundle"
     # ui_run is applied here, at the call site, not inside
     # install_frontend_bundle. That function is also called by `aether update`

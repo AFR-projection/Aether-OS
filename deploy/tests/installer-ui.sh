@@ -674,6 +674,117 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 19. A stage's recorded span covers the whole stage
+# ---------------------------------------------------------------------------
+# Four defects found by running the installer on a real host, none of which any
+# amount of reading the source had surfaced, and each of which made a number on
+# the panel mean something other than what it said:
+#
+#   * CADDY drew "5s" for a stage that had been running for eighteen minutes,
+#     because wait_for_service reopened a stage deploy_application had already
+#     opened and the reopen restarted the clock;
+#   * FRONTEND drew a tick with no duration at all, because nothing ever opened
+#     it — only the done and skipped notifications were ever sent;
+#   * "Stage completed: finalize" was logged twice, in the same second, because
+#     finalize_installation called mark_done for a key run_stage already marks;
+#   * every long command's output appeared twice in the log, because a child that
+#     sources core.sh writes its own lines to the shared log and ui_run then
+#     replayed its captured output on top.
+section "19. A stage's recorded span covers the whole stage"
+if [ "$HAVE_BASH4" != "true" ]; then
+    skip "the stage registry needs bash 4 associative arrays (bash ${BASH_VERSINFO[0]:-0} here)"
+else
+    ui_reset
+
+    # CADDY is the stage this happened to. It is opened by deploy_application
+    # before the Caddyfile exists and reopened by wait_for_service when the proxy
+    # is probed, so a reopen that restarts the clock reports only the last slice.
+    # A registered id, not an invented one: the state file is written from the
+    # registry, so an unknown id is never flushed and the assertions below would
+    # compare two empty strings and pass without testing anything.
+    ui_stage_begin CADDY "Reverse proxy and TLS"
+    FIRST_START="$(state_field CADDY 4)"
+    sleep 2
+    ui_stage_begin CADDY "Reverse proxy and TLS"
+    expect_eq "reopening a running stage keeps its original start" "$FIRST_START" "$(state_field CADDY 4)"
+
+    ui_stage_done_notify CADDY "healthy"
+    SPAN=$(( $(state_field CADDY 5) - $(state_field CADDY 4) ))
+    if [ "$SPAN" -ge 2 ]; then
+        ok "and its span covers the whole stage, not the last slice (${SPAN}s)"
+    else
+        fail "the reopen restarted the clock: span is ${SPAN}s for a stage that ran at least 2s"
+    fi
+
+    # The other half: a stage reopened after it finished is a new pass, and its
+    # span has to describe that pass rather than inheriting the old start. The
+    # end is read before the reopen, because a begin clears it.
+    PREV_END="$(state_field CADDY 5)"
+    ui_stage_begin CADDY "a new pass"
+    if [ "$(state_field CADDY 4)" -ge "$PREV_END" ]; then
+        ok "a stage reopened after finishing gets a new start"
+    else
+        fail "a stage reopened after finishing kept the old start, so its span is a lie"
+    fi
+
+    # FRONTEND has to be opened by the function that owns it. The stage-ownership
+    # note in deploy_application says build_frontend_bundle opens it; this is what
+    # holds that note to being true.
+    FRONTEND_BODY="$(awk '/^build_frontend_bundle\(\)/,/^}/' "$REPO_DIR/deploy/lib/deploy.sh")"
+    case "$FRONTEND_BODY" in
+        *ui_stage_begin_notify\ FRONTEND*)
+            ok "build_frontend_bundle opens the FRONTEND stage it closes" ;;
+        *)
+            fail "build_frontend_bundle never opens FRONTEND, so it has no start time and no duration" ;;
+    esac
+
+    # run_stage marks whatever function it ran. A function that also marks itself
+    # logs the completion twice — same second, twice in the log, twice on screen.
+    DUPLICATE_MARKS=""
+    while read -r KEY FN; do
+        [ -n "$KEY" ] && [ -n "$FN" ] || continue
+        BODY="$(awk "/^${FN}\\(\\)/,/^}/" "$REPO_DIR/deploy/lib/"*.sh 2>/dev/null)"
+        case "$BODY" in
+            *"mark_done ${KEY}"* | *"mark_done \"${KEY}\""*)
+                DUPLICATE_MARKS+="mark_done ${KEY} is called by ${FN}(), but run_stage already marks '${KEY}'; " ;;
+        esac
+    done <<<"$(grep -hE '^[[:space:]]*run_stage [a-z_]+ [a-z_]+' "$REPO_DIR/deploy/lib/install.sh" |
+        sed -E 's/^[[:space:]]*run_stage ([a-z_]+) ([a-z_]+).*/\1 \2/')"
+    if [ -z "$DUPLICATE_MARKS" ]; then
+        ok "no stage is marked done twice for one run"
+    else
+        fail "$DUPLICATE_MARKS"
+    fi
+
+    # The capture appends what a child printed without core.sh, and drops the
+    # lines core.sh already wrote for it. Asserted on the log file, because that
+    # is what an operator reads back after a failure.
+    CAPTURE="$WORK/capture.log"
+    printf '%s\n' \
+        '[2000-01-01T00:00:00Z] [INFO ] already written by the child itself' \
+        'the compiler said something raw' \
+        'another raw line' >"$CAPTURE"
+    ui_reset
+    ui_log_capture "$CAPTURE" "a test command"
+    if grep -qF 'already written by the child itself' "$AETHER_LOG_FILE"; then
+        fail "the capture replayed a line core.sh had already logged"
+    else
+        ok "the capture drops lines the child already logged through core.sh"
+    fi
+    if grep -qF 'the compiler said something raw' "$AETHER_LOG_FILE" &&
+        grep -qF 'another raw line' "$AETHER_LOG_FILE"; then
+        ok "and keeps every line the child printed outside core.sh"
+    else
+        fail "the capture dropped raw output the log exists to keep"
+    fi
+    if grep -qF -- '--- a test command ---' "$AETHER_LOG_FILE"; then
+        ok "and still names the operation the output came from"
+    else
+        fail "the capture lost its header, so the output cannot be attributed"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 printf '\n\033[1m== Summary\033[0m\n'
 printf '  %d passed, %d failed, %d skipped\n\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" -eq 0 ]

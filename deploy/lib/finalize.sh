@@ -403,7 +403,12 @@ finalize_installation() {
 
     ui_stage_done_notify FINALIZATION "installation finalized"
 
-    mark_done finalize
+    # No mark_done here. run_stage already writes it for whatever function it
+    # ran, and install.sh is the only caller of finalize_installation — so the
+    # call that used to be on this line logged "Stage completed: finalize" a
+    # second time, in the same second, and the line appeared twice in the log and
+    # twice in the panel's activity feed. The checkpoint itself was never in
+    # doubt: run_stage's is the one that has always written it.
 }
 
 # The URL the operator should open, matching what `write_caddyfile` deployed.

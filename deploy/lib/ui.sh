@@ -1159,13 +1159,28 @@ ui_log_line() {
 # Appends a command's captured output to the log file, redacted, under a header
 # that names the operation it came from, so a failure can be read back later
 # without guessing which build produced which lines.
+#
+# Lines in this installer's own log format are dropped from the capture, because
+# a child that sources core.sh has already written them here itself: the log file
+# is exported, the child inherits it, and its every info/warn goes straight into
+# this same file while it runs. They are not lost by dropping them — they arrive
+# ahead of this header, in order, from the child. Keeping them is what put a real
+# install's agent build in the log twice: the whole Node.js upgrade, the pnpm
+# install, and the native compile, once from the child and once replayed here.
+#
+# Only that exact `[timestamp] [LEVEL] message` shape is filtered. Everything a
+# child printed without going through core.sh — apt's warnings, a compiler's
+# errors, the build's own progress — is the output this capture exists to keep,
+# and is written through unchanged.
 ui_log_capture() {
     local file="$1" label="$2" ts
     [ -n "${AETHER_LOG_FILE:-}" ] || return 0
     [ -s "$file" ] || return 0
     ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     printf '[%s] [OUTPUT] --- %s ---\n' "$ts" "$label" >>"$AETHER_LOG_FILE" 2>/dev/null || true
-    ui_redact_stream <"$file" >>"$AETHER_LOG_FILE" 2>/dev/null || true
+    ui_redact_stream <"$file" |
+        grep -vE '^\[[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\] \[' \
+            >>"$AETHER_LOG_FILE" 2>/dev/null || true
     return 0
 }
 

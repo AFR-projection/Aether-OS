@@ -130,8 +130,21 @@ ui_stage_label() {
 ui_stage_begin() {
     [ "$UI_STATE_SUPPORTED" = true ] || return 0
     local id="$1" msg="${2:-}"
+    # A stage that spans two functions is opened by the first and reopened by the
+    # second — CADDY is opened by deploy_application before the Caddyfile exists,
+    # then reopened by wait_for_service when the proxy is probed. Restarting the
+    # clock on that second open reports only the last slice of the stage: a real
+    # install drew "CADDY 5s" for a stage the operator had been watching for
+    # eighteen minutes, because the five seconds were the caddy health check
+    # alone. The first open is when the stage's work began, so it stands.
+    #
+    # Only a stage already RUNNING keeps its clock. A stage reopened after it
+    # finished — a resumed run, a retry — is a new pass and gets a new start,
+    # which is what makes its duration describe the pass that is running.
+    if [ "${UI_STAGE_STATUS[$id]:-}" != "RUNNING" ] || [ -z "${UI_STAGE_START[$id]:-}" ]; then
+        UI_STAGE_START["$id"]="$(date +%s)"
+    fi
     UI_STAGE_STATUS["$id"]="RUNNING"
-    UI_STAGE_START["$id"]="$(date +%s)"
     UI_STAGE_END["$id"]=""
     UI_STAGE_ERR["$id"]=""
     UI_STAGE_CODE["$id"]=""
