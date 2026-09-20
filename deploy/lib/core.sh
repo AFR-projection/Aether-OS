@@ -218,6 +218,16 @@ state_done() {
     [ "$current" = "done" ]
 }
 
+# Drops a stage's checkpoint. Used by the uninstall for the stages whose work it
+# has just removed: leaving "deploy=done" behind after deleting everything deploy
+# produced makes the next install resume past it.
+state_forget() {
+    local key="$1" file
+    file=$(state_file)
+    [ -f "$file" ] || return 0
+    sed -i "/^${key}=/d" "$file"
+}
+
 mark_done() {
     state_set "$1" "done"
     info "Stage completed: $1"

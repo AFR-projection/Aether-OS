@@ -169,6 +169,31 @@ check_install_dir() {
     info "Installation directory accepted: $dir"
 }
 
+# True when the given port is published by a stack started from this
+# installation's own compose file.
+#
+# Ports 80 and 443 being busy is exactly what the check below is for — a foreign
+# web server in front of Aether is a real conflict and must still be reported —
+# but an installation that is already up holds those two ports with its own Caddy
+# container, and re-running the installer on a live instance is a normal thing to
+# do: resume after a failure, repair, verify that a re-run changes nothing.
+# check_existing_installation runs *after* check_ports, so without recognising the
+# stack here the run dies before it can even see that an installation exists, and
+# tells the operator to stop Aether's own containers.
+#
+# Identified by the compose file, the same way update.sh and uninstall.sh name the
+# stack they own. `com.docker.compose.project.config_files` records the absolute
+# path of the file the stack was started from, so a second installation in another
+# directory — or anyone else's web server — does not match and is still a conflict.
+port_published_by_this_install() {
+    local port="$1" owners
+
+    command_exists docker || return 1
+    owners=$(docker_cmd ps --filter "publish=$port" \
+        --format '{{.Label "com.docker.compose.project.config_files"}}' 2>/dev/null || true)
+    matches "$owners" -F "$AETHER_INSTALL_DIR/docker-compose.yml"
+}
+
 check_ports() {
     # Contract §4.4: ports 80/443 must be free, or the conflict explained.
     local conflicts=()
@@ -176,6 +201,14 @@ check_ports() {
 
     local listening
     for port in 80 443; do
+        # A port this installation's own containers publish is not a conflict;
+        # the stack being up is the state a re-run is there to work on. Checked
+        # once, before either detector, so both paths agree.
+        if port_published_by_this_install "$port"; then
+            info "Port $port is held by this installation's own stack; continuing."
+            continue
+        fi
+
         # Each listing is read into a variable and tested without a pipeline.
         # The match is near the start of output that can run to thousands of
         # lines, which is exactly where `| grep -q` reports failure: see

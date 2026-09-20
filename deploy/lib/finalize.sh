@@ -211,8 +211,15 @@ WantedBy=multi-user.target
 EOF
 
     $SUDO systemctl daemon-reload
-    $SUDO systemctl enable aether
-    info "Systemd unit installed and enabled: aether.service"
+    # --now, not a bare `enable`. Enabling alone only arranges the start at boot,
+    # so a fresh install left the unit that owns the stack reading "inactive
+    # (dead)" — and docs/operations/DEPLOYMENT.md tells the operator to check
+    # exactly that with `systemctl status aether`. Starting it runs the unit's own
+    # `docker compose up -d` against the same install directory start_services
+    # already brought up; compose is idempotent, so a healthy stack is left alone
+    # and the unit simply records that it is what owns it.
+    $SUDO systemctl enable --now aether
+    info "Systemd unit installed, enabled, and started: aether.service"
 }
 
 health_check() {

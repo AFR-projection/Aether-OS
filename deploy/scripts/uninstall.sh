@@ -206,6 +206,20 @@ uninstall_aether() {
     else
         backup_configuration_before_uninstall
         remove_runtime_files
+
+        # The checkpoints for the stages whose work has just been removed go with
+        # it. remove_runtime_files deletes src/, static/, caddy/, state/, lib/ and
+        # the compose file — everything deploy and finalize produced — while
+        # install.state survives on purpose so the data, secrets and .env can be
+        # picked up again. Left alone, those two checkpoints turn that promise
+        # into its opposite: the one-line reinstall resumes *past* them, because
+        # run_stage sees state_done and skips, and the operator is left with no
+        # containers, no CLI and no systemd units under a panel that reports the
+        # install completed. Forgetting them is what makes the documented
+        # "Reinstall with the one-line command to pick these up again" true.
+        state_forget deploy
+        state_forget finalize
+
         printf '\n'
         info "Application files removed. Kept at $AETHER_INSTALL_DIR:"
         info "  data/          workspace and uploads"

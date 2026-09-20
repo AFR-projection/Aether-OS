@@ -74,30 +74,39 @@ verify_archive() {
     local archive="$1" expected actual
 
     [ -f "$archive" ] || fatal "Backup archive not found: $archive"
-    tar -tzf "$archive" >/dev/null 2>&1 || fatal "$archive is not a readable tar.gz archive."
 
-    # `tar -tzf` only proves the gzip stream is intact, not that the archive is
-    # complete — a truncated file can still list. The checksum is what makes
-    # "this is the backup that was taken" a fact rather than a hope, so a
-    # missing one is a failure, not a warning.
+    # The checksum is checked before the archive is read back, and deliberately.
+    # Reading it only proves the gzip stream is intact, not that the archive is
+    # complete or unmodified, so a readable archive is no evidence that this is
+    # the backup that was taken — and a corrupt one gets reported as the symptom
+    # ("not a readable tar.gz") rather than as corruption. The checksum is the
+    # stronger test and the one that names what happened, so it goes first; the
+    # readability check stays as the backstop for archives with no checksum to
+    # check against, which is the one case the checksum cannot cover.
+    #
+    # A missing checksum is a failure, not a warning: every archive this version
+    # writes has one, and without it there is nothing that makes "this is the
+    # backup that was taken" a fact rather than a hope.
     if [ ! -f "$archive.sha256" ]; then
         if [ "${AETHER_ALLOW_UNVERIFIED:-false}" = "true" ]; then
             warn "No .sha256 beside $archive; continuing because AETHER_ALLOW_UNVERIFIED=true."
-            return 0
+        else
+            error "No checksum file at $archive.sha256, so the archive cannot be verified."
+            error "Every archive this version writes has one. Either it was deleted, or the"
+            error "file was produced by an older release (which did not write them)."
+            error "To restore it anyway, re-run with: AETHER_ALLOW_UNVERIFIED=true aether restore $archive"
+            exit 1
         fi
-        error "No checksum file at $archive.sha256, so the archive cannot be verified."
-        error "Every archive this version writes has one. Either it was deleted, or the"
-        error "file was produced by an older release (which did not write them)."
-        error "To restore it anyway, re-run with: AETHER_ALLOW_UNVERIFIED=true aether restore $archive"
-        exit 1
+    else
+        expected=$(cut -d' ' -f1 < "$archive.sha256")
+        actual=$(sha256sum "$archive" | cut -d' ' -f1)
+        if [ "$expected" != "$actual" ]; then
+            fatal "Checksum mismatch — $archive is corrupt or was modified. Refusing to restore."
+        fi
+        info "Checksum verified"
     fi
 
-    expected=$(cut -d' ' -f1 < "$archive.sha256")
-    actual=$(sha256sum "$archive" | cut -d' ' -f1)
-    if [ "$expected" != "$actual" ]; then
-        fatal "Checksum mismatch — $archive is corrupt or was modified. Refusing to restore."
-    fi
-    info "Checksum verified"
+    tar -tzf "$archive" >/dev/null 2>&1 || fatal "$archive is not a readable tar.gz archive."
     return 0
 }
 
