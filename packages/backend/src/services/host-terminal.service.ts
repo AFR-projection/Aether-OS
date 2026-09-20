@@ -101,6 +101,24 @@ export interface HostAttachResult {
 }
 
 /**
+ * Applies one agent event to the backend's record of a session.
+ *
+ * Only `exit` changes anything the record carries. The agent sets the status and
+ * the exit code before it broadcasts, so echoing them here is what keeps
+ * `GET /api/terminal/sessions` from reporting a shell that an attached client has
+ * just watched exit as still running.
+ */
+function recordSessionEvent(record: HostSessionRecord, event: unknown): void {
+  if (typeof event !== 'object' || event === null) return;
+  const frame = event as { type?: unknown; exitCode?: unknown };
+  if (frame.type !== 'exit') return;
+
+  record.session.status = 'exited';
+  record.session.exitCode = typeof frame.exitCode === 'number' ? frame.exitCode : null;
+  record.session.pid = null;
+}
+
+/**
  * Attaches a subscriber to a host session's output.
  *
  * The agent replays this session's scrollback as `output` events on subscribe,
@@ -113,9 +131,73 @@ export async function attachHostSession(
 ): Promise<HostAttachResult> {
   const record = requireOwned(sessionId, userId);
   const unsubscribe = await subscribeAgentTerminal(record.agentId, sessionId, (event) => {
+    recordSessionEvent(record, event);
     onMessage(event as TerminalServerMessage);
   });
   return { session: { ...record.session }, unsubscribe };
+}
+
+/**
+ * Brings this replica's records in line with the agents that own them.
+ *
+ * A host shell can end without anyone asking it to: the operator types `exit`, a
+ * command terminates the shell, an idle timeout fires. The agent knows at once —
+ * it sets the session's status and drops it from its own map 30 seconds later —
+ * but this replica's record was written once, from the create reply, and nothing
+ * revised it. A session the user had ended therefore stayed "running" in
+ * `GET /api/terminal/sessions` for as long as the process lived.
+ *
+ * The agent is the authority on a PTY it owns, so this asks it: a session the
+ * agent still reports is mirrored, exit code and status included, and a session
+ * the agent no longer knows is dropped, because it does not exist any more.
+ *
+ * Best effort, deliberately. An agent that is not connected, or a request that
+ * fails, leaves the records untouched: a backend that cannot ask must not invent
+ * an answer, and a stale "running" is a smaller lie than a session reported dead
+ * while its shell is still there.
+ */
+export async function reconcileHostSessionsForUser(userId: string): Promise<void> {
+  const agentIds = new Set<string>();
+  for (const record of hostSessions.values()) {
+    if (record.ownerUserId === userId) agentIds.add(record.agentId);
+  }
+
+  for (const agentId of agentIds) {
+    if (!isAgentRpcConnected(agentId)) continue;
+
+    let reply: unknown;
+    try {
+      reply = await sendAgentRequest(agentId, 'terminal.list', {});
+    } catch (error) {
+      log.warn({ err: error, agentId }, 'could not reconcile host terminal sessions with the agent');
+      continue;
+    }
+
+    const live = new Map<string, TerminalSession>();
+    const reported = (reply as { sessions?: unknown } | null)?.sessions;
+    if (Array.isArray(reported)) {
+      for (const session of reported as TerminalSession[]) {
+        if (session !== null && typeof session === 'object' && typeof session.id === 'string') {
+          live.set(session.id, session);
+        }
+      }
+    }
+
+    for (const [sessionId, record] of hostSessions) {
+      if (record.agentId !== agentId || record.ownerUserId !== userId) continue;
+
+      const fromAgent = live.get(sessionId);
+      if (fromAgent === undefined) {
+        hostSessions.delete(sessionId);
+        continue;
+      }
+
+      record.session.status = fromAgent.status;
+      record.session.exitCode = fromAgent.exitCode;
+      record.session.pid = fromAgent.pid;
+      record.session.lastActivityAt = fromAgent.lastActivityAt;
+    }
+  }
 }
 
 export async function writeHostInput(

@@ -13,6 +13,7 @@ import {
   getOwnedHostSession,
   killHostSession,
   listHostSessionsForUser,
+  reconcileHostSessionsForUser,
   resizeHostSession,
   writeHostInput,
 } from '../services/host-terminal.service.js';
@@ -72,8 +73,15 @@ export function registerTerminalRoutes(app: FastifyInstance): void {
 
   app.get('/api/terminal/sessions', {
     preHandler: guards,
-    handler: (request) => {
+    handler: async (request) => {
       const principal = requirePrincipal(request);
+
+      // Before the list is built, so it describes what the agents still have. A
+      // host shell that ended on its own — a typed `exit`, a killed process —
+      // was otherwise reported running for as long as this process lived, since
+      // the record here is written once from the create reply.
+      await reconcileHostSessionsForUser(principal.user.id);
+
       return {
         data: {
           sessions: [

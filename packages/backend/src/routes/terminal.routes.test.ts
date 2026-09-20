@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { handleAgentFrame, registerAgentSocket } from '../services/agent-rpc.service.js';
 import { buildServer } from '../server.js';
+import { handleAgentFrame, registerAgentSocket } from '../services/agent-rpc.service.js';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -23,15 +23,17 @@ import type { FastifyInstance } from 'fastify';
  */
 
 const AGENT_ID = '00000000-0000-4000-8000-0000000000a1';
-const USER_ID = '00000000-0000-4000-8000-0000000000b2';
 const SESSION_ID = '00000000-0000-4000-8000-0000000000c3';
 const UNKNOWN_SESSION_ID = '00000000-0000-4000-8000-0000000000d4';
 
+// The ids are literals rather than the constants above because `vi.mock` is
+// hoisted above them: a factory that reads one would run before it is
+// initialised.
 vi.mock('../middleware/auth.js', () => ({
-  authenticate: async (): Promise<void> => undefined,
+  authenticate: (): Promise<void> => Promise.resolve(),
   // The permission a route asks for is not what these tests are about; every
   // route under test is reached by the owner, who holds all of them.
-  requirePermission: () => async (): Promise<void> => undefined,
+  requirePermission: () => (): Promise<void> => Promise.resolve(),
   requirePrincipal: () => ({
     user: {
       id: '00000000-0000-4000-8000-0000000000b2',
@@ -49,8 +51,44 @@ interface SentFrame {
   params?: Record<string, unknown>;
 }
 
+interface AgentSession {
+  id: string;
+  pid: number | null;
+  shell: string;
+  cwd: string;
+  cols: number;
+  rows: number;
+  status: string;
+  exitCode: number | null;
+  createdAt: string;
+  lastActivityAt: string;
+  attachedClients: number;
+}
+
 let app: FastifyInstance;
 const sent: SentFrame[] = [];
+
+// What the stub agent has. It is the authority on the PTYs it owns, so the
+// backend's session list is only truthful to the extent that it is asked.
+let agentSessions: AgentSession[] = [];
+let listFails = false;
+
+function sessionRecord(overrides: Partial<AgentSession> = {}): AgentSession {
+  return {
+    id: SESSION_ID,
+    pid: 4242,
+    shell: '/bin/bash',
+    cwd: '/',
+    cols: 80,
+    rows: 24,
+    status: 'running',
+    exitCode: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    lastActivityAt: '2026-01-01T00:00:00.000Z',
+    attachedClients: 0,
+    ...overrides,
+  };
+}
 
 beforeAll(async () => {
   app = await buildServer();
@@ -63,20 +101,28 @@ beforeAll(async () => {
       const frame = JSON.parse(raw) as SentFrame;
       sent.push(frame);
 
-      // Answer the way the agent does. `terminal.create` has to return a
-      // session the service accepts, which means at minimum an id.
-      const result =
-        frame.type === 'terminal.create'
-          ? {
-              id: SESSION_ID,
-              pid: 4242,
-              shell: '/bin/bash',
-              cwd: '/',
-              cols: 80,
-              rows: 24,
-              status: 'running',
-            }
-          : {};
+      // Answer the way the agent does: `terminal.create` returns the session it
+      // made, `terminal.list` returns what it still has, `terminal.kill` ends one.
+      if (listFails && frame.type === 'terminal.list') {
+        handleAgentFrame(AGENT_ID, {
+          id: frame.id,
+          ok: false,
+          error: { code: 'INTERNAL_ERROR', message: 'agent is having a bad day' },
+        });
+        return;
+      }
+
+      let result: unknown = {};
+      if (frame.type === 'terminal.create') {
+        const session = sessionRecord();
+        agentSessions = [session];
+        result = session;
+      } else if (frame.type === 'terminal.list') {
+        result = { sessions: agentSessions };
+      } else if (frame.type === 'terminal.kill') {
+        agentSessions = [];
+        result = { killed: true };
+      }
 
       handleAgentFrame(AGENT_ID, { id: frame.id, ok: true, result });
     },
@@ -89,6 +135,8 @@ afterAll(async () => {
 
 beforeEach(() => {
   sent.length = 0;
+  agentSessions = [];
+  listFails = false;
 });
 
 async function createHostSession(): Promise<string> {
@@ -98,11 +146,24 @@ async function createHostSession(): Promise<string> {
     payload: { scope: 'host', agentId: AGENT_ID, cols: 80, rows: 24 },
   });
   expect(response.statusCode).toBe(201);
-  return (response.json() as { data: { id: string } }).data.id;
+  return response.json<{ data: { id: string } }>().data.id;
 }
 
 function lastFrameOfType(type: string): SentFrame | undefined {
   return sent.filter((frame) => frame.type === type).pop();
+}
+
+interface ListedSession {
+  id: string;
+  status: string;
+  exitCode: number | null;
+}
+
+/** The session list the API returns, which is what the caller is shown. */
+async function listSessions(): Promise<ListedSession[]> {
+  const response = await app.inject({ method: 'GET', url: '/api/terminal/sessions' });
+  expect(response.statusCode).toBe(200);
+  return response.json<{ data: { sessions: ListedSession[] } }>().data.sessions;
 }
 
 describe('host terminal sessions over REST', () => {
@@ -119,7 +180,7 @@ describe('host terminal sessions over REST', () => {
     const response = await app.inject({ method: 'GET', url: `/api/terminal/sessions/${SESSION_ID}` });
 
     expect(response.statusCode).toBe(200);
-    expect((response.json() as { data: { id: string } }).data.id).toBe(SESSION_ID);
+    expect(response.json<{ data: { id: string } }>().data.id).toBe(SESSION_ID);
   });
 
   it('forwards input to the agent instead of 404ing on its own session', async () => {
@@ -164,5 +225,49 @@ describe('host terminal sessions over REST', () => {
 
     expect(response.statusCode).toBe(404);
     expect(sent.some((frame) => frame.type === 'terminal.input')).toBe(false);
+  });
+});
+
+/**
+ * A host shell can end without anyone asking it to, and the agent is the only
+ * party that knows: the record here is written once, from the create reply, and
+ * nothing revised it. `GET /api/terminal/sessions` therefore reported a session
+ * the user had already ended as running, for as long as the process lived.
+ */
+describe('session status is the agent\'s, not this process\'s', () => {
+  it('lists a session it created', async () => {
+    await createHostSession();
+
+    expect((await listSessions()).map((session) => session.id)).toContain(SESSION_ID);
+  });
+
+  it('drops a session the agent no longer has', async () => {
+    await createHostSession();
+    expect((await listSessions()).map((session) => session.id)).toContain(SESSION_ID);
+
+    // The shell exited and the agent forgot it — it deletes the record 30
+    // seconds after an exit. It is not "running" and it is not there.
+    agentSessions = [];
+
+    expect((await listSessions()).map((session) => session.id)).not.toContain(SESSION_ID);
+  });
+
+  it('reports the status and exit code the agent reports', async () => {
+    await createHostSession();
+    agentSessions = [sessionRecord({ status: 'exited', exitCode: 0, pid: null })];
+
+    const listed = (await listSessions()).find((session) => session.id === SESSION_ID);
+    expect(listed?.status).toBe('exited');
+    expect(listed?.exitCode).toBe(0);
+  });
+
+  it('leaves the record alone when the agent cannot answer', async () => {
+    await createHostSession();
+    listFails = true;
+
+    // A backend that cannot ask must not invent an answer. The session stays, as
+    // it was, rather than being reported dead because a request failed.
+    const listed = (await listSessions()).find((session) => session.id === SESSION_ID);
+    expect(listed?.status).toBe('running');
   });
 });
