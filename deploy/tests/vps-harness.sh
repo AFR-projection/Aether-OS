@@ -235,12 +235,34 @@ phase_status() {
         fail "aether-host-agent.service is active"
     fi
 
-    local agent_user
-    agent_user=$(systemctl show -p User --value aether-host-agent 2>/dev/null || true)
-    if [ "$agent_user" = "aether-agent" ]; then
-        pass "host agent runs as the unprivileged aether-agent user"
+    # The unit that owns the compose stack, not just the agent's. It is
+    # Type=oneshot with RemainAfterExit, so "active" means its `docker compose up
+    # -d` ran and the stack it started is the one being served — the check
+    # docs/operations/DEPLOYMENT.md tells an operator to make. An install that
+    # only enabled it leaves the stack running under a unit that reports
+    # "inactive (dead)".
+    if systemctl is-active --quiet aether; then
+        pass "aether.service is active"
     else
-        fail "host agent runs as the unprivileged aether-agent user (got '${agent_user:-none}')"
+        fail "aether.service is active (got: $(systemctl is-active aether 2>/dev/null || true))"
+    fi
+
+    # What the agent runs as is the whole point of the full-host-access choice,
+    # and an install run without --no-full-host-access is the full-access one —
+    # install.sh defaults it to true. In that mode setup-host.sh writes no User=
+    # line at all (systemd's default is root, which is the point: the whole
+    # filesystem is manageable from the GUI) and hands the agent a workspace root
+    # of /. Both halves are asserted, because the empty user is only meaningful
+    # together with the filesystem-wide root. The check this replaced demanded
+    # User=aether-agent unconditionally — true only of the confined mode, so it
+    # could never pass under the harness's own defaults and failed every run.
+    local agent_user agent_workspace
+    agent_user=$(systemctl show -p User --value aether-host-agent 2>/dev/null || true)
+    agent_workspace=$(sed -n 's/^AETHER_WORKSPACE_ROOT=//p' "$INSTALL_DIR/local-agent/agent.env" 2>/dev/null | head -n1)
+    if [ -z "$agent_user" ] && [ "$agent_workspace" = "/" ]; then
+        pass "host agent runs as root over the whole filesystem (full host access)"
+    else
+        fail "host agent runs as root over the whole filesystem (got user '${agent_user:-none}', workspace '${agent_workspace:-none}')"
     fi
 }
 
@@ -303,16 +325,31 @@ phase_update_safety() {
     git -C "$INSTALL_DIR/src" checkout README.md
 
     # Concurrent update: a second invocation must refuse while the first holds the lock.
-    local lock_file="$INSTALL_DIR/state/update.lock"
+    #
+    # The PID in the lock has to be one that is genuinely alive, because the guard
+    # is `kill -0`: a number nobody owns reads as a stale lock, and the update
+    # correctly steps over it. The two locks this used to plant were 99999, which
+    # did not exist on this host, and then 1 — which always does. So the
+    # concurrent case was testing the stale path, and the "stale" case planted a
+    # lock that could never be cleared: every later `aether update` in this run was
+    # refused with "Another update is running (PID 1)", which is what failed the
+    # rollback, adoption and preview phases. One live PID now covers both cases —
+    # held while the first check runs, gone for the second.
+    local lock_file="$INSTALL_DIR/state/update.lock" holder
     mkdir -p "$(dirname "$lock_file")"
-    echo 99999 > "$lock_file"
+    sleep 600 &
+    holder=$!
+    echo "$holder" > "$lock_file"
     run_expect_failure "concurrent update is refused" aether update --yes
     expect_contains "mentions the lock" "Another update is running"
-    rm -f "$lock_file"
+    kill "$holder" 2>/dev/null || true
+    wait "$holder" 2>/dev/null || true
 
-    # Stale lock: an old PID must be removed automatically.
-    echo 1 > "$lock_file"
+    # Stale lock: the same PID, now that nothing owns it, must be removed by the
+    # next run rather than blocking it.
+    echo "$holder" > "$lock_file"
     run "stale lock is removed automatically" aether update --check
+    rm -f "$lock_file"
 }
 
 phase_idempotency() {
@@ -338,10 +375,19 @@ phase_idempotency() {
         fail "no duplicate agent registration (was $agent_count_before, now $agent_count_after)"
     fi
 
-    if systemctl list-units --type=service --all 2>/dev/null | grep -c '^aether-host-agent.service' | grep -q '^1$'; then
-        pass "no duplicate systemd service"
+    # `systemctl list-units` indents its unit names by two columns, so the
+    # anchored count this used to make was always 0 and the check could never
+    # pass — the same family as the aether-agent assertion in phase_status.
+    # list-unit-files prints the name at column 0, which is the form uninstall.sh
+    # matches against, and it is also the right question: a duplicate install
+    # leaves a second unit *file*, and that is what list-unit-files counts.
+    # Whether the unit is running is phase_status's job, not this one.
+    local agent_units
+    agent_units=$(systemctl list-unit-files 'aether-host-agent.service' --no-legend 2>/dev/null | grep -c '^aether-host-agent\.service' || true)
+    if [ "$agent_units" = "1" ]; then
+        pass "no duplicate systemd service (1 unit file)"
     else
-        fail "no duplicate systemd service"
+        fail "no duplicate systemd service (${agent_units} unit files)"
     fi
 }
 
@@ -396,14 +442,17 @@ phase_rollback_injection() {
 
     # Inject a failure by breaking the backend's entrypoint. The update will try
     # to restart the stack, the backend will fail to start, health check will
-    # timeout, and the rollback should restore the previous working commit.
+    # timeout, and the rollback should put the instance back on what it was
+    # running — source, image and data.
 
-    local current_commit
-    current_commit=$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD 2>/dev/null || echo unknown)
-
-    # Create a trivial commit that will break startup
+    # Create a trivial commit that won't start. printf, not echo: `echo` with a
+    # backslash-n writes the two characters, so the injected file was a
+    # one-line script containing `#!/bin/sh\nexit 42` rather than a script that
+    # exits 42. It made no difference to the breakage — the Dockerfile below is
+    # what breaks the container, and it points at a file the image never had —
+    # but the file should be what its name says it is.
     cd "$INSTALL_DIR/src"
-    echo '#!/bin/sh\nexit 42' > packages/backend/broken-entrypoint.sh
+    printf '#!/bin/sh\nexit 42\n' > packages/backend/broken-entrypoint.sh
     chmod +x packages/backend/broken-entrypoint.sh
     git add packages/backend/broken-entrypoint.sh
     git commit -m "test: inject startup failure for rollback test" --no-verify 2>/dev/null || true
@@ -415,21 +464,35 @@ phase_rollback_injection() {
         echo 'ENTRYPOINT ["/app/broken-entrypoint.sh"]' >> "$dockerfile"
     fi
 
+    # The revision the update will start from, captured here rather than before
+    # the injection above: that is the state a rollback restores, because it is
+    # the state the update found. The injected commit is part of it — it was
+    # already the deployed revision when the update ran, and undoing it is not
+    # something the product claims to do. What this asserts is that the rollback
+    # leaves the tree where the update began, rather than somewhere else.
+    local pre_update_commit
+    pre_update_commit=$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD 2>/dev/null || echo unknown)
+
     run_expect_failure "update with broken backend triggers rollback" aether update --yes --no-pull
-    expect_contains "rollback executed" "rolled back\|Rollback\|previous version"
+    # A literal, because expect_contains matches with `grep -qF`: the alternation
+    # this used to pass ("rolled back\|Rollback\|previous version") could never
+    # match as a fixed string, so the check failed on every run no matter what
+    # the update printed. `roll_back`'s own first line is the one that proves a
+    # rollback started, and it is printed whichever way the rollback then goes.
+    expect_contains "rollback executed" "Rolling back to"
 
     # Restore the Dockerfile
     if [ -f "${dockerfile}.backup" ]; then
         mv "${dockerfile}.backup" "$dockerfile"
     fi
 
-    # Verify rollback restored the previous commit
+    # Verify the rollback left the tree where the update started from
     local after_rollback
     after_rollback=$(git -C "$INSTALL_DIR/src" rev-parse --short HEAD 2>/dev/null || echo unknown)
-    if [ "$current_commit" = "$after_rollback" ]; then
-        pass "rollback restored the previous commit ($current_commit)"
+    if [ "$pre_update_commit" = "$after_rollback" ]; then
+        pass "rollback restored the revision the update started from ($pre_update_commit)"
     else
-        fail "rollback restored the previous commit (was $current_commit, now $after_rollback)"
+        fail "rollback restored the revision the update started from (was $pre_update_commit, now $after_rollback)"
     fi
 
     run "instance is healthy after rollback" aether status
