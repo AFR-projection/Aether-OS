@@ -123,6 +123,53 @@ run_stage() {
     mark_done "$key"
 }
 
+# Puts back the configuration a resumed run no longer derives.
+#
+# A resumed run does not re-run configure — its checkpoint says done — and
+# configure is the only place that turns the operator's answers into
+# AETHER_DOMAIN / AETHER_ADMIN_EMAIL / AETHER_NO_HTTPS. Everything downstream
+# still needs them: write_caddyfile picks HTTPS or IP-only from AETHER_DOMAIN,
+# installation_url builds the health check's URL from it, and `docker compose`
+# interpolates `{$AETHER_DOMAIN}` in the Caddyfile from the environment before it
+# ever looks at .env — so the empty string parse_args exports is not a fallback
+# to the recorded value, it overrides it and leaves the site block with no
+# address at all.
+#
+# Read from .env, as the update path does (scripts/update.sh) and for the same
+# reason, and only where the caller left a blank: --domain and --email still win.
+# A blank that is genuinely recorded stays blank, because an IP-only install
+# records an empty domain and inventing one here would turn it into an ACME
+# install against a name that may not resolve.
+load_recorded_settings() {
+    [ "${AETHER_RESUME:-false}" = "true" ] || return 0
+
+    local env_file="$AETHER_INSTALL_DIR/.env"
+    if [ ! -f "$env_file" ]; then
+        return 0
+    fi
+
+    if [ -z "${AETHER_DOMAIN:-}" ]; then
+        AETHER_DOMAIN="$(env_value AETHER_DOMAIN "$env_file" || true)"
+    fi
+    if [ -z "${AETHER_ADMIN_EMAIL:-}" ]; then
+        AETHER_ADMIN_EMAIL="$(env_value AETHER_ADMIN_EMAIL "$env_file" || true)"
+    fi
+    # There is no --https flag, so "true" is the only way to have said this
+    # explicitly: --no-https and AETHER_NO_HTTPS=true stand, and anything else
+    # defers to the recorded choice. Without this a resumed HTTP-only install
+    # would silently promote itself to ACME on a domain it was told not to use.
+    if [ "${AETHER_NO_HTTPS:-false}" != "true" ]; then
+        AETHER_NO_HTTPS="$(env_value AETHER_NO_HTTPS "$env_file" || true)"
+        AETHER_NO_HTTPS="${AETHER_NO_HTTPS:-false}"
+    fi
+
+    export AETHER_DOMAIN AETHER_ADMIN_EMAIL AETHER_NO_HTTPS
+
+    if [ -n "$AETHER_DOMAIN" ]; then
+        info "Resuming with the recorded domain: $AETHER_DOMAIN"
+    fi
+}
+
 # Runs on every exit. Its first duty is the one the installer always had —
 # release the lock so the next run can start. Its second, only when the rich UI
 # is active, is to guarantee a failed run ends with the error panel and a
@@ -146,6 +193,14 @@ on_exit() {
         ui_shutdown
     fi
     release_lock
+
+    # This trap's status becomes the installer's. Every statement above is
+    # written to succeed, and this line keeps it that way if one of them ever
+    # stops being: an EXIT trap that fails turns a run that finished correctly
+    # into exit 1 (bash 5.2; the E2E harness caught exactly that in
+    # scripts/deploy/setup.sh). It cannot mask a real failure — a trap that
+    # succeeds leaves the failing run's own status untouched.
+    return 0
 }
 
 main() {
@@ -256,6 +311,11 @@ main() {
         fi
         export AETHER_RESUME
     fi
+
+    # After the decision above, so it covers both --resume and the automatic
+    # resume a non-interactive run makes on its own, and before the stages, so
+    # everything downstream sees the recorded configuration.
+    load_recorded_settings
 
     run_stage dependencies install_dependencies
     run_stage configure configure_system

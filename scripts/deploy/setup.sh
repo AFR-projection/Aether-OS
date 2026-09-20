@@ -146,8 +146,19 @@ find_checkout() {
 # main() can remove it after the install and leave an existing checkout alone.
 AETHER_CLONE_DIR=""
 
+# Removing nothing is a success, not a failure, and the difference is the exit
+# code of the whole one-liner: this is an EXIT trap under `set -e`, and bash
+# takes the trap's status as the script's when the trap fails. `[ -n ... ] && rm`
+# fell through the test on every run that made no clone — which is every run
+# from a checkout, where resolve_repo finds the tree next to the script and never
+# clones — so a correct install finished by failing, `curl | bash` returned 1,
+# and CI and the E2E harness read a successful install as an error. Measured on
+# bash 5.2: success + failing trap = 1, failure + succeeding trap = the
+# failure's own status. The reverse cannot happen, so this cannot hide a real
+# failure.
 cleanup_clone() {
-    [ -n "$AETHER_CLONE_DIR" ] && rm -rf "$AETHER_CLONE_DIR"
+    [ -n "$AETHER_CLONE_DIR" ] || return 0
+    rm -rf "$AETHER_CLONE_DIR"
 }
 
 resolve_repo() {
