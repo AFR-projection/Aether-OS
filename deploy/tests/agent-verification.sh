@@ -141,7 +141,11 @@ expect_status() {
 }
 
 expect_output_has() {
-    if grep -qF "$2" <<<"$LAST_OUTPUT"; then
+    # `--` before the needle: a needle may be an option. Without it, looking for
+    # "--no-pull" would have grep read it as a long option, print "unknown
+    # option", and exit 2 — reporting a missing string for output that contained
+    # it, which is how the harness's own repair-path check failed.
+    if grep -qF -- "$2" <<<"$LAST_OUTPUT"; then
         ok "$1"
     else
         fail "$1 (output did not contain: $2)"

@@ -102,7 +102,12 @@ run_expect_failure() {
 
 expect_contains() {
     local desc="$1" needle="$2"
-    if grep -qF "$needle" <<<"$LAST_OUTPUT"; then
+    # `--` before the needle, because a needle is allowed to be an option:
+    # the check for the repair path this file was extended with looks for
+    # "--no-pull", and `grep -qF "--no-pull"` is not a search at all — grep reads
+    # it as a long option, prints "unknown option", and exits 2, so a check whose
+    # subject was present in the output reported that it was missing.
+    if grep -qF -- "$needle" <<<"$LAST_OUTPUT"; then
         pass "$desc"
     else
         fail "$desc (output did not contain: $needle)"
