@@ -248,6 +248,13 @@ is a design proposal awaiting approval before any code.
 5. Extend the agent protocol with the missing verbs, in this order: **one-shot command execution
    with exit code** (the primitive everything else is built on), then service status/control,
    then container status/control, then logs, then installed-package query.
+   **Design of record: [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md)** — the
+   Execution Unit, per-unit ownership, supervision, and the P1/P2/P3 phasing. It also records the
+   blocker this item did not know about: the agent binds `ownerUserId` once per connection
+   (`connection.ts:291`), so an instance-scoped local agent keys every terminal session on its own
+   id while the backend records the user's (`host-terminal.service.ts:74`). Adoption — the fix for
+   the backend-restart session loss — must not ship before that is corrected, or it leaks sessions
+   between users. Design first; no P1 code until approved.
 6. Each new verb gets a Zod schema in `shared`, a capability module in the agent, a service and
    route in the backend, a permission string, and an audit event — the existing pattern, followed
    exactly rather than shortcut.
@@ -312,10 +319,11 @@ is a design proposal awaiting approval before any code.
     reattach and honest lifecycle are **done** (`useTerminalRecovery`, the reconcile-before-list
     path, and [EXECUTION-MODEL.md](../architecture/EXECUTION-MODEL.md)); what remains is a shell
     outliving its owner. A PTY dies when the process that opened it restarts, so survival needs a
-    broker — tmux/screen as an opt-in owner, or a dedicated PTY-owning daemon — plus per-session
-    ownership carried across the agent protocol (which is also what makes a backend-only restart
-    re-adopt sessions safely instead of leaking them between users). The trade-offs are assessed in
-    EXECUTION-MODEL.md; this belongs on top of the P1 execution primitive so it is not built twice.
+    broker — tmux/screen as an opt-in owner, or a dedicated PTY-owning daemon. This is **P3** in
+    [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §18; the private-ownership half
+    of it (per-unit ownership over the agent protocol) is needed **much earlier, in P1**, because it
+    is what makes backend-restart adoption safe, and it is what fixes the reported
+    "session no longer exists" bug. Do not bundle the two: ownership is small, the broker is not.
 34. Health and readiness that report the *running* revision, and make `aether update` prove git
     revision == deployment revision == running revision, as the brief's §30 requires. Today it
     proves source revision and health, not the running build.

@@ -204,11 +204,14 @@ shells are still there, and the desktop rediscovers them via `GET /api/terminal/
   as alive** — it does not fake survival. Making a shell outlive its owner needs a session broker
   (tmux, or a dedicated PTY-owning daemon); the trade-offs are assessed in EXECUTION-MODEL.md and the
   broker is scheduled as its own roadmap item, not built yet (scenarios 5 and 6).
-- **A backend-only restart is an honest gap.** The agent tracks one owner per connection while
-  multiple backend users can hold sessions on one agent, so adopting the agent's session list blindly
-  would leak one user's shell to another. Rather than fake ownership, those sessions are reported
-  gone after a backend restart even though the shells live on the agent. Closing this needs per-session
-  ownership across the agent protocol, scheduled with the broker.
+- **A backend-only restart is an honest gap.** The agent tracks one owner per connection
+  (`connection.ts:291`) while multiple backend users can hold sessions on one agent, so adopting the
+  agent's session list blindly would leak one user's shell to another. Rather than fake ownership,
+  those sessions are reported gone after a backend restart even though the shells live on the agent.
+  Closing this needs per-unit ownership across the agent protocol — which is **P1, not the broker**:
+  see [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §4, and note the blocker it
+  does not share with the broker, that an instance-scoped local agent keys sessions on its own id
+  while the backend records the user's, so adoption and ownership have to ship together.
 - **Reattach is process-level, not screen-level.** It preserves the process and up to 256 KB of
   scrollback; xterm.js rebuilds the screen from that. Exact screen state for a full-screen program
   (an editor, `top`) is not reproduced.

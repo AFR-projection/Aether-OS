@@ -142,12 +142,20 @@ alive when the underlying PTY is dead.**
 ### Why backend-restart adoption is not faked
 
 A host session's owner is a **backend** user id. The agent, though, tracks a single `ownerUserId` per
-connection, and multiple backend users can hold sessions on one agent. So after a backend restart,
-blindly adopting everything the agent's `terminal.list` returns would attribute every session to
-whoever asked first — a cross-user leak. Rather than fake ownership, a backend-only restart is left
-as an honest gap: the sessions are gone from the backend's view even though the shells live on the
-agent. Closing this cleanly needs per-session ownership carried across the agent protocol, which is
-scheduled with the session-broker work below, not improvised here.
+connection (`packages/host-agent/src/connection.ts:291`), and multiple backend users can hold sessions
+on one agent. On an instance-scoped local agent it is worse than that: the agent keys sessions on its
+**own** id (`packages/backend/src/ws/agent.ws.ts:63`, `record.ownerUserId ?? record.agentId`) while the
+backend records the **user's** id (`packages/backend/src/services/host-terminal.service.ts:74`), so the
+two disagree and `terminal.list` returns every session on the host to whoever asks. After a backend
+restart, blindly adopting what the agent returns would therefore attribute every session to whoever
+asked first — a cross-user leak. Rather than fake ownership, a backend-only restart is left as an
+honest gap: the sessions are gone from the backend's view even though the shells live on the agent.
+
+Closing it cleanly needs per-unit ownership carried across the agent protocol. That is **P1**, not the
+broker — it is a small, well-scoped change (assert the principal per request and freeze it on the
+unit) and it is where the reported bug is actually fixed. See
+[EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §4 and §16; the ordering constraint is that adoption
+and ownership ship together, or adoption is restricted to personal agents. It is not improvised here.
 
 ## PTY survival across agent restart and reboot (scenarios 5 and 6): assessment
 
@@ -166,9 +174,11 @@ Survival requires the PTY to be owned by something that outlives the agent. Two 
   lifecycle, and review, on a host sized at 1 vCPU.
 
 **Neither is built now.** Building the broker before the roadmap's P1 execution/supervision primitive
-would mean building it twice; it is scheduled as its own item. Until then Aether ships the honest
-behaviour — a session that is gone is reported gone, never alive — and this assessment. Scenarios 5
-and 6 are **not** claimed as solved.
+would mean building it twice — the broker is a *client* of that primitive, and its design is recorded
+there as **P3** ([EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §18) with the phasing that separates
+it from the cheap P1 ownership fix. Until then Aether ships the honest behaviour — a session that is
+gone is reported gone, never alive — and this assessment. Scenarios 5 and 6 are **not** claimed as
+solved.
 
 ## The six-scenario matrix
 
@@ -178,7 +188,7 @@ and 6 are **not** claimed as solved.
 | 2 | Browser refresh | **Solved** — sessions discovered and rebound; the shell survives (backend not restarted) |
 | 3 | New terminal session | **Solved** — a fresh login shell; profile chain runs, `~/.local/bin` on `PATH` |
 | 4 | Logout / login | **Solved** — sessions end on logout by design; the next session is correct |
-| 5 | Aether restart | **Partial, reported as such** — agent restart kills the PTYs (reported gone); backend-only restart is an honest gap, not faked adoption |
+| 5 | Aether restart | **Partial, reported as such** — agent restart kills the PTYs (reported gone); backend-only restart is an honest gap, not faked adoption, and is **closed by P1** ([EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §16) |
 | 6 | Host reboot | **Not solved, documented** — a PTY dies on reboot as on any machine; reported gone, never alive. A new session afterwards is correct |
 
 ## Tests
