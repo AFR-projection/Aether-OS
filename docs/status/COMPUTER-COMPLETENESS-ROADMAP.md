@@ -248,13 +248,16 @@ is a design proposal awaiting approval before any code.
 5. Extend the agent protocol with the missing verbs, in this order: **one-shot command execution
    with exit code** (the primitive everything else is built on), then service status/control,
    then container status/control, then logs, then installed-package query.
-   **Design of record: [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md)** — the
-   Execution Unit, per-unit ownership, supervision, and the P1/P2/P3 phasing. It also records the
-   blocker this item did not know about: the agent binds `ownerUserId` once per connection
-   (`connection.ts:291`), so an instance-scoped local agent keys every terminal session on its own
-   id while the backend records the user's (`host-terminal.service.ts:74`). Adoption — the fix for
-   the backend-restart session loss — must not ship before that is corrected, or it leaks sessions
-   between users. Design first; no P1 code until approved.
+   **Design of record: [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md)** (revision 2,
+   adversarially reviewed). It records two blockers this item did not know about. First, ownership:
+   the agent binds `ownerUserId` once per connection (`connection.ts:291`), so on an
+   instance-scoped local agent the agent keys every session on its own id while the backend records
+   the user's — so adoption (the fix for the reported backend-restart session loss) must not ship
+   before per-unit ownership, or it leaks sessions between users. Second, and larger: `files.*`,
+   `processes.*` and `terminal.kill` have **no ownership check at all** on the agent side
+   (see [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §5b), so "fix the whole RPC surface or document
+   the hole" is an open decision the design puts to the owner. Design first; no P1 code until
+   approved.
 6. Each new verb gets a Zod schema in `shared`, a capability module in the agent, a service and
    route in the backend, a permission string, and an audit event — the existing pattern, followed
    exactly rather than shortcut.

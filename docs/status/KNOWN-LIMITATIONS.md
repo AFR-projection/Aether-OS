@@ -67,6 +67,44 @@ This project has not been penetration-tested or audited. The threat model in
 [SECURITY-MODEL.md](../security/SECURITY-MODEL.md) is the authors' own reasoning, not a third-party
 assessment.
 
+### 5b. The agent enforces no authorization of its own — the backend is the only thing that does
+
+Found by adversarial review of the P1 design (see
+[EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §4). The host agent takes its
+principal **once per connection** (`packages/host-agent/src/connection.ts:291`, set from
+`hello_ack`) and the capability handlers receive only `cfg` and the request params — never the
+principal. Several verbs are therefore dispatched with no authorization of any kind
+(`packages/host-agent/src/router.ts`): `files.*` (lines 192–243), `processes.*` (lines 174–190), and
+`terminal.kill` (lines 312–316) — the last calling `killSession(params.id, …)`, which does
+`sessions.get(sessionId)` with no owner check (`capabilities/terminal.ts:385`).
+
+**Be precise about what this does and does not mean, because the two halves differ:**
+
+- **For `files.*` and `processes.*` there is no cross-user exposure to fix**, because there is no
+  per-user split to cross: the workspace is **instance-wide** and access is granted by **role**
+  (`files:read` / `files:write` / `files:delete`, `process:read` / `process:manage` —
+  `packages/shared/src/constants.ts:14`, guarded in `routes/files.routes.ts:103-105` and
+  `routes/system.routes.ts:47,73`). Every authorised user is meant to see the same files and the same
+  process table. The gap is not a leak; it is that the agent adds **no second line of defence** to
+  the permission model.
+- **For terminal sessions there is a real per-user surface**, and the agent does not enforce it. The
+  backend does check ownership before every call (`getOwnedHostSession`,
+  `host-terminal.service.ts:80`), which is why this is not exploitable end-to-end today. But the
+  agent's own check is absent, so a single missing upstream check — or any future code path that
+  reaches the agent directly — turns `terminal.kill` into "kill another user's shell by id", and
+  the instance-scoped local agent's session key is the agent id rather than the user id
+  (§4 of the design), so `terminal.list` there returns every session on the host.
+
+**Exposure today:** limited to a compromised or mistaken backend, since the agent is reachable only
+with a valid pairing token over the authenticated `/ws/agent` socket, and every backend route checks
+before calling.
+
+**Why it is still security-relevant and scheduled:** the agent is the process holding root and the
+filesystem, and it currently enforces nothing about *who* asked. Making the agent's ownership
+per-request (and per-unit) is P1 work in the execution-primitive plan (DoD 1–3), and the open
+question recorded there is whether it should also enforce the role permissions for `files.*` /
+`processes.*`, or continue to delegate those entirely to the backend.
+
 ---
 
 ## Functional gaps
