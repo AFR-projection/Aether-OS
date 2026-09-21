@@ -113,6 +113,13 @@ generate_env_file() {
         info "Existing .env backed up to $backup"
     fi
 
+    # The one derived range value. START/COUNT are the source of truth;
+    # preview_port_range turns them into the `start-end` string that compose,
+    # the Caddyfile, and the firewall all consume, so there is one computation
+    # and no place for the three to disagree.
+    local preview_range
+    preview_range="$(preview_port_range)"
+
     info "Writing $env_file"
     umask 077
     cat > "$env_file" <<EOF
@@ -163,6 +170,9 @@ TRUST_PROXY_HOPS=1
 AETHER_PREVIEW_ENABLED=true
 AETHER_PREVIEW_PORT_START=${AETHER_PREVIEW_PORT_START:-8443}
 AETHER_PREVIEW_PORT_COUNT=${AETHER_PREVIEW_PORT_COUNT:-10}
+# Derived from START/COUNT by the installer (preview_port_range). docker-compose
+# interpolates this directly, so the published range cannot drift from .env.
+AETHER_PREVIEW_PORT_RANGE=${preview_range}
 
 AETHER_BOOTSTRAP_TOKEN=${SECRET_BOOTSTRAP_TOKEN}
 AETHER_INSTANCE_ID=${SECRET_INSTANCE_ID}

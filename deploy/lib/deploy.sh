@@ -274,10 +274,11 @@ install_compose_file() {
     # alternative and does not work: Docker refuses a build-context path that
     # resolves through a symlink pointing outside the context.
     #
-    # The preview port range is rewritten the same way. Compose cannot expand a
-    # loop, so the shipped file carries the default range and the installer
-    # writes the configured one over it — matching the Caddyfile blocks and the
-    # firewall rule that are generated from the same three values.
+    # The preview port range is no longer rewritten here. The compose file reads
+    # ${AETHER_PREVIEW_PORT_RANGE} directly, and configure.sh derives that one
+    # value from START/COUNT into .env — the same source the Caddyfile blocks and
+    # the firewall rule use — so there is nothing to sed and no way for the
+    # published range to drift from .env.
     # The compose manifest has no stage of its own in the fixed stage vocabulary,
     # and it is written while CADDY's stage is open. Rather than attach it to a
     # stage that does not describe it, it is published as the current operation —
@@ -285,14 +286,10 @@ install_compose_file() {
     # gap where a multi-second file render and a `compose config` validation sit.
     ui_note CADDY "Rendering docker-compose.yml for this instance"
 
-    local preview_range
-    preview_range="$(preview_port_range)"
-
     sed \
         -e 's|^\( *\)context: \.$|\1context: ./src|' \
         -e 's|\( *- \)\./deploy/Caddyfile:|\1./caddy/Caddyfile:|' \
         -e 's|\( *- \)\./packages/frontend/dist:|\1./static:|' \
-        -e "s|'8443-8452:8443-8452'|'${preview_range}:${preview_range}'|" \
         "${AETHER_INSTALL_DIR}/src/docker-compose.prod.yml" \
         > "${AETHER_INSTALL_DIR}/docker-compose.yml"
 
@@ -306,12 +303,26 @@ install_compose_file() {
         || fatal "Could not rewrite the Caddyfile mount in docker-compose.yml"
     grep -q -- '- \./static:' "$generated" \
         || fatal "Could not rewrite the frontend bundle mount in docker-compose.yml"
-    grep -q "'${preview_range}:${preview_range}'" "$generated" \
-        || fatal "Could not rewrite the preview port range in docker-compose.yml"
+
+    # The published range comes from .env now, so make sure .env carries the
+    # value this install derived. On a fresh install configure.sh already wrote
+    # it and this is a no-op; on an update from a version that predates the key,
+    # .env has no AETHER_PREVIEW_PORT_RANGE and this backfills it from START/COUNT
+    # — so the compose interpolation matches rather than silently falling back.
+    # Reconciling (not merely asserting) is what keeps an update from drifting.
+    local env_file="${AETHER_INSTALL_DIR}/.env"
+    if [ -f "$env_file" ]; then
+        local env_range expected_range
+        env_range="$(env_value AETHER_PREVIEW_PORT_RANGE "$env_file" || true)"
+        expected_range="$(preview_port_range)"
+        if [ "$env_range" != "$expected_range" ]; then
+            set_env_var AETHER_PREVIEW_PORT_RANGE "$expected_range" "$env_file"
+        fi
+    fi
 
     # Validates the YAML and the variable interpolation before anything is built
     # from it. `.env` is already written at this point, so this also proves the
-    # required secrets are present.
+    # required secrets are present and that ${AETHER_PREVIEW_PORT_RANGE} resolves.
     compose_cmd -f "$generated" config >/dev/null \
         || fatal "The generated docker-compose.yml is not usable (see the error above)"
 
