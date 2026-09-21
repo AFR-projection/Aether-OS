@@ -408,6 +408,41 @@ EOF
     fi
 }
 
+write_login_profile() {
+    # A system-wide login-shell rule that puts the per-user bin directory on
+    # PATH. This is the general remedy for the finding that a host's own profile
+    # chain need not add ~/.local/bin: the Debian ~/.profile skeleton adds it for
+    # regular users, but only when ~/.profile exists, and root or a minimal home
+    # often lacks that line. A tool installed by `curl … | bash`, pipx, cargo or
+    # npm into ~/.local/bin would then not resolve in ANY login shell — in an
+    # Aether terminal or over SSH alike, because the shell sources this same
+    # chain either way.
+    #
+    # It is deliberately tool-agnostic: no tool is named, nothing Aether-specific
+    # is added, and the spawn code adds nothing to PATH by hand. The login shell
+    # sources /etc/profile.d/*.sh the way distributions themselves ship such
+    # rules (this host already gets /snap/bin from apps-bin-path.sh the same way),
+    # so a tool becomes reachable for exactly the reason it is reachable over SSH.
+    local dropin='/etc/profile.d/aether-local-bin.sh'
+
+    stage_line "Installing the login-shell PATH rule ($dropin)"
+    $SUDO tee "$dropin" >/dev/null <<'EOF'
+# Installed by Aether (setup-host.sh). Expose the per-user bin directory to
+# login shells so tools installed into ~/.local/bin — by curl installers, pipx,
+# cargo, npm and the like — resolve, exactly as they would over SSH. Guarded on
+# the directory existing, matching the convention the Debian ~/.profile skeleton
+# uses; nothing tool-specific is added.
+if [ -n "${HOME:-}" ] && [ -d "$HOME/.local/bin" ]; then
+    case ":${PATH}:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) PATH="$HOME/.local/bin:$PATH" ;;
+    esac
+fi
+EOF
+    $SUDO chmod 644 "$dropin"
+    info "Login shells now add \$HOME/.local/bin to PATH when it exists"
+}
+
 write_service() {
     [ "$AETHER_INSTALL_SERVICE" = "true" ] || {
         info "--no-service given; skipping the systemd unit"
@@ -585,6 +620,7 @@ main() {
 
     install_agent_source
     write_config
+    write_login_profile
     write_service
     start_service
     print_summary

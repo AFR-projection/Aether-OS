@@ -46,10 +46,19 @@ available for exactly the reason it becomes available over SSH.
 chain. We deliberately do **not** append `$HOME/.local/bin` (or nvm, cargo, pyenv…) ourselves:
 hardcoding a directory would paper over a host whose profile chain is broken, diverge from what the
 same user sees over SSH, and need editing again for every tool that picks a different directory. No
-tool is named anywhere in the environment module. If a real host is found whose profile chain lacks
-the standard per-user bin directory, that is a host-configuration finding, and the general remedy is
-a system-wide `/etc/profile.d/` rule as distributions themselves ship — never a per-tool patch in
-Aether.
+tool is named anywhere in the environment module.
+
+This is not hypothetical. On Ubuntu **as root**, the profile chain does not add `~/.local/bin` at all:
+the Debian `~/.profile` skeleton adds it only for a regular user whose `~/.profile` exists, and
+`/root` typically has no such line — so a tool installed by `curl … | bash` into `/root/.local/bin`
+resolves in **neither** an Aether terminal **nor** a plain SSH login. The remedy is a host-
+configuration one, applied where the profile chain lives rather than in the spawn code: the installer
+(`deploy/scripts/setup-host.sh`, `write_login_profile`) drops `/etc/profile.d/aether-local-bin.sh`, a
+tool-agnostic, existence-guarded rule that prepends `$HOME/.local/bin` to `PATH` for every login
+shell — the same mechanism by which the host already gets `/snap/bin` from `apps-bin-path.sh`. The
+spawn code still names no tool and adds nothing to `PATH` by hand; the login shell picks the rule up
+because it sources `/etc/profile.d/*.sh`, so a tool becomes reachable for exactly the reason it is
+reachable over SSH.
 
 The cost of `-l` on the command path is real and accepted: profile scripts run before each run, so a
 run is marginally slower and profile output can appear in the run's terminal. That is the honest
