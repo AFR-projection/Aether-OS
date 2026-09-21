@@ -92,7 +92,7 @@ export function registerPortsRoutes(app: FastifyInstance): void {
     const query = parseOrThrow(portsQuerySchema, request.query, 'ports query');
     const agentId = requireConnectedAgent(query.agentId);
 
-    const list = await hostListPorts(agentId);
+    const list = await hostListPorts(agentId, principal.user.id);
     const previews = await listPreviewsForUser(principal.user.id);
 
     const body: PortsResponse = { ...list, preview: previewCapability(), previews };
@@ -117,7 +117,7 @@ export function registerPortsRoutes(app: FastifyInstance): void {
     // the tunnel is the connection, so a server that is not listening — or that
     // is listening somewhere the agent cannot reach — is reported here, where
     // the answer can say so, rather than as a blank window a minute later.
-    const probe = await openHostTunnel(agentId, {
+    const probe = await openHostTunnel(agentId, principal.user.id, {
       port: body.port,
       ...(body.host !== undefined ? { host: body.host } : {}),
     });
@@ -218,7 +218,9 @@ async function servePreview(
 
   let transport;
   try {
-    transport = await openHostTunnel(reservation.agentId, { port: reservation.port });
+    transport = await openHostTunnel(reservation.agentId, reservation.userId, {
+      port: reservation.port,
+    });
   } catch (error) {
     writeMessage(
       reply,

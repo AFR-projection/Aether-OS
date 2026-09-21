@@ -49,8 +49,14 @@ function toListeningPort(value: unknown): ListeningPort | null {
   };
 }
 
-export async function hostListPorts(agentId: string): Promise<PortListResponse> {
-  const reply = expectRecord(await sendAgentRequest(agentId, 'ports.list', {}), 'port list');
+export async function hostListPorts(
+  agentId: string,
+  ownerUserId: string
+): Promise<PortListResponse> {
+  const reply = expectRecord(
+    await sendAgentRequest(agentId, 'ports.list', {}, ownerUserId),
+    'port list'
+  );
 
   const raw = Array.isArray(reply.ports) ? reply.ports : [];
   const ports: ListeningPort[] = [];
@@ -91,13 +97,19 @@ export interface OpenTunnelOptions {
 
 export async function openHostTunnel(
   agentId: string,
+  ownerUserId: string,
   options: OpenTunnelOptions
 ): Promise<TunnelTransport> {
   const opened = expectRecord(
-    await sendAgentRequest(agentId, 'ports.open', {
-      port: options.port,
-      ...(options.host !== undefined ? { host: options.host } : {}),
-    }),
+    await sendAgentRequest(
+      agentId,
+      'ports.open',
+      {
+        port: options.port,
+        ...(options.host !== undefined ? { host: options.host } : {}),
+      },
+      ownerUserId
+    ),
     'open tunnel'
   );
 
@@ -112,7 +124,7 @@ export async function openHostTunnel(
     if (released) return;
     released = true;
     try {
-      await sendAgentRequest(agentId, 'ports.close', { tunnelId });
+      await sendAgentRequest(agentId, 'ports.close', { tunnelId }, ownerUserId);
     } catch (error) {
       // The goal state is "closed", and an agent that has already reaped the
       // tunnel — an idle timeout, a disconnect — has reached it. Only an
@@ -127,10 +139,15 @@ export async function openHostTunnel(
       let reply: Record<string, unknown>;
       try {
         reply = expectRecord(
-          await sendAgentRequest(agentId, 'ports.read', {
-            tunnelId,
-            maxBytes: Math.min(maxBytes, LIMITS.PORT_TUNNEL_CHUNK_BYTES),
-          }),
+          await sendAgentRequest(
+            agentId,
+            'ports.read',
+            {
+              tunnelId,
+              maxBytes: Math.min(maxBytes, LIMITS.PORT_TUNNEL_CHUNK_BYTES),
+            },
+            ownerUserId
+          ),
           'tunnel read'
         );
       } catch (error) {
@@ -156,10 +173,15 @@ export async function openHostTunnel(
     async write(data: Buffer) {
       if (released) return;
       try {
-        await sendAgentRequest(agentId, 'ports.write', {
-          tunnelId,
-          contentBase64: data.toString('base64'),
-        });
+        await sendAgentRequest(
+          agentId,
+          'ports.write',
+          {
+            tunnelId,
+            contentBase64: data.toString('base64'),
+          },
+          ownerUserId
+        );
       } catch (error) {
         // A refused write means the tunnel is gone, and every later write would
         // fail the same way. Marking it released stops the retry loop that would

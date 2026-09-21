@@ -22,6 +22,7 @@ import { registerHealthRoutes } from './routes/health.routes.js';
 import { registerPortsRoutes, registerPreviewGateway } from './routes/ports.routes.js';
 import { registerSystemRoutes } from './routes/system.routes.js';
 import { registerTerminalRoutes } from './routes/terminal.routes.js';
+import { registerUnitRoutes } from './routes/units.routes.js';
 import { previewOrigins, previewPortForHost } from './security/preview.js';
 import { isAppError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
@@ -151,6 +152,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   registerUserRoutes(app);
   registerFilesRoutes(app);
   registerTerminalRoutes(app);
+  registerUnitRoutes(app);
   registerSystemRoutes(app);
   registerDesktopRoutes(app);
   registerAuditRoutes(app);

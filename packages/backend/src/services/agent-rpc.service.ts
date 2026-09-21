@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import {
   AppError,
+  ForbiddenError,
   NotFoundError,
   ConflictError,
+  NotImplementedError,
   ServiceUnavailableError,
+  ValidationError,
 } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
 
@@ -96,13 +99,29 @@ export function isAgentRpcConnected(agentId: string): boolean {
   return channel !== undefined && channel.socket.readyState === channel.socket.OPEN;
 }
 
-/** Maps an agent-reported error code onto the closest client-facing AppError. */
+/**
+ * Maps an agent-reported error code onto the closest client-facing AppError.
+ *
+ * The agent and the backend share one error vocabulary (`@aether/shared`'s
+ * `ERROR_CODES`), so a rejection keeps its meaning across the hop rather than
+ * collapsing to a generic 503. That matters most for the two the execution-unit
+ * surface leans on: `NOT_IMPLEMENTED` is how the agent refuses a `service` or
+ * `worker` unit it has no supervisor for — a 501 a client must not retry — and
+ * `VALIDATION_FAILED` is how it refuses a rejected env var or a bad command,
+ * which is the caller's fault (400), not the host's (503).
+ */
 function agentErrorToAppError(code: string, message: string): AppError {
   switch (code) {
     case 'NOT_FOUND':
       return new NotFoundError(message);
     case 'CONFLICT':
       return new ConflictError(message);
+    case 'VALIDATION_FAILED':
+      return new ValidationError(message);
+    case 'FORBIDDEN':
+      return new ForbiddenError(message);
+    case 'NOT_IMPLEMENTED':
+      return new NotImplementedError(message);
     default:
       // The agent rejected the request for a reason we do not specifically model;
       // surface it as a service-level failure rather than pretending it succeeded.
@@ -170,10 +189,11 @@ function dispatch(agentId: string, frameFields: Record<string, unknown>): Promis
  * - `files.*` is role-gated over a single instance-wide workspace
  *   (`files:read`/`write`/`delete`), so there is no per-user split for the agent
  *   to enforce and the parameter is not load-bearing.
- * - `ports.*` is per-user on the agent (tunnels carry an owner), but the backend
- *   does not yet thread the requesting user down to those call sites. That gap is
- *   recorded in `docs/architecture/EXECUTION-PRIMITIVE.md` (OPEN-1) rather than
- *   papered over here.
+ * - `ports.*` is per-user on the agent (a tunnel carries the owner that opened
+ *   it, and `ports.read`/`write`/`close` refuse a tunnel that is not the
+ *   caller's). Every `agent-ports.service` call site now threads the requesting
+ *   user through, so the agent's ownership check runs against the real principal
+ *   rather than the paired-connection fallback.
  */
 export function sendAgentRequest(
   agentId: string,

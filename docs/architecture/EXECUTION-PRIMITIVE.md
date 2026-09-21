@@ -1,6 +1,9 @@
 # P1 — General Execution + Supervision Primitive
 
-**Status:** design proposal, **revision 2**, awaiting approval. No P1 code has been written.
+**Status:** design **revision 2**, approved and **partially implemented**. Two slices have shipped:
+ownership + adoption for terminal sessions (§29), and the Execution Unit registry with its `units.*`
+surface and the port-ownership fix (§30). The P2/P3 rows — systemd, rlimits, restart policies, log
+files, DB persistence, `runAs`, the session broker — remain design.
 **Scope:** one reusable primitive that Terminal, Code Studio, AI agents, App Runtime,
 Deployments and background workers all consume, instead of each growing its own spawn path.
 
@@ -926,10 +929,13 @@ change table.
   own. `files.*` and `processes.*` stay delegated to the backend **by decision** — they are
   role-gated over one instance-wide workspace, so there is no per-user split for the agent to
   enforce, and a second copy of the role model is a second place to disagree with it. **Port
-  tunnels remain a real gap**: the agent already stamps and checks a tunnel owner
-  (`capabilities/port-tunnel.ts`), but `agent-ports.service.ts` does not pass the requesting user, so
-  the owner stamped is the connection's paired owner. Self-consistent today, wrong in the same way
-  the terminal surface was. Not in the shipped slice.
+  tunnels: now closed.** The agent already stamped and checked a tunnel owner
+  (`capabilities/port-tunnel.ts`); as of the second slice `agent-ports.service.ts` threads the
+  requesting user through `ports.list`/`open`/`read`/`write`/`close`, so the owner stamped and checked
+  is the real principal rather than the connection's paired owner — the same fix the terminal surface
+  got, proven by `port-tunnel.test.ts` (a stranger is refused a tunnel with the same 404 a missing one
+  gets). OPEN-1 is now fully answered: terminal, units, and ports are owner-checked per request;
+  `files.*`/`processes.*` stay delegated to the backend by decision.
 - **OPEN-2 (§16, §19):** does P1 stay single-replica (matching the default install, with converging
   reconciliation) or move the unit→agent mapping into the database now? The shipped adoption step
   narrows the gap without answering it: a restarted backend re-adopts from the agent, so a
@@ -965,5 +971,77 @@ its records for them. Live shells from before the upgrade therefore become unadd
 new session is correct. This is the price of removing the ambiguity; there is no way to migrate a
 key the agent never told the backend it was using.
 
-**Not shipped, and not claimed:** units, `units.*`, the supervisor, rlimits, audit events — all of
-§5–§21 remain design. P2 and P3 are untouched.
+**Shipped in the second slice** — the unit registry itself; see §30 for the change table.
+
+**Not shipped, and not claimed:** the systemd path for `service`/`worker`, rlimits, restart policies,
+log files, the `execution_units` table, `runAs`, secrets, port reservations, and the units WebSocket
+stream — all P2/P3. §30 lists what the registry does and does not yet do.
+
+---
+
+## 30. What shipped second — the unit registry
+
+The second slice is **the Execution Unit registry** (§2, §3, §16) and the whole surface over it: the
+agent's `units.*` verbs, the terminal rebuilt as a *view* over the registry rather than a second
+table, the backend REST API, and the port-ownership fix that OPEN-1 left outstanding.
+
+### The one execution model, enforced not just asserted
+
+The registry is the **only process table on the agent**. `capabilities/units.ts` holds every unit —
+`tty` and `command` alike — and `capabilities/terminal.ts` no longer has a `Map` of its own: it is a
+projection of the registry onto the `TerminalSession` shape the browser already speaks
+(`terminalSessionFromUnit`). Nothing about a shell is stored twice, so the two cannot drift about
+whether it is running, whose it is, or how it ended — the divergence §2 exists to end.
+
+That "one model" is enforced by a test, not left to discipline: `terminal.test.ts` scans every spawn
+call site in the file and fails unless each goes through `buildShellArgv` + `buildShellEnvironment`,
+and it requires **both** a `pty.spawn` site and a `child_process.spawn` site — so the pipe path (§6)
+cannot quietly grow its own environment. A future spawn path that improvises fails the suite.
+
+### What the registry does
+
+| Dimension (§2, §3, §16) | How, and where |
+|---|---|
+| **Identity & ownership** | `id` (uuid) + immutable `ownerUserId`; `requireOwned` answers another user's unit and a missing one with the **same** 404 |
+| **Lifecycle state** | `starting`→`running`→`exited`/`failed`/`killed`, plus `stale`; derived from `{code, signal, killRequested, liveness}`, never guessed (`deriveUnitState`) |
+| **Two spawn paths** | `tty` via `pty.spawn` (merged stream); `command` via `child_process.spawn` with `detached:true` (separate stdout/stderr), both through the shared builders (§6) |
+| **PID identity** | pid + pgid + `startTicks` (`/proc/<pid>/stat` field 22) + `bootId`, so pid reuse and a reboot are both caught (§3) |
+| **Exit code** | `normalizeExit(code, signal)` — `128 + signal` on both paths; a signalled unit is `failed`/`killed`, never success (§8) |
+| **Logs** | a bounded ring per unit, read by offset (`units.log`); `droppedBytes` reports loss rather than hiding it |
+| **Crash / vanish detection** | a unit whose process is gone without reporting an exit is `stale`, distinct from `exited` (§3) |
+| **Duplicate prevention** | `requestId` idempotency — two creates with one token and owner describe one unit |
+| **Signals & process groups** | `units.signal` targets the group; optional SIGTERM→SIGKILL escalation |
+| **Auditability** | the backend records `unit.created`/`signalled`/`restarted`/`killed` through `recordAuditEvent` |
+| **Permission boundary** | `execution:{create,read,signal,delete}`; `scope=all` needs `manage-others`; limits above the default need `limits:raise` |
+| **Backend-restart recovery** | the backend keeps **no** unit bookkeeping — the agent is the store; a restarted backend reads the live units back, so there is no state to lose or drift (see `host-units.service`) |
+
+### What it deliberately does not do yet
+
+- **`service` / `worker` kinds are refused with `NOT_IMPLEMENTED` (501), not faked.** The supervisor
+  that would own them is P2. The refusal keeps its meaning across the RPC hop:
+  `agent-rpc.service.ts` maps the agent's `NOT_IMPLEMENTED` onto a 501, not a generic 503, so a client
+  is told "not built" rather than "try again".
+- **No `units.input` / `units.resize` on the REST surface.** Interactive I/O for a `tty` unit still
+  runs over the terminal API and its WebSocket; the units REST API is lifecycle-only in this slice.
+  The units WS stream (§20) is not built — log reads are by offset.
+- **No rlimits, no restart policies, no log files, no `runAs`, no DB table.** All P2 (§9, §10, §19).
+  A unit still does not survive its agent restarting, and nothing here claims it does.
+
+### The change table
+
+| Change | Where | Why |
+|---|---|---|
+| The unit registry — the only process table on the agent | `packages/host-agent/src/capabilities/units.ts` | §2's one record; identity, lifecycle, logs, signals, reconciliation |
+| Terminal rebuilt as a view over the registry (no second `Map`); a killed/ending unit filtered from the session list | `packages/host-agent/src/capabilities/terminal.ts` | One answer to "is it running", not two; a killed session must not be re-adopted during its SIGTERM window |
+| `units.*` verbs: create/list/get/signal/kill/restart/log | `packages/host-agent/src/router.ts` | The RPC surface; every verb owner-checked, `scope=all` only from the backend |
+| `service`/`worker` refused with `NotImplementedError` | `packages/host-agent/src/capabilities/units.ts` | §40 honesty — 501 "not built", not 503 "unavailable" |
+| The pure contract: `ExecutionUnit`, `normalizeExit`, `deriveUnitState`, env rejection | `packages/shared/src/execution-units.ts` | Shared by agent and backend, so both mean the same thing by a unit |
+| Backend service — a **stateless** authorized proxy over `units.*` | `packages/backend/src/services/host-units.service.ts` | The agent is the store; no bookkeeping to fall out of sync on restart |
+| Backend REST API + limit/scope gating | `packages/backend/src/routes/units.routes.ts` | `execution:*`; `scope=all`→`manage-others`; raised limits→`limits:raise`, refused before create |
+| `agentErrorToAppError` maps `VALIDATION_FAILED`/`FORBIDDEN`/`NOT_IMPLEMENTED` | `packages/backend/src/services/agent-rpc.service.ts` | A rejection keeps its meaning across the hop instead of collapsing to 503 |
+| `unit.*` audit actions | `packages/shared/src/types/audit.ts` | Units must not be the one execution path with no audit trail (§14) |
+| **Port ownership (OPEN-1):** the requesting user threaded through every `ports.*` call | `packages/backend/src/services/agent-ports.service.ts`, `routes/ports.routes.ts` | The agent checked a tunnel owner already; now it checks the **real** principal, not the paired fallback |
+| Tests: registry lifecycle/ownership/log/signal/stale; port-tunnel ownership; backend service + routes | `units.test.ts`, `port-tunnel.test.ts`, `host-units.service.test.ts`, `units.routes.test.ts` | Ownership, honesty (`stale` ≠ `exited`, 404-not-403), and the two conditional permission gates, all under test |
+
+**No one-time cost this slice.** Unlike the ownership slice (§29), nothing re-keys existing state: the
+registry is new, and the terminal view reads the same units the agent already held.

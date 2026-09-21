@@ -95,12 +95,15 @@ principal. Tests: `capabilities/terminal.test.ts` ("terminal session ownership")
   same files and the same process table, so the agent adds **no second line of defence** here — it
   does not create a leak, and duplicating the role model into the agent would give two places to
   disagree about it. Recorded as the answer to OPEN-1 in the design of record.
-- **Port tunnels are per-user on the agent and are not yet told which user.** `openTunnel` stamps an
-  owner and `read`/`write`/`close` check it (`capabilities/port-tunnel.ts`), but the backend's
-  `agent-ports.service.ts` call sites do not pass the requesting user, so the agent stamps the
-  connection's paired owner. This is self-consistent — the same wrong principal is used for open and
-  for read — so it does not break today and does not leak across users on a single-owner agent, but
-  it is the same class of defect as the terminal one and is **still open** (OPEN-1).
+- **Port tunnels: now closed.** `openTunnel` stamps an owner and `read`/`write`/`close` check it
+  (`capabilities/port-tunnel.ts`); the backend's `agent-ports.service.ts` now threads the requesting
+  user through `ports.list`/`open`/`read`/`write`/`close`, so the agent stamps and checks the **real**
+  principal rather than the connection's paired owner — the same fix the terminal surface got. A
+  stranger is refused another user's tunnel with the same 404 a missing tunnel gets, and sign-out
+  closes only that user's tunnels; proven by `capabilities/port-tunnel.test.ts`.
+
+So OPEN-1 is now fully answered: the three per-user surfaces (terminal, units, ports) are owner-checked
+per request, and `files.*`/`processes.*` stay role-gated in the backend by decision.
 
 **Exposure today:** limited to a compromised or mistaken backend, since the agent is reachable only
 with a valid pairing token over the authenticated `/ws/agent` socket, and every backend route checks
@@ -255,6 +258,34 @@ shells are still there, and the desktop rediscovers them via `GET /api/terminal/
 - **Reattach is process-level, not screen-level.** It preserves the process and up to 256 KB of
   scrollback; xterm.js rebuilds the screen from that. Exact screen state for a full-screen program
   (an editor, `top`) is not reproduced.
+
+### 18c. The execution-unit registry runs `tty` and `command`; `service`/`worker` are refused, not faked
+
+**→ see [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §30**
+
+The agent's Execution Unit registry (`packages/host-agent/src/capabilities/units.ts`) is the single
+process table behind the Terminal and the `units.*` REST API. It runs two kinds for real — `tty` (a
+PTY) and `command` (a piped child in its own process group) — with per-unit ownership, honest exit
+codes, a `stale` state for a process that vanished, a bounded log ring read by offset, and process-
+group signalling.
+
+What it does **not** yet do, and does not pretend to:
+
+- **`service` and `worker` kinds are refused with `NOT_IMPLEMENTED` (501).** The supervisor that would
+  own a long-lived, restart-managed process is P2. The refusal is deliberate honesty — a 501 "not
+  built", preserved across the RPC hop as a 501 and not a generic 503 — rather than accepting the
+  request and running an unsupervised process that looks managed.
+- **A unit does not survive its agent restarting.** Same reason as a terminal PTY (#18b): the process
+  dies with the agent that owns it. The backend keeps no unit bookkeeping, so a backend restart is
+  invisible to a still-running unit, but an agent restart genuinely ends it and the registry reports
+  it gone.
+- **No resource limits, restart policies, log files, `runAs`, or DB persistence.** All P2. A unit's
+  output lives in memory and its history is not recorded. `maxOutputBytes` and a restart *ceiling*
+  above the instance default are gated by `execution:limits:raise`, but cgroup enforcement and the
+  restart *policies* themselves are not built.
+- **No interactive input/resize or streaming on the units REST surface.** Driving a `tty` unit
+  interactively still goes through the terminal API and its WebSocket; the units API is lifecycle-only
+  (create/list/get/signal/restart/kill/log-by-offset).
 
 ### 19. No horizontal scaling of the WebSocket layer beyond Redis
 

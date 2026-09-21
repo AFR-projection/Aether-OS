@@ -28,11 +28,23 @@ import {
   sendSignal,
   writeInput,
 } from './capabilities/terminal.js';
+import {
+  createUnit,
+  endOwnedUnit,
+  getUnit,
+  listUnits,
+  readUnitLog,
+  restartUnit,
+  signalUnit,
+  subscribeUnit,
+} from './capabilities/units.js';
 import { toErrorCode, toStatusCode } from './errors.js';
 import { subsystemLogger } from './logger.js';
 import { errReply, okReply, type ParsedRequest, type Reply } from './protocol.js';
 
+import type { UnitEvent } from './capabilities/units.js';
 import type { AgentConfig } from './config.js';
+import type { UnitSignal } from '@aether/shared';
 
 const log = subsystemLogger('router');
 
@@ -135,6 +147,44 @@ interface TerminalResizeParams {
 interface TerminalSignalParams {
   id: string;
   signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL';
+}
+
+interface UnitsCreateParams {
+  kind: 'tty' | 'command' | 'service' | 'worker';
+  command?: string;
+  cwd?: string;
+  shell?: string;
+  env?: Record<string, string>;
+  cols: number;
+  rows: number;
+  term?: string;
+  wallClockMs: number | null;
+  graceMs: number;
+  maxOutputBytes: number;
+  restart?: { policy: 'never' | 'on-failure' | 'always'; maxAttempts: number; backoffMs: number };
+  requestId?: string;
+}
+
+interface UnitsListParams {
+  kind?: 'tty' | 'command' | 'service' | 'worker';
+  scope: 'mine' | 'all';
+}
+
+interface UnitsIdParams {
+  id: string;
+}
+
+interface UnitsSignalParams {
+  id: string;
+  signal: UnitSignal;
+  escalateAfterMs: number | null;
+}
+
+interface UnitsLogParams {
+  id: string;
+  offset: number;
+  limit: number;
+  stream: 'combined' | 'stdout' | 'stderr';
 }
 
 export async function dispatchRequest(
@@ -293,7 +343,7 @@ async function route(
 
     case 'terminal.input': {
       const params = request.params as TerminalInputParams;
-      writeInput(params.id, ownerUserId, params.data, cfg);
+      writeInput(params.id, ownerUserId, params.data);
       return { accepted: true };
     }
 
@@ -317,6 +367,87 @@ async function route(
       return { killed };
     }
 
+    /**
+     * The general execution-unit surface.
+     *
+     * Every one of these names the owner, and every one of them answers a unit
+     * belonging to somebody else exactly as it answers one that does not exist.
+     * The agent is the last line of defence — it holds the processes, and it is
+     * the only party that can refuse to act on one — so a verb that skipped the
+     * check here would not be caught anywhere.
+     */
+    case 'units.create': {
+      const params = request.params as UnitsCreateParams;
+      return createUnit(cfg, ownerUserId, {
+        kind: params.kind,
+        command: params.command,
+        cwd: params.cwd,
+        shell: params.shell,
+        env: params.env,
+        cols: params.cols,
+        rows: params.rows,
+        term: params.term,
+        wallClockMs: params.wallClockMs,
+        graceMs: params.graceMs,
+        maxOutputBytes: params.maxOutputBytes,
+        restart: params.restart,
+        requestId: params.requestId,
+      });
+    }
+
+    case 'units.list': {
+      const params = request.params as UnitsListParams;
+      // `all` is the absence of an owner filter. Only the backend can send it —
+      // the pairing token authenticates it — and the permission that makes it
+      // legitimate is checked there, where the roles are.
+      return {
+        units: listUnits({
+          ownerUserId: params.scope === 'all' ? null : ownerUserId,
+          kind: params.kind,
+        }),
+      };
+    }
+
+    case 'units.get': {
+      const params = request.params as UnitsIdParams;
+      return { unit: getUnit(params.id, ownerUserId) };
+    }
+
+    case 'units.signal': {
+      const params = request.params as UnitsSignalParams;
+      return signalUnit(params.id, ownerUserId, params.signal, params.escalateAfterMs);
+    }
+
+    case 'units.kill': {
+      const params = request.params as UnitsIdParams;
+      const killed = await endOwnedUnit(params.id, ownerUserId, 'backend_request');
+      return { killed };
+    }
+
+    case 'units.restart': {
+      const params = request.params as UnitsIdParams;
+      return { unit: await restartUnit(cfg, params.id, ownerUserId) };
+    }
+
+    case 'units.log': {
+      const params = request.params as UnitsLogParams;
+      const read = readUnitLog(params.id, ownerUserId, {
+        offset: params.offset,
+        limit: params.limit,
+        stream: params.stream,
+      });
+      return {
+        // Base64 because a stream is bytes: a partial UTF-8 sequence at a chunk
+        // boundary is normal, and JSON would corrupt it.
+        contentBase64: Buffer.from(read.content, 'utf8').toString('base64'),
+        offset: read.offset,
+        retainedBytes: read.retainedBytes,
+        droppedBytes: read.droppedBytes,
+        totalBytes: read.totalBytes,
+        ended: read.ended,
+      };
+    }
+
     default: {
       throw new Error(`Unsupported request type: ${(request as { type: string }).type}`);
     }
@@ -333,6 +464,28 @@ export function subscribeToSession(
   const attached = attach(cfg, sessionId, ownerUserId, onMessage);
   for (const chunk of attached.replay) {
     onMessage({ type: 'output', data: chunk });
+  }
+  return attached.unsubscribe;
+}
+
+/**
+ * Subscribe to a unit's events, with its retained output replayed first.
+ *
+ * The general form of `subscribeToSession`: it carries the unit's own event
+ * vocabulary — which includes a state change that is not an exit — rather than
+ * the terminal's narrower one. A subscriber that has already been handed the
+ * end of a finished unit gets nothing further, because there is nothing further
+ * to send.
+ */
+export function subscribeToUnit(
+  cfg: AgentConfig,
+  unitId: string,
+  ownerUserId: string,
+  onEvent: (event: UnitEvent) => void
+): () => void {
+  const attached = subscribeUnit(cfg, unitId, ownerUserId, onEvent);
+  for (const event of attached.replay) {
+    onEvent(event);
   }
   return attached.unsubscribe;
 }

@@ -25,6 +25,12 @@ export const PERMISSIONS = [
   'settings:manage',
   'users:manage',
   'audit:read',
+  'execution:create',
+  'execution:read',
+  'execution:signal',
+  'execution:delete',
+  'execution:manage-others',
+  'execution:limits:raise',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -46,6 +52,21 @@ export type Role = (typeof ROLES)[number];
  * Files and Ports apps which machine they are working on. Tying it to
  * `settings:manage` left an operator with a shell they could not aim at any
  * host, and a viewer with a Ports app that had nothing to list.
+ *
+ * The `execution:*` group covers the execution-unit registry — the single
+ * primitive the Terminal, Code Studio's Run panel and (later) workers, services
+ * and deployments are all built on. It is split finely because the acts are not
+ * equally reversible: reading a unit's state is nothing, ending one throws away
+ * a running process, and raising the limits on one decides how much of the
+ * machine it may consume.
+ *
+ * - `execution:manage-others` is what lets an administrator see and stop units
+ *   belonging to someone else on a shared instance. It is not given to
+ *   `operator`: an operator runs their own work, and a permission that lets one
+ *   operator read another's shell output is not a working permission.
+ * - `execution:limits:raise` gates only limits *above* the instance defaults
+ *   (see `LIMITS`). An ordinary create is not gated by it, because the defaults
+ *   are what an ordinary create gets.
  */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   owner: PERMISSIONS,
@@ -63,6 +84,12 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'system:read',
     'settings:manage',
     'audit:read',
+    'execution:create',
+    'execution:read',
+    'execution:signal',
+    'execution:delete',
+    'execution:manage-others',
+    'execution:limits:raise',
   ],
   operator: [
     'files:read',
@@ -74,8 +101,19 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'ports:read',
     'ports:forward',
     'system:read',
+    'execution:create',
+    'execution:read',
+    'execution:signal',
+    'execution:delete',
   ],
-  viewer: ['files:read', 'process:read', 'agents:read', 'ports:read', 'system:read'],
+  viewer: [
+    'files:read',
+    'process:read',
+    'agents:read',
+    'ports:read',
+    'system:read',
+    'execution:read',
+  ],
 };
 
 /** Returns true when `role` grants `permission`. */
@@ -139,4 +177,45 @@ export const LIMITS = {
   MAX_LISTENING_PORTS: 200,
   /** Concurrent port tunnels one agent will hold open. */
   MAX_PORT_TUNNELS: 32,
+  /**
+   * Execution units one user may have at once.
+   *
+   * Matches `MAX_TERMINAL_SESSIONS_PER_USER` on purpose: the Terminal is now a
+   * view over units, so a separate number would either let a user open more
+   * terminals than before or fewer, and neither is a decision this change is
+   * entitled to make silently.
+   */
+  MAX_EXECUTION_UNITS_PER_USER: 10,
+  /**
+   * Execution units one host will hold at once, across every user.
+   *
+   * A ceiling on the process count rather than on any one account: a shared
+   * instance sizes its RAM and pid space for some number of concurrent
+   * processes, and this is where that number is written down.
+   */
+  MAX_EXECUTION_UNITS_GLOBAL: 50,
+  /**
+   * Output retained per unit before the ring starts dropping the oldest bytes.
+   *
+   * A unit that asks for more than this needs `execution:limits:raise`, which
+   * is what makes the permission mean something rather than being decorative.
+   */
+  EXECUTION_UNIT_MAX_OUTPUT_BYTES: 256 * 1024,
+  /**
+   * Automatic restarts a unit may have before Aether gives up on it.
+   *
+   * Also gated by `execution:limits:raise` above this value: a high ceiling is
+   * a way to keep the machine busy, and the point of the permission is that
+   * somebody decided that was wanted.
+   */
+  EXECUTION_UNIT_MAX_RESTART_ATTEMPTS: 3,
+  /**
+   * How long a unit may run with nothing happening before Aether ends it.
+   *
+   * Only applied to `tty` units, which are interactive by definition: a shell
+   * nobody is typing into and nobody is attached to is a shell nobody is
+   * coming back to. A `command` unit is bounded by `wallClockMs` instead,
+   * because a build that prints nothing for an hour is working, not idle.
+   */
+  EXECUTION_UNIT_IDLE_TIMEOUT_MS: 30 * 60 * 1000,
 } as const;

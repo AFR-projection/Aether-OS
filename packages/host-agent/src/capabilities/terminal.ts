@@ -1,118 +1,72 @@
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import {
-  DEFAULT_TERM,
-  buildShellArgv,
-  buildShellEnvironment,
+  terminalSessionFromUnit,
+  terminalStatusToUnitState,
+  type ExecutionUnit,
   type TerminalServerMessage,
   type TerminalSession,
-  type TerminalStatus,
 } from '@aether/shared';
-import { resolveHostIdentity } from '@aether/shared/node';
 
-import { ConflictError, NotFoundError, ServiceUnavailableError } from '../errors.js';
 import { subsystemLogger } from '../logger.js';
-import { getWorkspaceRoot, joinToRoot, resolveExistingPath } from '../security/workspace.js';
+import {
+  createUnit,
+  endOwnedUnit,
+  getUnit,
+  getUnitUnscoped,
+  isPtyAvailable,
+  isUnitEnded,
+  isUnitEnding,
+  listUnits,
+  requestEndAllUnits,
+  requestEndUnitsForUser,
+  requestEndUnitUnscoped,
+  resetUnitsForTests,
+  resizeUnit,
+  resolveShell,
+  seedUnitForTests,
+  signalUnit,
+  subscriberCount,
+  subscribeUnit,
+  unitStats,
+  writeUnitInput,
+  type UnitEvent,
+} from './units.js';
+import { getWorkspaceRoot } from '../security/workspace.js';
 
 import type { AgentConfig } from '../config.js';
-import type { IPty } from 'node-pty';
 
 const log = subsystemLogger('terminal');
 
 /**
- * Server-side PTY session manager.
+ * The Terminal, as a view over the execution-unit registry.
  *
- * `node-pty` is a native addon. It is loaded lazily so that a build without a
- * working native module still serves the rest of the agent, and so the failure
- * is reported as a clear `TERMINAL_UNAVAILABLE` error rather than a crash at
- * boot.
+ * There is no session table here any more. An interactive shell *is* an
+ * execution unit of kind `tty`, and this module is the projection of one onto
+ * the session shape the browser already speaks: `createSession` creates a unit,
+ * `listSessionsForUser` reads units, `attach` subscribes to a unit, and killing
+ * a session ends the unit. Nothing is stored twice, so the two cannot disagree
+ * about whether a shell is running.
+ *
+ * That is the whole point of the layer. When the terminal had its own table,
+ * every question worth asking — is this alive, whose is it, what did it print,
+ * how did it end — had one answer here and another in the registry, and the two
+ * drifted. Now there is one answer and this file renames it.
+ *
+ * ## The projection is lossy, deliberately
+ *
+ * A unit has six states; `TerminalStatus` has four. `failed` and `stale` both
+ * arrive here as `exited`, because from a terminal's point of view a process
+ * that is not running is not running — the difference lives in the unit's own
+ * `state` and `exit`, which is where a consumer that needs it reads it. The
+ * mapping is written down in `terminalSessionFromUnit` rather than implied.
  */
 
 export type TerminalSubscriber = (message: TerminalServerMessage) => void;
 
-interface TerminalRuntime {
-  session: TerminalSession;
-  ownerUserId: string;
-  pty: IPty | null;
-  subscribers: Set<TerminalSubscriber>;
-  /** Recent output retained so a reconnecting client can rebuild its screen. */
-  scrollback: string[];
-  scrollbackBytes: number;
-  idleTimer: NodeJS.Timeout | null;
-  killTimer: NodeJS.Timeout | null;
-}
-
-const sessions = new Map<string, TerminalRuntime>();
-
-const MAX_SCROLLBACK_BYTES = 256 * 1024;
-
-let ptyModule: typeof import('node-pty') | null = null;
-let ptyLoadError: Error | null = null;
-
-async function loadPty(): Promise<typeof import('node-pty')> {
-  if (ptyModule) return ptyModule;
-  if (ptyLoadError) throw ptyLoadError;
-
-  try {
-    ptyModule = await import('node-pty');
-    return ptyModule;
-  } catch (error) {
-    ptyLoadError = error instanceof Error ? error : new Error(String(error));
-    log.error({ err: ptyLoadError }, 'node-pty native module could not be loaded');
-    throw new ServiceUnavailableError(
-      'Terminal support is unavailable: the node-pty native module failed to load on this host.',
-      { reason: ptyLoadError.message }
-    );
-  }
-}
-
-/** True when the PTY backend loaded successfully. Used by `/health` and the UI. */
+/** True when a real shell can be spawned on this host. */
 export function isTerminalAvailable(cfg: AgentConfig): boolean {
-  return ptyLoadError === null && cfg.TERMINAL_ENABLED;
-}
-
-function countSessionsForUser(userId: string): number {
-  let count = 0;
-  for (const runtime of sessions.values()) {
-    if (runtime.ownerUserId === userId) count += 1;
-  }
-  return count;
-}
-
-function pruneScrollback(runtime: TerminalRuntime, cfg: AgentConfig): void {
-  const maxChunks = Math.max(1, cfg.TERMINAL_SCROLLBACK_LINES);
-  while (runtime.scrollbackBytes > MAX_SCROLLBACK_BYTES && runtime.scrollback.length > 1) {
-    const removed = runtime.scrollback.shift();
-    if (removed === undefined) break;
-    runtime.scrollbackBytes -= Buffer.byteLength(removed, 'utf8');
-  }
-  while (runtime.scrollback.length > maxChunks) {
-    const removed = runtime.scrollback.shift();
-    if (removed === undefined) break;
-    runtime.scrollbackBytes -= Buffer.byteLength(removed, 'utf8');
-  }
-}
-
-function broadcast(runtime: TerminalRuntime, message: TerminalServerMessage): void {
-  for (const subscriber of runtime.subscribers) {
-    try {
-      subscriber(message);
-    } catch (error) {
-      log.warn({ err: error, sessionId: runtime.session.id }, 'terminal subscriber threw');
-    }
-  }
-}
-
-function resetIdleTimer(runtime: TerminalRuntime, cfg: AgentConfig): void {
-  if (runtime.idleTimer) clearTimeout(runtime.idleTimer);
-
-  runtime.idleTimer = setTimeout(() => {
-    log.info({ sessionId: runtime.session.id }, 'terminal session idle timeout reached');
-    killSession(runtime.session.id, 'idle_timeout');
-  }, cfg.TERMINAL_IDLE_TIMEOUT);
-
-  runtime.idleTimer.unref();
+  return cfg.TERMINAL_ENABLED && isPtyAvailable();
 }
 
 export interface CreateSessionOptions {
@@ -124,11 +78,11 @@ export interface CreateSessionOptions {
   /**
    * A command to run instead of an interactive shell.
    *
-   * It is passed to the shell as `-c <command>` rather than executed directly,
-   * so pipelines, `&&`, globs and `$VAR` all behave the way the person who
-   * typed it expects. The shell itself still comes from the allowlist, so this
-   * does not widen what can be spawned — only what the allowed shell is asked
-   * to do, which is the same thing a terminal already grants.
+   * Passed to the shell as `-c <command>` by the registry, so pipelines, `&&`,
+   * globs and `$VAR` behave the way the person who typed it expects. The shell
+   * itself still comes from the allowlist, so this does not widen what can be
+   * spawned — only what the allowed shell is asked to do, which is the same
+   * thing a terminal already grants.
    */
   command?: string;
 }
@@ -137,231 +91,53 @@ export async function createSession(
   cfg: AgentConfig,
   options: CreateSessionOptions
 ): Promise<TerminalSession> {
-  if (!cfg.TERMINAL_ENABLED) {
-    throw new ServiceUnavailableError('Terminal access is disabled on this instance');
-  }
-
-  if (countSessionsForUser(options.ownerUserId) >= cfg.TERMINAL_MAX_SESSIONS) {
-    throw new ConflictError('You have reached your terminal session limit', {
-      limit: cfg.TERMINAL_MAX_SESSIONS,
-    });
-  }
-
-  const pty = await loadPty();
-  const root = await getWorkspaceRoot(cfg);
-
-  // Who the host says this process is — from the passwd database, not the
-  // daemon's environment. This is the source for HOME, USER and the login-shell
-  // preference; see `@aether/shared/node`.
-  const identity = resolveHostIdentity();
-
-  let cwd = await defaultCwd(cfg, root, identity.home);
-  if (options.cwd) {
-    const resolved = await resolveExistingPath(cfg, options.cwd);
-    if (!resolved.exists) {
-      throw new NotFoundError('Working directory does not exist', { path: options.cwd });
-    }
-    cwd = resolved.absolute;
-  }
-
-  const shell = resolveShell(cfg, options.shell, identity.shell);
-  const id = randomUUID();
-
-  // `buildShellArgv` adds `-l`, so the host's own `/etc/profile` → `~/.profile`
-  // → `~/.bashrc` chain runs and the shell has the PATH a login would — which is
-  // how a user-installed tool in `~/.local/bin` becomes reachable. The
-  // environment is the shared allowlist: nothing from `process.env` crosses into
-  // the shell except the named non-sensitive variables, so the agent's pairing
-  // token stays unreadable. The reported SHELL is the shell actually spawned,
-  // not the passwd preference, which can differ when the allowlist overrides it.
-  const child = pty.spawn(shell, buildShellArgv(options.command), {
-    name: DEFAULT_TERM,
+  const unit = await createUnit(cfg, options.ownerUserId, {
+    kind: 'tty',
+    command: options.command,
+    cwd: options.cwd,
+    shell: options.shell,
     cols: options.cols,
     rows: options.rows,
-    cwd,
-    env: buildShellEnvironment({ ...identity, shell }, { cwd, ambient: process.env }),
   });
-
-  const now = new Date().toISOString();
-
-  const runtime: TerminalRuntime = {
-    session: {
-      id,
-      pid: child.pid,
-      shell,
-      cwd,
-      cols: options.cols,
-      rows: options.rows,
-      status: 'running',
-      exitCode: null,
-      createdAt: now,
-      lastActivityAt: now,
-      attachedClients: 0,
-    },
-    ownerUserId: options.ownerUserId,
-    pty: child,
-    subscribers: new Set(),
-    scrollback: [],
-    scrollbackBytes: 0,
-    idleTimer: null,
-    killTimer: null,
-  };
-
-  child.onData((data) => {
-    runtime.session.lastActivityAt = new Date().toISOString();
-    runtime.scrollback.push(data);
-    runtime.scrollbackBytes += Buffer.byteLength(data, 'utf8');
-    pruneScrollback(runtime, cfg);
-    broadcast(runtime, { type: 'output', data });
-    resetIdleTimer(runtime, cfg);
-  });
-
-  child.onExit(({ exitCode, signal }) => {
-    runtime.session.status = 'exited';
-    runtime.session.exitCode = exitCode;
-    runtime.session.pid = null;
-
-    broadcast(runtime, {
-      type: 'exit',
-      exitCode,
-      signal: typeof signal === 'number' ? signal : null,
-    });
-
-    if (runtime.idleTimer) clearTimeout(runtime.idleTimer);
-
-    // Give an attached client a moment to receive the exit frame before the
-    // session is dropped from the map.
-    runtime.killTimer = setTimeout(() => sessions.delete(id), 30_000);
-    runtime.killTimer.unref();
-  });
-
-  sessions.set(id, runtime);
-  resetIdleTimer(runtime, cfg);
-
-  log.info(
-    { sessionId: id, pid: child.pid, shell, ownerUserId: options.ownerUserId },
-    'terminal session created'
-  );
-
-  return { ...runtime.session };
-}
-
-/**
- * Resolves the shell to spawn.
- *
- * The requested shell must appear in `TERMINAL_ALLOWED_SHELLS`. Without this
- * allowlist a caller could ask for any executable on the host as the "shell".
- */
-export function resolveShell(cfg: AgentConfig, requested?: string, preferred?: string): string {
-  const allowed = cfg.TERMINAL_ALLOWED_SHELLS;
-
-  if (requested) {
-    if (!allowed.includes(requested)) {
-      throw new NotFoundError('Requested shell is not in the allowlist', { shell: requested });
-    }
-    return requested;
-  }
-
-  // The account's login shell from passwd, but only if the allowlist permits it.
-  // A service account's shell is often `/usr/sbin/nologin`, which must never be
-  // spawned; the allowlist is what refuses it, and the fallback below is used
-  // instead — which is exactly why the caller reports the resolved shell rather
-  // than the passwd preference as SHELL.
-  if (preferred && allowed.includes(preferred)) return preferred;
-
-  const fallback = allowed[0];
-  if (!fallback) {
-    throw new ServiceUnavailableError('No shell is configured for terminal sessions');
-  }
-  return fallback;
-}
-
-/**
- * The directory a new interactive shell starts in when the caller names none.
- *
- * A terminal on a real machine opens in the user's home directory, not at the
- * root of the filesystem. In full-host mode the agent runs as root and that home
- * is `/root`, which is where an operator expects to land. A confined agent's home
- * can sit outside the workspace root, though, and starting a shell there would
- * put it outside the tree the agent is scoped to — so the root is used instead
- * of escaping.
- *
- * The home comes from the host identity (passwd), not from `process.env.HOME`,
- * for the same reason the environment does: the daemon's `HOME` may be unset,
- * and its old fallback to the working directory landed a full-host shell in `/`.
- */
-async function defaultCwd(cfg: AgentConfig, root: string, home: string): Promise<string> {
-  const relative = path.relative(root, home);
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return root;
-
-  try {
-    // Resolved through the same containment check as any other path, so a home
-    // reached by a symlink out of the root is refused rather than followed.
-    const resolved = await resolveExistingPath(cfg, relative.split(path.sep).join('/'));
-    return resolved.exists ? resolved.absolute : root;
-  } catch {
-    return root;
-  }
-}
-
-function requireSession(sessionId: string): TerminalRuntime {
-  const runtime = sessions.get(sessionId);
-  if (!runtime) {
-    throw new NotFoundError('Terminal session does not exist', { sessionId });
-  }
-  return runtime;
+  return terminalSessionFromUnit(unit, 0);
 }
 
 /** Returns the session only if `userId` owns it. */
 export function getOwnedSession(sessionId: string, userId: string): TerminalSession {
-  const runtime = requireSession(sessionId);
+  // `getUnit` raises the same 404 for someone else's unit as for one that does
+  // not exist: an id held by a caller must not reveal that another user's
+  // session is there.
+  return terminalSessionFromUnit(getUnit(sessionId, userId), subscriberCount(sessionId));
+}
 
-  if (runtime.ownerUserId !== userId) {
-    // 404 rather than 403: a different user must not learn that this session id
-    // exists at all.
-    throw new NotFoundError('Terminal session does not exist', { sessionId });
-  }
-
-  return { ...runtime.session };
+/**
+ * Whether the Terminal lists a unit.
+ *
+ * A unit that ended by itself stays listed — that is the honesty rule this
+ * module exists to hold: a shell the user watched exit must not silently
+ * vanish, and its final output is still readable through `attach`. A unit whose
+ * end was *requested* is not listed, whether or not the process has finished
+ * dying. The terminal's contract has always been that a killed session is gone,
+ * and listing it during the SIGTERM window would do worse than show a stale row:
+ * the backend reconciles its own records against this listing and adopts what it
+ * finds, so a session killed a moment ago would come straight back.
+ */
+function visibleInTerminal(unit: ExecutionUnit): boolean {
+  return unit.state !== 'killed' && !isUnitEnding(unit.id);
 }
 
 export function listSessionsForUser(userId: string): TerminalSession[] {
-  const result: TerminalSession[] = [];
-  for (const runtime of sessions.values()) {
-    if (runtime.ownerUserId === userId) result.push({ ...runtime.session });
-  }
-  return result;
+  return listUnits({ ownerUserId: userId, kind: 'tty' })
+    .filter(visibleInTerminal)
+    .map((unit) => terminalSessionFromUnit(unit, subscriberCount(unit.id)));
 }
 
-export function writeInput(
-  sessionId: string,
-  userId: string,
-  data: string,
-  cfg: AgentConfig
-): void {
-  const runtime = requireSession(sessionId);
-  if (runtime.ownerUserId !== userId) {
-    throw new NotFoundError('Terminal session does not exist', { sessionId });
-  }
-  if (!runtime.pty) {
-    throw new ConflictError('Terminal session has already exited', { sessionId });
-  }
-
-  runtime.session.lastActivityAt = new Date().toISOString();
-  runtime.pty.write(data);
-  resetIdleTimer(runtime, cfg);
+export function writeInput(sessionId: string, userId: string, data: string): void {
+  writeUnitInput(sessionId, userId, data);
 }
 
 export function resizeSession(sessionId: string, userId: string, cols: number, rows: number): void {
-  const runtime = requireSession(sessionId);
-  if (runtime.ownerUserId !== userId) {
-    throw new NotFoundError('Terminal session does not exist', { sessionId });
-  }
-  if (!runtime.pty) return;
-
-  runtime.pty.resize(cols, rows);
-  runtime.session.cols = cols;
-  runtime.session.rows = rows;
+  resizeUnit(sessionId, userId, cols, rows);
 }
 
 export function sendSignal(
@@ -369,61 +145,58 @@ export function sendSignal(
   userId: string,
   signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'
 ): void {
-  const runtime = requireSession(sessionId);
-  if (runtime.ownerUserId !== userId) {
-    throw new NotFoundError('Terminal session does not exist', { sessionId });
-  }
-
-  if (signal === 'SIGKILL' || signal === 'SIGTERM') {
-    killSession(sessionId, `signal_${signal}`);
-    return;
-  }
-
-  runtime.pty?.write('');
+  // Not awaited on purpose. `signalUnit` is asynchronous only because an
+  // escalating signal waits for the process to die; a terminal's never
+  // escalates, and the signal itself has been sent by the time the promise is
+  // created. Waiting here would make the caller's reply depend on a process that
+  // may take its time about exiting, which is the opposite of what a keystroke
+  // needs.
+  void signalUnit(sessionId, userId, signal, null).catch((error: unknown) => {
+    log.warn({ err: error, sessionId, signal }, 'failed to signal terminal session');
+  });
 }
 
+/**
+ * Ends a session, whatever its owner.
+ *
+ * The internal killer: the shutdown path and the logout path call it, and
+ * neither acts as a person, so neither has an owner to check against. A request
+ * arriving over the wire does, and that path goes through `killOwnedSession`.
+ */
 export function killSession(sessionId: string, reason: string): boolean {
-  const runtime = sessions.get(sessionId);
-  if (!runtime) return false;
-
-  if (runtime.idleTimer) clearTimeout(runtime.idleTimer);
-  if (runtime.killTimer) clearTimeout(runtime.killTimer);
-
-  const status: TerminalStatus = 'killed';
-  runtime.session.status = status;
-  runtime.session.pid = null;
-
-  try {
-    runtime.pty?.kill();
-  } catch (error) {
-    log.warn({ err: error, sessionId }, 'failed to kill pty process');
-  }
-  runtime.pty = null;
-
-  broadcast(runtime, { type: 'exit', exitCode: -1, signal: null });
-  runtime.subscribers.clear();
-  sessions.delete(sessionId);
-
-  log.info({ sessionId, reason }, 'terminal session killed');
-  return true;
+  return requestEndUnitUnscoped(sessionId, reason);
 }
 
 /**
  * Kills a session only if `userId` owns it.
- *
- * `killSession` above is the internal killer: the idle timer, logout and
- * shutdown call it, and none of them acts as a person, so none of them has an
- * owner to check against. A request arriving over the wire does, so the request
- * path goes through here instead.
  *
  * A session owned by someone else and a session that does not exist both answer
  * `false`. That is deliberate and matches `getOwnedSession`: an unowned id must
  * not be distinguishable from a missing one.
  */
 export function killOwnedSession(sessionId: string, userId: string, reason: string): boolean {
-  const runtime = sessions.get(sessionId);
-  if (!runtime || runtime.ownerUserId !== userId) return false;
-  return killSession(sessionId, reason);
+  void reason;
+  let unit: ExecutionUnit;
+  try {
+    unit = getUnit(sessionId, userId);
+  } catch {
+    return false;
+  }
+  if (unit.state !== 'running' && unit.state !== 'starting') return false;
+  void endOwnedUnit(sessionId, userId, 'backend_request').catch((error: unknown) => {
+    log.warn({ err: error, sessionId }, 'failed to end terminal session');
+  });
+  return true;
+}
+
+/** Kills every session owned by a user. Used on logout and account disable. */
+export function killSessionsForUser(userId: string, reason: string): number {
+  return requestEndUnitsForUser(userId, reason);
+}
+
+/** Kills every session. Used during graceful shutdown. */
+export function killAllSessions(reason: string): number {
+  return requestEndAllUnits(reason);
 }
 
 export interface AttachResult {
@@ -433,49 +206,46 @@ export interface AttachResult {
   unsubscribe: () => void;
 }
 
+/** Projects one registry event onto the terminal's wire protocol. */
+function forwardEvent(event: UnitEvent, subscriber: TerminalSubscriber): void {
+  switch (event.type) {
+    case 'output':
+      subscriber({ type: 'output', data: event.data });
+      return;
+    case 'exit':
+      subscriber({ type: 'exit', exitCode: event.normalized, signal: event.signal });
+      return;
+    case 'state':
+    case 'restart':
+      // A unit that ends without an exit frame — found `stale` by the liveness
+      // check, or restarted underneath its client — still has to reach the
+      // client as an end. A terminal that showed nothing would be showing a
+      // shell that is no longer there.
+      subscriber({ type: 'exit', exitCode: -1, signal: null });
+      return;
+  }
+}
+
 export function attach(
   cfg: AgentConfig,
   sessionId: string,
   userId: string,
   subscriber: TerminalSubscriber
 ): AttachResult {
-  const runtime = requireSession(sessionId);
-  if (runtime.ownerUserId !== userId) {
-    throw new NotFoundError('Terminal session does not exist', { sessionId });
-  }
+  const attached = subscribeUnit(cfg, sessionId, userId, (event) => {
+    forwardEvent(event, subscriber);
+  });
 
-  runtime.subscribers.add(subscriber);
-  runtime.session.attachedClients = runtime.subscribers.size;
-  resetIdleTimer(runtime, cfg);
+  const replay: string[] = [];
+  for (const event of attached.replay) {
+    if (event.type === 'output') replay.push(event.data);
+  }
 
   return {
-    session: { ...runtime.session },
-    replay: [...runtime.scrollback],
-    unsubscribe: () => {
-      runtime.subscribers.delete(subscriber);
-      runtime.session.attachedClients = runtime.subscribers.size;
-    },
+    session: terminalSessionFromUnit(attached.unit, subscriberCount(sessionId)),
+    replay,
+    unsubscribe: attached.unsubscribe,
   };
-}
-
-/** Kills every session owned by a user. Used on logout and account disable. */
-export function killSessionsForUser(userId: string, reason: string): number {
-  let killed = 0;
-  for (const [sessionId, runtime] of [...sessions]) {
-    if (runtime.ownerUserId === userId) {
-      if (killSession(sessionId, reason)) killed += 1;
-    }
-  }
-  return killed;
-}
-
-/** Kills every session. Used during graceful shutdown. */
-export function killAllSessions(reason: string): number {
-  let killed = 0;
-  for (const sessionId of [...sessions.keys()]) {
-    if (killSession(sessionId, reason)) killed += 1;
-  }
-  return killed;
 }
 
 export function terminalStats(cfg: AgentConfig): {
@@ -483,10 +253,15 @@ export function terminalStats(cfg: AgentConfig): {
   available: boolean;
   maxPerUser: number;
 } {
+  const stats = unitStats(cfg);
   return {
-    active: sessions.size,
+    // Counted over `tty` units, because this is the terminal's own health
+    // figure: a host whose capacity is spent on command units has not run out
+    // of terminals, and a number that said so would mislead the one place
+    // anybody reads it.
+    active: listUnits({ ownerUserId: null, kind: 'tty' }).length,
     available: isTerminalAvailable(cfg),
-    maxPerUser: cfg.TERMINAL_MAX_SESSIONS,
+    maxPerUser: stats.maxPerUser,
   };
 }
 
@@ -496,13 +271,15 @@ export async function relativeCwd(cfg: AgentConfig, absolute: string): Promise<s
   return path.relative(root, absolute).split(path.sep).join('/');
 }
 
-/** Test-only hook: clears the session table so tests start isolated. */
+export { resolveShell };
+
+/* -------------------------------------------------------------------------- */
+/* Test hooks                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** Test-only hook: clears the registry table so tests start isolated. */
 export function resetSessionsForTests(): void {
-  for (const runtime of sessions.values()) {
-    if (runtime.idleTimer) clearTimeout(runtime.idleTimer);
-    if (runtime.killTimer) clearTimeout(runtime.killTimer);
-  }
-  sessions.clear();
+  resetUnitsForTests();
 }
 
 /**
@@ -511,43 +288,38 @@ export function resetSessionsForTests(): void {
  * Ownership is checked before anything touches the PTY, so a session with no
  * PTY is enough to test it — and testing it that way means the ownership rules
  * run on every platform, not only where `node-pty` builds. A suite that skipped
- * them on a Windows dev box would be a suite that never checked them at all
- * there. Production code never calls this; nothing else can put a `pty: null`
- * runtime in the table, since the two spawn paths always have a child.
+ * them on a Windows dev box would be one that never checked them there at all.
+ * Production code never calls this; nothing else can put a process-less unit in
+ * the registry, since both spawn paths always have a child.
  */
 export function seedSessionForTests(
   ownerUserId: string,
   overrides: Partial<TerminalSession> = {}
 ): TerminalSession {
-  const id = overrides.id ?? randomUUID();
-  const now = new Date().toISOString();
-  const session: TerminalSession = {
-    id,
-    pid: null,
-    shell: '/bin/bash',
-    cwd: '/',
-    cols: 80,
-    rows: 24,
-    status: 'running',
-    exitCode: null,
-    createdAt: now,
-    lastActivityAt: now,
-    attachedClients: 0,
-    ...overrides,
-  };
-
-  sessions.set(id, {
-    session,
-    ownerUserId,
-    pty: null,
-    subscribers: new Set(),
-    scrollback: [],
-    scrollbackBytes: 0,
-    idleTimer: null,
-    killTimer: null,
+  const unit = seedUnitForTests(ownerUserId, {
+    id: overrides.id,
+    kind: 'tty',
+    state:
+      overrides.status === undefined ? 'running' : terminalStatusToUnitState(overrides.status),
+    spec: {
+      kind: 'tty',
+      shell: overrides.shell ?? '/bin/bash',
+      cwd: overrides.cwd ?? '/',
+      env: {},
+      tty: true,
+      cols: overrides.cols ?? 80,
+      rows: overrides.rows ?? 24,
+      term: null,
+      logMode: 'pty',
+    },
   });
-
-  return { ...session };
+  return terminalSessionFromUnit(unit, 0);
 }
 
-export { joinToRoot };
+/** Test-only: true when the registry still holds this unit and it has not ended. */
+export function isSessionLiveForTests(sessionId: string): boolean {
+  return !isUnitEnded(sessionId);
+}
+
+/** Unused today, but kept so a future caller does not re-derive an unscoped read. */
+export { getUnitUnscoped };

@@ -5,6 +5,27 @@ export { LIMITS, WS_CLOSE };
 
 const uuidSchema = z.string().uuid();
 
+/**
+ * A unit's limits, as they arrive over the wire.
+ *
+ * The same numbers the REST schema uses. A value that passes one check and
+ * fails the other would mean the API advertising something the agent refuses,
+ * which is worse than either refusing it.
+ */
+const unitLimitsShape = {
+  wallClockMs: z.number().int().min(1000).nullable().default(null),
+  graceMs: z.number().int().min(100).max(120_000).default(5_000),
+  maxOutputBytes: z.number().int().min(4096).max(8 * 1024 * 1024).default(262_144),
+};
+
+const unitRestartSchema = z
+  .object({
+    policy: z.enum(['never', 'on-failure', 'always']).default('never'),
+    maxAttempts: z.number().int().min(0).max(20).default(0),
+    backoffMs: z.number().int().min(0).max(300_000).default(1_000),
+  })
+  .strict();
+
 const baseEnvelope = z.object({
   /** Correlation id echoed in the reply. */
   id: z.string().min(1).max(128),
@@ -61,6 +82,13 @@ export const agentCapabilities = [
   'terminal.signal',
   'terminal.kill',
   'terminal.list',
+  'units.create',
+  'units.list',
+  'units.get',
+  'units.signal',
+  'units.kill',
+  'units.restart',
+  'units.log',
 ] as const;
 
 export type AgentCapability = (typeof agentCapabilities)[number];
@@ -203,6 +231,93 @@ export const terminalSignalParamsSchema = z
   .object({ id: uuidSchema, signal: z.enum(['SIGINT', 'SIGTERM', 'SIGKILL']) })
   .strict();
 
+/**
+ * `units.create` — the general form of `terminal.create`.
+ *
+ * Wider than the terminal's because a unit is not only a shell: a command unit
+ * has piped streams and no terminal, and any unit may carry a wall-clock bound,
+ * a log budget and a restart policy. `kind` picks which of those apply, and the
+ * agent refuses a kind it has no supervisor for rather than starting something
+ * nothing will look after.
+ */
+export const unitsCreateParamsSchema = z
+  .object({
+    kind: z.enum(['tty', 'command', 'service', 'worker']),
+    command: z.string().max(4096).optional(),
+    cwd: relativePathSchema.optional(),
+    shell: z.string().max(256).optional(),
+    /**
+     * Extra environment, by name.
+     *
+     * Refused, not filtered, when it names anything in `REJECTED_ENV_KEYS`: a
+     * caller that asked for `LD_PRELOAD` and silently did not get it would be
+     * running something other than what it described.
+     */
+    env: z.record(z.string().min(1).max(128), z.string().max(4096)).optional(),
+    cols: z.number().int().min(1).max(1000).default(80),
+    rows: z.number().int().min(1).max(1000).default(24),
+    term: z.string().max(64).optional(),
+    ...unitLimitsShape,
+    restart: unitRestartSchema.optional(),
+    requestId: z.string().min(8).max(64).optional(),
+  })
+  .strict();
+
+/**
+ * `units.list`.
+ *
+ * `scope: 'all'` drops the owner filter. The agent accepts it because only the
+ * backend can send it — the pairing token authenticates the backend to the
+ * agent, and the agent has no user database of its own, so the backend is the
+ * authorization authority and the agent enforces containment. The permission
+ * that makes `all` legitimate (`execution:manage-others`) is checked there,
+ * where the roles are.
+ */
+export const unitsListParamsSchema = z
+  .object({
+    kind: z.enum(['tty', 'command', 'service', 'worker']).optional(),
+    scope: z.enum(['mine', 'all']).default('mine'),
+  })
+  .strict();
+
+export const unitsIdParamsSchema = z.object({ id: uuidSchema }).strict();
+
+export const unitsInputParamsSchema = z
+  .object({
+    id: uuidSchema,
+    data: z
+      .string()
+      .min(1)
+      .max(64 * 1024),
+  })
+  .strict();
+
+export const unitsResizeParamsSchema = z
+  .object({
+    id: uuidSchema,
+    cols: z.number().int().min(1).max(1000),
+    rows: z.number().int().min(1).max(1000),
+  })
+  .strict();
+
+export const unitsSignalParamsSchema = z
+  .object({
+    id: uuidSchema,
+    signal: z.enum(['SIGINT', 'SIGTERM', 'SIGKILL', 'SIGHUP', 'SIGUSR1', 'SIGUSR2']),
+    /** Null means never escalate to SIGKILL — a polite request and nothing more. */
+    escalateAfterMs: z.number().int().min(100).max(120_000).nullable().default(null),
+  })
+  .strict();
+
+export const unitsLogParamsSchema = z
+  .object({
+    id: uuidSchema,
+    offset: z.number().int().min(0).default(0),
+    limit: z.number().int().min(1).max(512 * 1024).default(64 * 1024),
+    stream: z.enum(['combined', 'stdout', 'stderr']).default('combined'),
+  })
+  .strict();
+
 const requestParamsByType: Record<string, z.ZodTypeAny> = {
   'system.info': systemInfoParamsSchema,
   'processes.list': processListParamsSchema,
@@ -226,6 +341,13 @@ const requestParamsByType: Record<string, z.ZodTypeAny> = {
   'terminal.signal': terminalSignalParamsSchema,
   'terminal.kill': terminalIdParamsSchema,
   'terminal.list': emptyParams,
+  'units.create': unitsCreateParamsSchema,
+  'units.list': unitsListParamsSchema,
+  'units.get': unitsIdParamsSchema,
+  'units.signal': unitsSignalParamsSchema,
+  'units.kill': unitsIdParamsSchema,
+  'units.restart': unitsIdParamsSchema,
+  'units.log': unitsLogParamsSchema,
 };
 
 export type RequestType = keyof typeof requestParamsByType;

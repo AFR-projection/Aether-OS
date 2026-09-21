@@ -49,6 +49,55 @@ const envSchema = z.object({
   // force the process table read-only on this host.
   PROCESS_SIGNAL_ENABLED: booleanFromEnv.default(true),
 
+  // --- Execution units ---
+  /**
+   * The execution-unit registry: the one thing that spawns processes on this
+   * host, and what the Terminal is now a view over. Disabling it removes every
+   * process-spawning capability at once, which is the point of its being one
+   * switch rather than several.
+   */
+  EXECUTION_ENABLED: booleanFromEnv.default(true),
+  /** Concurrent units one user may hold. Counts only units that have not ended. */
+  EXECUTION_MAX_UNITS_PER_USER: z.coerce.number().int().min(1).max(200).default(10),
+  /** Concurrent units this host will hold, across every user. */
+  EXECUTION_MAX_UNITS_GLOBAL: z.coerce.number().int().min(1).max(1000).default(50),
+  /**
+   * How long a `tty` unit may sit with nothing happening before it is ended.
+   *
+   * Interactive units only. A shell nobody has typed into and nobody is
+   * attached to is one nobody is coming back for; a `command` unit printing
+   * nothing is a build that is working, and is bounded by `wallClockMs`.
+   */
+  EXECUTION_IDLE_TIMEOUT: z.coerce.number().int().min(60_000).default(1_800_000),
+  /**
+   * Longest wall-clock limit a caller may ask for, in milliseconds.
+   *
+   * A ceiling on the ceiling: `wallClockMs` bounds a unit, and this bounds what
+   * the bound may be, so a request cannot ask for a process that outlives the
+   * machine's patience. Omitted or null means no wall-clock bound at all.
+   */
+  EXECUTION_WALL_CLOCK_MAX_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .default(24 * 60 * 60 * 1000),
+  /** Bytes of output retained per unit before the oldest bytes are dropped. */
+  EXECUTION_LOG_MAX_BYTES: z.coerce.number().int().min(4096).max(8 * 1024 * 1024).default(262_144),
+  /**
+   * How long a finished unit's record is kept before it is forgotten.
+   *
+   * Kept after the process ends on purpose: a client that was attached when it
+   * exited must still be able to read the final output and the exit status.
+   * Forgetting it sooner would turn "it finished, here is what it printed" into
+   * "no such unit", which is exactly the confusion this model exists to remove.
+   */
+  EXECUTION_REAP_AFTER: z.coerce.number().int().min(1_000).default(30_000),
+  /**
+   * How long a unit may take to die after SIGTERM before SIGKILL, when Aether
+   * is the one ending it for a limit or a shutdown.
+   */
+  EXECUTION_GRACE_MS: z.coerce.number().int().min(100).max(120_000).default(5_000),
+
   // --- Port forwarding ---
   /**
    * Whether the desktop may open a connection to a port on this host.

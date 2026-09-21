@@ -11,9 +11,10 @@ import {
   parseAgentMessage,
   type Reply,
 } from './protocol.js';
-import { dispatchRequest, subscribeToSession } from './router.js';
+import { dispatchRequest, subscribeToSession, subscribeToUnit } from './router.js';
 import { AETHER_VERSION } from './version.js';
 
+import type { UnitEvent } from './capabilities/units.js';
 import type { AgentConfig } from './config.js';
 
 const log = subsystemLogger('connection');
@@ -320,15 +321,32 @@ export class AgentConnection {
       return;
     }
 
-    // Terminal subscription management from the backend.
+    // Subscription management from the backend. Sessions and units are the same
+    // table underneath, but the frames they stream are shaped differently, so
+    // each channel keeps its own entry — keyed by channel and id, because a
+    // client may watch a unit as a unit and a session as a session.
     if (record['type'] === 'terminal.subscribe' && typeof record['id'] === 'string') {
-      this.handleSubscribe(socket, String(record['id']), record);
+      this.handleSubscribe(socket, String(record['id']), record, 'terminal');
       return;
     }
-    if (record['type'] === 'terminal.unsubscribe' && typeof record['id'] === 'string') {
+    if (record['type'] === 'units.subscribe' && typeof record['id'] === 'string') {
+      this.handleSubscribe(socket, String(record['id']), record, 'units');
+      return;
+    }
+    if (
+      (record['type'] === 'terminal.unsubscribe' || record['type'] === 'units.unsubscribe') &&
+      typeof record['id'] === 'string'
+    ) {
+      const channel = record['type'] === 'units.unsubscribe' ? 'units' : 'terminal';
+      const unitId = typeof record['unitId'] === 'string' ? record['unitId'] : null;
       const sessionId = typeof record['sessionId'] === 'string' ? record['sessionId'] : null;
-      if (sessionId) this.subscriptions.get(sessionId)?.();
-      if (sessionId) this.subscriptions.delete(sessionId);
+      const target = channel === 'units' ? unitId : sessionId;
+      if (target) {
+        // The backend names the id in the field its channel uses; accepting
+        // either would let a typo silently fail to stop a stream.
+        this.subscriptions.get(`${channel}:${target}`)?.();
+        this.subscriptions.delete(`${channel}:${target}`);
+      }
       this.send(socket, { id: String(record['id']), ok: true, result: { unsubscribed: true } });
       return;
     }
@@ -367,7 +385,12 @@ export class AgentConnection {
     this.send(socket, reply);
   }
 
-  private handleSubscribe(socket: WebSocket, id: string, record: Record<string, unknown>): void {
+  private handleSubscribe(
+    socket: WebSocket,
+    id: string,
+    record: Record<string, unknown>,
+    channel: 'terminal' | 'units'
+  ): void {
     const paired = this.ownerUserId;
     if (!paired) {
       this.send(socket, errReply(id, 'UNAUTHENTICATED', 'Agent has not completed pairing yet'));
@@ -384,19 +407,30 @@ export class AgentConnection {
     }
     const owner = requested === undefined ? paired : String(requested);
 
-    const sessionId = record['sessionId'];
-    if (typeof sessionId !== 'string' || sessionId.length === 0) {
-      this.send(socket, errReply(id, 'VALIDATION_FAILED', 'sessionId is required'));
+    // A unit channel names `unitId`; the terminal channel predates the unit
+    // vocabulary and names `sessionId`. Both address the same table.
+    const rawId = channel === 'units' ? record['unitId'] : record['sessionId'];
+    if (typeof rawId !== 'string' || rawId.length === 0) {
+      this.send(
+        socket,
+        errReply(id, 'VALIDATION_FAILED', `${channel === 'units' ? 'unitId' : 'sessionId'} is required`)
+      );
       return;
     }
 
+    const key = `${channel}:${rawId}`;
     try {
-      this.subscriptions.get(sessionId)?.();
-      const unsubscribe = subscribeToSession(this.cfg, sessionId, owner, (message) => {
-        this.sendTerminalEvent(socket, sessionId, message as TerminalServerMessage);
-      });
-      this.subscriptions.set(sessionId, unsubscribe);
-      this.send(socket, { id, ok: true, result: { subscribed: true, sessionId } });
+      this.subscriptions.get(key)?.();
+      const unsubscribe =
+        channel === 'units'
+          ? subscribeToUnit(this.cfg, rawId, owner, (event) => {
+              this.sendUnitEvent(socket, rawId, event);
+            })
+          : subscribeToSession(this.cfg, rawId, owner, (message) => {
+              this.sendTerminalEvent(socket, rawId, message as TerminalServerMessage);
+            });
+      this.subscriptions.set(key, unsubscribe);
+      this.send(socket, { id, ok: true, result: { subscribed: true, id: rawId } });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Subscribe failed';
       const code = (error as { code?: string }).code ?? 'NOT_FOUND';
@@ -415,6 +449,17 @@ export class AgentConnection {
       type: 'terminal.event',
       sessionId,
       event: message,
+    });
+  }
+
+  private sendUnitEvent(socket: WebSocket, unitId: string, event: UnitEvent | null): void {
+    if (event === null) return;
+    this.requestCounter += 1;
+    this.send(socket, {
+      id: `uevt-${Date.now()}-${this.requestCounter}`,
+      type: 'unit.event',
+      unitId,
+      event,
     });
   }
 

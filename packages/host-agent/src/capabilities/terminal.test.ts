@@ -401,14 +401,14 @@ describe('terminal session ownership', () => {
  * spawns builds its argv and its environment through the shared
  * `buildShellArgv`/`buildShellEnvironment`, and nowhere builds a child
  * environment by hand. This test is what the doc points at — it scans the
- * production source for every `pty.spawn(` call and asserts each one is
+ * production source for every spawn call site and asserts each one is
  * constructed through those builders. A future spawn path that improvises its
  * own environment fails here rather than quietly diverging.
  *
  * It is a static scan, not a spawn, so it runs everywhere — including the
  * Windows dev box where node-pty may not load — and needs no shell.
  */
-describe('the one-model rule: every pty.spawn goes through the shared builders', () => {
+describe('the one-model rule: every spawn goes through the shared builders', () => {
   // capabilities → src → host-agent → packages → repo root.
   const REPO_ROOT = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../..');
   const PACKAGES = path.join(REPO_ROOT, 'packages');
@@ -464,16 +464,24 @@ describe('the one-model rule: every pty.spawn goes through the shared builders',
     throw new Error('unbalanced parentheses while extracting a pty.spawn call');
   }
 
-  it('finds every pty.spawn call site and each builds argv and env through the shared functions', async () => {
+  it('finds every spawn call site and each builds argv and env through the shared functions', async () => {
     const files: string[] = [];
     await collectSourceFiles(PACKAGES, files);
     expect(files.length).toBeGreaterThan(0); // the scan reached real source
 
-    // A spawn call on the pty module. Both current sites write `pty.spawn(`;
-    // the pattern also catches an aliased-but-still-pty `.spawn(` on a variable
-    // whose name ends in `pty`, which is the idiom this repo uses.
-    const spawnCall = /\bpty\.spawn\s*\(/gi;
-    const sites: { file: string; args: string }[] = [];
+    /**
+     * The shapes a spawn can take in this repo.
+     *
+     * `pty.spawn(` is the terminal path. `spawn(`/`spawnProcess(` is
+     * `node:child_process` — the pipe path a command unit uses, aliased at the
+     * import so the call reads as what it is. The bare `spawn(` alternative is
+     * behind a negative lookbehind, so `pty.spawn(` (a `.`) and any identifier
+     * ending in `spawn` are not double-counted; `child_process.spawn(` is named
+     * explicitly because the lookbehind would otherwise skip it.
+     */
+    const spawnCall =
+      /(?<![.\w])(?:spawn|spawnProcess)\s*\(|\bpty\.spawn\s*\(|\bchild_process\.spawn\s*\(/g;
+    const sites: { file: string; args: string; pty: boolean }[] = [];
 
     for (const file of files) {
       const source = await readFile(file, 'utf8');
@@ -481,23 +489,36 @@ describe('the one-model rule: every pty.spawn goes through the shared builders',
       let match: RegExpExecArray | null;
       while ((match = spawnCall.exec(source)) !== null) {
         const open = source.indexOf('(', match.index);
-        sites.push({ file: path.relative(REPO_ROOT, file), args: callArguments(source, open) });
+        sites.push({
+          file: path.relative(REPO_ROOT, file),
+          args: callArguments(source, open),
+          pty: match[0].includes('pty.'),
+        });
       }
     }
 
-    // The scan must actually see the known spawn sites — a zero-match scan
-    // (a moved file, a renamed call) must fail rather than pass vacuously.
-    // Today there are exactly two: the host agent and the backend workspace terminal.
-    expect(sites.length).toBeGreaterThanOrEqual(2);
+    // The scan must actually see the known spawn sites — a zero-match scan (a
+    // moved file, a renamed call) must fail rather than pass vacuously. Both
+    // shapes are required to be present, not merely two of either: if the pipes
+    // path were ever deleted, the rule about it would be checking nothing while
+    // still reporting green.
+    expect(sites.filter((s) => s.pty).length, 'no pty.spawn site was found').toBeGreaterThanOrEqual(
+      1
+    );
+    expect(
+      sites.filter((s) => !s.pty).length,
+      'no child_process spawn site was found'
+    ).toBeGreaterThanOrEqual(1);
 
     for (const site of sites) {
+      const shape = site.pty ? 'pty.spawn' : 'child_process spawn';
       expect(
         site.args.includes('buildShellArgv('),
-        `${site.file}: a pty.spawn must take its argv from buildShellArgv() (see docs/architecture/EXECUTION-MODEL.md)`
+        `${site.file}: a ${shape} must take its argv from buildShellArgv() (see docs/architecture/EXECUTION-MODEL.md)`
       ).toBe(true);
       expect(
         site.args.includes('buildShellEnvironment('),
-        `${site.file}: a pty.spawn must take its env from buildShellEnvironment() (see docs/architecture/EXECUTION-MODEL.md)`
+        `${site.file}: a ${shape} must take its env from buildShellEnvironment() (see docs/architecture/EXECUTION-MODEL.md)`
       ).toBe(true);
     }
   });

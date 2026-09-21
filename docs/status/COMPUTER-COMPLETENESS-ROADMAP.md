@@ -240,8 +240,8 @@ before the next is started.**
    the sed literal is gone, and `install_compose_file` reconciles rather than asserts (so an update
    from an older version self-heals). Guarded by `deploy/tests/preview-ports.sh`.
 
-**P0 is complete.** Next is the one architectural decision below — the P1 execution primitive — which
-is a design proposal awaiting approval before any code.
+**P0 is complete.** The P1 execution primitive below is approved and **partially implemented** — two
+slices have shipped (ownership + adoption, then the unit registry); the P2/P3 rows remain design.
 
 ### P1 — Real host integration
 
@@ -249,24 +249,31 @@ is a design proposal awaiting approval before any code.
    with exit code** (the primitive everything else is built on), then service status/control,
    then container status/control, then logs, then installed-package query.
    **Design of record: [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md)** (revision 2,
-   adversarially reviewed). It recorded two blockers this item did not know about; the first is now
-   **closed**, the second answered.
+   adversarially reviewed). It recorded two blockers; both are now **closed**.
    *Ownership* (closed): the agent bound `ownerUserId` once per connection while the backend recorded
    the user's, so on an instance-scoped local agent it keyed every session on its own id. Every
    terminal request now names its user, the agent prefers that name (`connection.ts`), `terminal.kill`
    refuses a session the named principal does not own (`killOwnedSession`), and adoption ships with it
    — `reconcileHostSessionsForUser` adopts sessions the agent reports **for that user**, from agents
    that user may use. A shell now survives a backend restart.
-   *The unowned RPC surface* (answered, not closed): `files.*` and `processes.*` are dispatched
-   without agent-side authorization. That stays, deliberately — they are role-gated over one
-   instance-wide workspace, so there is no per-user split to enforce and a second copy of the role
-   model would only be a second place to disagree with it. **Port tunnels are the remaining real
-   gap**: they are per-user on the agent but the backend does not yet pass the requesting user, so
-   the agent stamps the connection's owner. See [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §5b.
-   Design first for the rest; no further P1 code until approved.
+   *The unowned RPC surface* (closed): `files.*` and `processes.*` stay delegated to the backend by
+   decision — they are role-gated over one instance-wide workspace, so there is no per-user split to
+   enforce and a second copy of the role model would only be a second place to disagree with it. The
+   **port-tunnel** gap that remained is now fixed: `agent-ports.service.ts` threads the requesting
+   user through every `ports.*` call, so the agent stamps and checks the real principal, proven by
+   `port-tunnel.test.ts`. All three per-user surfaces — terminal, units, ports — are owner-checked.
+   See [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §5b.
+   **Shipped — the Execution Unit registry** ([EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md)
+   §30): the agent's `units.*` verbs (create/list/get/signal/restart/kill/log) over one process table,
+   the Terminal rebuilt as a *view* over it rather than a second table, and a backend REST API
+   (`/api/units`) with `execution:*` permissions. It runs `tty` and `command` for real with per-unit
+   ownership, honest exit codes, a `stale` state, process-group signalling, and audit events;
+   `service`/`worker` are refused with `NOT_IMPLEMENTED` rather than faked. Still design: the systemd
+   path, rlimits, restart policies, log files, the `execution_units` table, `runAs`, the units WS
+   stream — all P2/P3.
 6. Each new verb gets a Zod schema in `shared`, a capability module in the agent, a service and
    route in the backend, a permission string, and an audit event — the existing pattern, followed
-   exactly rather than shortcut.
+   exactly rather than shortcut. **Done for `units.*`.**
 7. Bounded scope for new verbs, matching the existing reasoning: read operations open by default,
    mutating operations behind a permission and off by default where a mistake is unrecoverable.
 
