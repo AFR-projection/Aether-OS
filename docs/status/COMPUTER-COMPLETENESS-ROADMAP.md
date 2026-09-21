@@ -229,10 +229,19 @@ before the next is started.**
    KNOWN-LIMITATIONS no longer carry a false capability claim.
 2. ~~Reattach UI for terminal sessions: surface `GET /api/terminal/sessions` so a reload does not
    orphan live shells.~~ **DONE (`f2c4081`).** `useTerminalRecovery` rebinds live sessions on load.
-3. Persist window layout (per user, server-side in the existing `settings` table, matching how
-   `pinnedApps` is stored) and restore it on load. **← next P0.**
-4. Reconcile the preview port range: derive the published range and the firewall rule from one
-   source so `.env` and the compose literal cannot drift. **← next P0.**
+3. ~~Persist window layout (per user, server-side in the existing `settings` table, matching how
+   `pinnedApps` is stored) and restore it on load.~~ **DONE (`fbf68c7`).** `GET/PUT
+   /api/desktop/layout`, authenticate-only, key derived from the principal for real per-user
+   isolation; `serializeLayout`/`applyLayout` in the store; terminals excluded (session recovery
+   owns them). Tests: backend service (key/round-trip/isolation), frontend store.
+4. ~~Reconcile the preview port range: derive the published range and the firewall rule from one
+   source so `.env` and the compose literal cannot drift.~~ **DONE (`2a6e847`).** START/COUNT are the
+   only source; `AETHER_PREVIEW_PORT_RANGE` is derived once into `.env` and interpolated by compose,
+   the sed literal is gone, and `install_compose_file` reconciles rather than asserts (so an update
+   from an older version self-heals). Guarded by `deploy/tests/preview-ports.sh`.
+
+**P0 is complete.** Next is the one architectural decision below — the P1 execution primitive — which
+is a design proposal awaiting approval before any code.
 
 ### P1 — Real host integration
 
