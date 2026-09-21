@@ -1,6 +1,7 @@
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { buildShellArgv, buildShellEnvironment, type ShellIdentity } from '@aether/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -248,4 +249,113 @@ describe('terminal session lifecycle honesty', () => {
     expect(current?.status).toBe('exited');
     expect(current?.pid).toBeNull();
   }, 20_000);
+});
+
+/**
+ * The one-model enforcement, made a fact about the code.
+ *
+ * docs/architecture/EXECUTION-MODEL.md states the rule: every shell Aether
+ * spawns builds its argv and its environment through the shared
+ * `buildShellArgv`/`buildShellEnvironment`, and nowhere builds a child
+ * environment by hand. This test is what the doc points at — it scans the
+ * production source for every `pty.spawn(` call and asserts each one is
+ * constructed through those builders. A future spawn path that improvises its
+ * own environment fails here rather than quietly diverging.
+ *
+ * It is a static scan, not a spawn, so it runs everywhere — including the
+ * Windows dev box where node-pty may not load — and needs no shell.
+ */
+describe('the one-model rule: every pty.spawn goes through the shared builders', () => {
+  // capabilities → src → host-agent → packages → repo root.
+  const REPO_ROOT = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../..');
+  const PACKAGES = path.join(REPO_ROOT, 'packages');
+
+  // Directories that are outputs or dependencies, never authored source.
+  const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.turbo', 'coverage']);
+
+  async function collectSourceFiles(dir: string, out: string[]): Promise<void> {
+    // A package without the directory is not an error; treat it as empty.
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      // `entry.name` widens to Buffer under one readdir overload; normalise it.
+      const name = String(entry.name);
+      const full = path.join(dir, name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(name)) await collectSourceFiles(full, out);
+        continue;
+      }
+      // Production TypeScript only: tests (this file included) legitimately
+      // reference `.spawn` for other reasons and are not spawn sites to police.
+      if (name.endsWith('.ts') && !name.endsWith('.test.ts') && !name.endsWith('.d.ts')) {
+        out.push(full);
+      }
+    }
+  }
+
+  /**
+   * Extracts the argument text of a call whose opening `(` is at `open`, by
+   * matching parentheses to their close. String and template literals are
+   * skipped so a `)` inside a string does not end the call early. Good enough
+   * for the call shapes this repo writes; it is not a full parser.
+   */
+  function callArguments(source: string, open: number): string {
+    let depth = 0;
+    let quote: string | null = null;
+    for (let i = open; i < source.length; i += 1) {
+      const ch = source[i];
+      const prev = source[i - 1];
+      if (quote) {
+        if (ch === quote && prev !== '\\') quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') {
+        quote = ch;
+        continue;
+      }
+      if (ch === '(') depth += 1;
+      else if (ch === ')') {
+        depth -= 1;
+        if (depth === 0) return source.slice(open + 1, i);
+      }
+    }
+    throw new Error('unbalanced parentheses while extracting a pty.spawn call');
+  }
+
+  it('finds every pty.spawn call site and each builds argv and env through the shared functions', async () => {
+    const files: string[] = [];
+    await collectSourceFiles(PACKAGES, files);
+    expect(files.length).toBeGreaterThan(0); // the scan reached real source
+
+    // A spawn call on the pty module. Both current sites write `pty.spawn(`;
+    // the pattern also catches an aliased-but-still-pty `.spawn(` on a variable
+    // whose name ends in `pty`, which is the idiom this repo uses.
+    const spawnCall = /\bpty\.spawn\s*\(/gi;
+    const sites: { file: string; args: string }[] = [];
+
+    for (const file of files) {
+      const source = await readFile(file, 'utf8');
+      spawnCall.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = spawnCall.exec(source)) !== null) {
+        const open = source.indexOf('(', match.index);
+        sites.push({ file: path.relative(REPO_ROOT, file), args: callArguments(source, open) });
+      }
+    }
+
+    // The scan must actually see the known spawn sites — a zero-match scan
+    // (a moved file, a renamed call) must fail rather than pass vacuously.
+    // Today there are exactly two: the host agent and the backend workspace terminal.
+    expect(sites.length).toBeGreaterThanOrEqual(2);
+
+    for (const site of sites) {
+      expect(
+        site.args.includes('buildShellArgv('),
+        `${site.file}: a pty.spawn must take its argv from buildShellArgv() (see docs/architecture/EXECUTION-MODEL.md)`
+      ).toBe(true);
+      expect(
+        site.args.includes('buildShellEnvironment('),
+        `${site.file}: a pty.spawn must take its env from buildShellEnvironment() (see docs/architecture/EXECUTION-MODEL.md)`
+      ).toBe(true);
+    }
+  });
 });
