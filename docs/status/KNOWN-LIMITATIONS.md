@@ -67,43 +67,44 @@ This project has not been penetration-tested or audited. The threat model in
 [SECURITY-MODEL.md](../security/SECURITY-MODEL.md) is the authors' own reasoning, not a third-party
 assessment.
 
-### 5b. The agent enforces no authorization of its own — the backend is the only thing that does
+### 5b. The agent enforces ownership only where there is a per-user split — `files.*` and `processes.*` are delegated to the backend
 
 Found by adversarial review of the P1 design (see
-[EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §4). The host agent takes its
-principal **once per connection** (`packages/host-agent/src/connection.ts:291`, set from
-`hello_ack`) and the capability handlers receive only `cfg` and the request params — never the
-principal. Several verbs are therefore dispatched with no authorization of any kind
-(`packages/host-agent/src/router.ts`): `files.*` (lines 192–243), `processes.*` (lines 174–190), and
-`terminal.kill` (lines 312–316) — the last calling `killSession(params.id, …)`, which does
-`sessions.get(sessionId)` with no owner check (`capabilities/terminal.ts:385`).
+[EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §4). The host agent used to take
+its principal **once per connection** (`packages/host-agent/src/connection.ts`, set from
+`hello_ack`) and never again, so several verbs were dispatched with no authorization of any kind
+(`packages/host-agent/src/router.ts`): `files.*`, `processes.*`, and `terminal.kill` — the last
+calling `killSession(params.id, …)`, which did `sessions.get(sessionId)` with no owner check.
 
-**Be precise about what this does and does not mean, because the two halves differ:**
+**Partly closed.** The terminal surface now names its principal per request and the agent enforces
+it: the backend sends `ownerUserId` on every terminal call (`host-terminal.service.ts`), the agent
+prefers it over the connection's paired owner (`connection.ts`), and `terminal.kill` goes through
+`killOwnedSession`, which refuses a session the named principal does not own
+(`capabilities/terminal.ts`). A malformed principal on the subscribe control frame is refused
+rather than ignored, because falling back to the paired owner would silently act as the wrong
+principal. Tests: `capabilities/terminal.test.ts` ("terminal session ownership") and
+`services/host-terminal.service.test.ts`.
 
-- **For `files.*` and `processes.*` there is no cross-user exposure to fix**, because there is no
-  per-user split to cross: the workspace is **instance-wide** and access is granted by **role**
-  (`files:read` / `files:write` / `files:delete`, `process:read` / `process:manage` —
-  `packages/shared/src/constants.ts:14`, guarded in `routes/files.routes.ts:103-105` and
-  `routes/system.routes.ts:47,73`). Every authorised user is meant to see the same files and the same
-  process table. The gap is not a leak; it is that the agent adds **no second line of defence** to
-  the permission model.
-- **For terminal sessions there is a real per-user surface**, and the agent does not enforce it. The
-  backend does check ownership before every call (`getOwnedHostSession`,
-  `host-terminal.service.ts:80`), which is why this is not exploitable end-to-end today. But the
-  agent's own check is absent, so a single missing upstream check — or any future code path that
-  reaches the agent directly — turns `terminal.kill` into "kill another user's shell by id", and
-  the instance-scoped local agent's session key is the agent id rather than the user id
-  (§4 of the design), so `terminal.list` there returns every session on the host.
+**What remains, precisely:**
+
+- **`files.*` and `processes.*` are still dispatched with no agent-side authorization, and that is
+  now a decision rather than an oversight.** There is no per-user split to enforce: the workspace is
+  **instance-wide** and access is granted by **role** (`files:read` / `files:write` / `files:delete`,
+  `process:read` / `process:manage` — `packages/shared/src/constants.ts:14`, guarded in
+  `routes/files.routes.ts` and `routes/system.routes.ts`). Every authorised user is meant to see the
+  same files and the same process table, so the agent adds **no second line of defence** here — it
+  does not create a leak, and duplicating the role model into the agent would give two places to
+  disagree about it. Recorded as the answer to OPEN-1 in the design of record.
+- **Port tunnels are per-user on the agent and are not yet told which user.** `openTunnel` stamps an
+  owner and `read`/`write`/`close` check it (`capabilities/port-tunnel.ts`), but the backend's
+  `agent-ports.service.ts` call sites do not pass the requesting user, so the agent stamps the
+  connection's paired owner. This is self-consistent — the same wrong principal is used for open and
+  for read — so it does not break today and does not leak across users on a single-owner agent, but
+  it is the same class of defect as the terminal one and is **still open** (OPEN-1).
 
 **Exposure today:** limited to a compromised or mistaken backend, since the agent is reachable only
 with a valid pairing token over the authenticated `/ws/agent` socket, and every backend route checks
 before calling.
-
-**Why it is still security-relevant and scheduled:** the agent is the process holding root and the
-filesystem, and it currently enforces nothing about *who* asked. Making the agent's ownership
-per-request (and per-unit) is P1 work in the execution-primitive plan (DoD 1–3), and the open
-question recorded there is whether it should also enforce the role permissions for `files.*` /
-`processes.*`, or continue to delegate those entirely to the backend.
 
 ---
 
@@ -242,14 +243,15 @@ shells are still there, and the desktop rediscovers them via `GET /api/terminal/
   as alive** — it does not fake survival. Making a shell outlive its owner needs a session broker
   (tmux, or a dedicated PTY-owning daemon); the trade-offs are assessed in EXECUTION-MODEL.md and the
   broker is scheduled as its own roadmap item, not built yet (scenarios 5 and 6).
-- **A backend-only restart is an honest gap.** The agent tracks one owner per connection
-  (`connection.ts:291`) while multiple backend users can hold sessions on one agent, so adopting the
-  agent's session list blindly would leak one user's shell to another. Rather than fake ownership,
-  those sessions are reported gone after a backend restart even though the shells live on the agent.
-  Closing this needs per-unit ownership across the agent protocol — which is **P1, not the broker**:
-  see [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §4, and note the blocker it
-  does not share with the broker, that an instance-scoped local agent keys sessions on its own id
-  while the backend records the user's, so adoption and ownership have to ship together.
+- **A backend-only restart used to be an honest gap; it is now closed.** The agent holds one owner per
+  connection while several backend users can hold sessions on one agent, so adopting the agent's
+  session list blindly would have leaked one user's shell to another — and the instance-scoped local
+  agent keyed sessions on its own id while the backend recorded the user's, so adoption and ownership
+  had to ship together. Both now do: every terminal request names the user
+  (`host-terminal.service.ts`), the agent enforces that name, and `reconcileHostSessionsForUser`
+  adopts sessions the agent reports for that user alone. Restarting the backend no longer loses live
+  shells; restarting the **agent** still does, because the PTY dies with its master fd (the broker
+  assessment below).
 - **Reattach is process-level, not screen-level.** It preserves the process and up to 256 KB of
   scrollback; xterm.js rebuilds the screen from that. Exact screen state for a full-screen program
   (an editor, `top`) is not reproduced.

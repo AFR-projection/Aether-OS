@@ -8,15 +8,19 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { loadConfig } from '../config.js';
 import { createLogger } from '../logger.js';
+import { dispatchRequest } from '../router.js';
 import {
   createSession,
   killAllSessions,
+  killOwnedSession,
   listSessionsForUser,
   resetSessionsForTests,
+  seedSessionForTests,
 } from './terminal.js';
 import { resetWorkspaceRootCache } from '../security/workspace.js';
 
 import type { AgentConfig } from '../config.js';
+import type { ParsedRequest, RequestType } from '../protocol.js';
 import type { IPty } from 'node-pty';
 
 /**
@@ -248,6 +252,145 @@ describe('terminal session lifecycle honesty', () => {
     expect(current).toBeDefined();
     expect(current?.status).toBe('exited');
     expect(current?.pid).toBeNull();
+  }, 20_000);
+});
+
+/**
+ * Ownership of a session, from the agent's side.
+ *
+ * The backend sends the principal a request is made on behalf of, and the agent
+ * is the last line of defence: it holds the PTYs, and it is the only party that
+ * can refuse to act on one. An instance-scoped local agent pairs as *itself* —
+ * one identity shared by every user of the instance — so a request that named no
+ * principal would be answered as that shared identity, and every user's sessions
+ * would answer to every user. These tests pin the check that stops that.
+ */
+describe('terminal session ownership', () => {
+  const OWNER = '00000000-0000-4000-8000-0000000000b2';
+  const OTHER_USER = '00000000-0000-4000-8000-0000000000b3';
+  const MISSING = '00000000-0000-4000-8000-00000000dead';
+  let cfg: AgentConfig;
+  let workspace: string;
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(path.join(tmpdir(), 'aether-agent-owner-'));
+    process.env.AETHER_WORKSPACE_ROOT = workspace;
+    resetWorkspaceRootCache();
+    resetSessionsForTests();
+    cfg = loadConfig();
+    createLogger(cfg);
+  });
+
+  afterEach(async () => {
+    killAllSessions('test_teardown');
+    resetSessionsForTests();
+    resetWorkspaceRootCache();
+    await rm(workspace, { recursive: true, force: true });
+    delete process.env.AETHER_WORKSPACE_ROOT;
+  });
+
+  function request(type: RequestType, params: unknown): ParsedRequest {
+    return { id: `own-${type}`, type, params };
+  }
+
+  it('refuses to kill another user\'s session, and leaves it running', async () => {
+    const session = seedSessionForTests(OWNER);
+
+    const reply = await dispatchRequest(
+      cfg,
+      OTHER_USER,
+      request('terminal.kill', { id: session.id })
+    );
+
+    expect(reply.ok).toBe(true);
+    if (reply.ok) expect(reply.result).toEqual({ killed: false });
+    // The point of the refusal: the session is still there afterwards. A kill
+    // that reported `false` while ending the session would be the same bug
+    // wearing a different answer.
+    expect(listSessionsForUser(OWNER).map((s) => s.id)).toContain(session.id);
+  });
+
+  it('kills the owner\'s own session', async () => {
+    // The mirror of the test above: the ownership check must not be a refusal to
+    // kill anything at all.
+    const session = seedSessionForTests(OWNER);
+
+    const reply = await dispatchRequest(cfg, OWNER, request('terminal.kill', { id: session.id }));
+
+    expect(reply.ok).toBe(true);
+    if (reply.ok) expect(reply.result).toEqual({ killed: true });
+    expect(listSessionsForUser(OWNER)).toEqual([]);
+  });
+
+  it('treats a session owned by someone else and one that never existed alike', () => {
+    const session = seedSessionForTests(OWNER);
+
+    // Both answer `false`, so a caller holding an id cannot use the answer to
+    // learn that someone else's session exists — the same 404-not-403 rule the
+    // capability functions apply.
+    expect(killOwnedSession(session.id, OTHER_USER, 'test')).toBe(false);
+    expect(killOwnedSession(MISSING, OWNER, 'test')).toBe(false);
+    expect(listSessionsForUser(OWNER).map((s) => s.id)).toContain(session.id);
+  });
+
+  it('does not list, drive, or resize another user\'s session', async () => {
+    const session = seedSessionForTests(OWNER);
+
+    const listed = await dispatchRequest(cfg, OTHER_USER, request('terminal.list', {}));
+    expect(listed.ok).toBe(true);
+    if (listed.ok) expect((listed.result as { sessions: unknown[] }).sessions).toEqual([]);
+
+    const wrote = await dispatchRequest(
+      cfg,
+      OTHER_USER,
+      request('terminal.input', { id: session.id, data: 'echo pwned\n' })
+    );
+    expect(wrote.ok).toBe(false);
+    if (!wrote.ok) expect(wrote.error.code).toBe('NOT_FOUND');
+
+    const resized = await dispatchRequest(
+      cfg,
+      OTHER_USER,
+      request('terminal.resize', { id: session.id, cols: 200, rows: 50 })
+    );
+    expect(resized.ok).toBe(false);
+    if (!resized.ok) expect(resized.error.code).toBe('NOT_FOUND');
+
+    // Nothing the other user did reached the session.
+    const mine = listSessionsForUser(OWNER).find((s) => s.id === session.id);
+    expect(mine?.cols).toBe(80);
+    expect(mine?.rows).toBe(24);
+  });
+
+  it('keys a spawned session on the principal that asked for it', async () => {
+    if (!canSpawn()) return;
+
+    const session = await createSession(cfg, { ownerUserId: OWNER, cols: 80, rows: 24 });
+
+    expect(listSessionsForUser(OWNER).map((s) => s.id)).toContain(session.id);
+    expect(listSessionsForUser(OTHER_USER)).toEqual([]);
+  }, 20_000);
+
+  it('leaves a real shell running when another user asks for it to be killed', async () => {
+    if (!canSpawn()) return;
+
+    // The same refusal as above, but with a process behind the session: the check
+    // is asserted on the shell's own liveness, not only on the session table.
+    const session = await createSession(cfg, { ownerUserId: OWNER, cols: 80, rows: 24 });
+    const pid = session.pid;
+    expect(pid).not.toBeNull();
+
+    const reply = await dispatchRequest(
+      cfg,
+      OTHER_USER,
+      request('terminal.kill', { id: session.id })
+    );
+    expect(reply.ok).toBe(true);
+    if (reply.ok) expect(reply.result).toEqual({ killed: false });
+
+    expect(listSessionsForUser(OWNER).map((s) => s.id)).toContain(session.id);
+    // Signal 0 asks the kernel whether the process is there without touching it.
+    expect(() => process.kill(pid as number, 0)).not.toThrow();
   }, 20_000);
 });
 

@@ -22,7 +22,7 @@ import { getSystemInfo } from './capabilities/system.js';
 import {
   attach,
   createSession,
-  killSession,
+  killOwnedSession,
   listSessionsForUser,
   resizeSession,
   sendSignal,
@@ -311,7 +311,9 @@ async function route(
 
     case 'terminal.kill': {
       const params = request.params as TerminalIdParams;
-      const killed = killSession(params.id, 'backend_request');
+      // Ownership-checked: `killSession` is the internal killer and takes no
+      // owner, so reaching for it here would let any caller kill any session.
+      const killed = killOwnedSession(params.id, ownerUserId, 'backend_request');
       return { killed };
     }
 

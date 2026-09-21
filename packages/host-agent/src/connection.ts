@@ -18,6 +18,17 @@ import type { AgentConfig } from './config.js';
 
 const log = subsystemLogger('connection');
 
+/**
+ * Shape-check for a principal on a control frame.
+ *
+ * `terminal.subscribe` is not a routed request, so it never passes through
+ * `parseAgentMessage` and its `ownerUserId` is not schema-validated. A value
+ * that is present but malformed is refused rather than ignored: falling back to
+ * the paired owner would silently subscribe as the wrong principal, which is the
+ * class of bug this field exists to remove.
+ */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface ConnectionEvents {
   onHelloAck(ownerUserId: string): void;
   onClosed(code: number, reason: string): void;
@@ -339,8 +350,12 @@ export class AgentConnection {
       return;
     }
 
-    const owner = this.ownerUserId;
-    if (!owner) {
+    // Pairing is still required before anything is dispatched — a frame naming
+    // its own principal does not stand in for a completed handshake. Only once
+    // paired does a per-request principal override the connection's, which is
+    // what lets one agent serve several users correctly.
+    const paired = this.ownerUserId;
+    if (!paired) {
       this.send(
         socket,
         errReply(request.id, 'UNAUTHENTICATED', 'Agent has not completed pairing yet')
@@ -348,16 +363,27 @@ export class AgentConnection {
       return;
     }
 
-    const reply = await dispatchRequest(this.cfg, owner, request);
+    const reply = await dispatchRequest(this.cfg, request.ownerUserId ?? paired, request);
     this.send(socket, reply);
   }
 
   private handleSubscribe(socket: WebSocket, id: string, record: Record<string, unknown>): void {
-    const owner = this.ownerUserId;
-    if (!owner) {
+    const paired = this.ownerUserId;
+    if (!paired) {
       this.send(socket, errReply(id, 'UNAUTHENTICATED', 'Agent has not completed pairing yet'));
       return;
     }
+
+    const requested = record['ownerUserId'];
+    if (requested !== undefined && !UUID_PATTERN.test(String(requested))) {
+      this.send(
+        socket,
+        errReply(id, 'VALIDATION_FAILED', 'ownerUserId must be a UUID when present')
+      );
+      return;
+    }
+    const owner = requested === undefined ? paired : String(requested);
+
     const sessionId = record['sessionId'];
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
       this.send(socket, errReply(id, 'VALIDATION_FAILED', 'sessionId is required'));

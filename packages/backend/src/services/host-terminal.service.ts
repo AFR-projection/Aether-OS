@@ -1,4 +1,6 @@
+import { listAgents } from './agent-pairing.service.js';
 import {
+  connectedAgentIds,
   isAgentRpcConnected,
   sendAgentRequest,
   subscribeAgentTerminal,
@@ -27,6 +29,14 @@ const log = subsystemLogger('host-terminal');
  * Registration is per-process, like `terminal.service`'s local map: it records
  * the socket this replica holds. A session created here is addressable only
  * while its agent stays connected to this replica.
+ *
+ * Every request to the agent names the user it is made on behalf of. The agent
+ * keys its sessions on the principal it is given, so a request that named nobody
+ * would be answered as the agent's paired owner instead — and an instance-scoped
+ * local agent pairs as itself (see `ws/agent.ws.ts`), which is one identity
+ * shared by every user of the instance. The agent's ownership checks would then
+ * compare against that shared identity and let every user see every session.
+ * Passing the user on each call is what makes the agent's own check meaningful.
  */
 
 interface HostSessionRecord {
@@ -58,13 +68,18 @@ export async function createHostSession(
     throw new ServiceUnavailableError('The selected host agent is not connected');
   }
 
-  const reply = await sendAgentRequest(agentId, 'terminal.create', {
-    cols: options.cols,
-    rows: options.rows,
-    ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-    ...(options.shell !== undefined ? { shell: options.shell } : {}),
-    ...(options.command !== undefined ? { command: options.command } : {}),
-  });
+  const reply = await sendAgentRequest(
+    agentId,
+    'terminal.create',
+    {
+      cols: options.cols,
+      rows: options.rows,
+      ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+      ...(options.shell !== undefined ? { shell: options.shell } : {}),
+      ...(options.command !== undefined ? { command: options.command } : {}),
+    },
+    ownerUserId
+  );
 
   const session = reply as TerminalSession;
   if (session === null || typeof session !== 'object' || typeof session.id !== 'string') {
@@ -136,11 +151,43 @@ export async function attachHostSession(
   onMessage: (message: TerminalServerMessage) => void
 ): Promise<HostAttachResult> {
   const record = requireOwned(sessionId, userId);
-  const unsubscribe = await subscribeAgentTerminal(record.agentId, sessionId, (event) => {
+  const unsubscribe = await subscribeAgentTerminal(record.agentId, sessionId, userId, (event) => {
     recordSessionEvent(record, event);
     onMessage(event as TerminalServerMessage);
   });
   return { session: { ...record.session }, unsubscribe };
+}
+
+/**
+ * The agents worth asking about this user's sessions.
+ *
+ * Two sources, because either alone is wrong. The records here know which agents
+ * this user already has sessions on — but that is exactly what a backend restart
+ * loses, and a session the agent still holds would then never be looked for. The
+ * agent list knows which agents this user may use at all (their own, plus the
+ * instance-scoped local agent, which is paired as itself and shared by everyone —
+ * see `listAgents`). Only agents this replica actually holds a socket to are
+ * added, because the ones it does not are unreachable from here.
+ *
+ * A failure to read the agent list is not fatal: the records already held are
+ * still swept, which is what the previous behaviour did.
+ */
+async function candidateAgentIdsForUser(userId: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const record of hostSessions.values()) {
+    if (record.ownerUserId === userId) ids.add(record.agentId);
+  }
+
+  try {
+    const allowed = new Set((await listAgents(userId)).map((agent) => agent.agentId));
+    for (const agentId of connectedAgentIds()) {
+      if (allowed.has(agentId)) ids.add(agentId);
+    }
+  } catch (error) {
+    log.warn({ err: error, userId }, 'could not list agents; reconciling known hosts only');
+  }
+
+  return ids;
 }
 
 /**
@@ -157,23 +204,27 @@ export async function attachHostSession(
  * agent still reports is mirrored, exit code and status included, and a session
  * the agent no longer knows is dropped, because it does not exist any more.
  *
+ * A session the agent reports that this replica has no record of is adopted. That
+ * is the difference between "Aether restarted" and "sessions lost": the records
+ * are per-process and the PTYs are not, so a restart of the backend alone left
+ * live shells on the agent that nothing could reach. `terminal.list` is answered
+ * for the user named on the request, so an adopted session is one the agent has
+ * already confirmed belongs to this user — this step grants nothing.
+ *
  * Best effort, deliberately. An agent that is not connected, or a request that
  * fails, leaves the records untouched: a backend that cannot ask must not invent
  * an answer, and a stale "running" is a smaller lie than a session reported dead
  * while its shell is still there.
  */
 export async function reconcileHostSessionsForUser(userId: string): Promise<void> {
-  const agentIds = new Set<string>();
-  for (const record of hostSessions.values()) {
-    if (record.ownerUserId === userId) agentIds.add(record.agentId);
-  }
+  const agentIds = await candidateAgentIdsForUser(userId);
 
   for (const agentId of agentIds) {
     if (!isAgentRpcConnected(agentId)) continue;
 
     let reply: unknown;
     try {
-      reply = await sendAgentRequest(agentId, 'terminal.list', {});
+      reply = await sendAgentRequest(agentId, 'terminal.list', {}, userId);
     } catch (error) {
       log.warn({ err: error, agentId }, 'could not reconcile host terminal sessions with the agent');
       continue;
@@ -187,6 +238,15 @@ export async function reconcileHostSessionsForUser(userId: string): Promise<void
           live.set(session.id, session);
         }
       }
+    }
+
+    for (const [sessionId, session] of live) {
+      if (hostSessions.has(sessionId)) continue;
+      hostSessions.set(sessionId, { agentId, ownerUserId: userId, session });
+      log.info(
+        { sessionId, agentId, status: session.status },
+        'adopted a host terminal session this replica had no record of'
+      );
     }
 
     for (const [sessionId, record] of hostSessions) {
@@ -212,7 +272,7 @@ export async function writeHostInput(
   data: string
 ): Promise<void> {
   const record = requireOwned(sessionId, userId);
-  await sendAgentRequest(record.agentId, 'terminal.input', { id: sessionId, data });
+  await sendAgentRequest(record.agentId, 'terminal.input', { id: sessionId, data }, userId);
 }
 
 export async function resizeHostSession(
@@ -222,7 +282,7 @@ export async function resizeHostSession(
   rows: number
 ): Promise<void> {
   const record = requireOwned(sessionId, userId);
-  await sendAgentRequest(record.agentId, 'terminal.resize', { id: sessionId, cols, rows });
+  await sendAgentRequest(record.agentId, 'terminal.resize', { id: sessionId, cols, rows }, userId);
 }
 
 export async function signalHostSession(
@@ -232,11 +292,11 @@ export async function signalHostSession(
 ): Promise<void> {
   const record = requireOwned(sessionId, userId);
   if (signal === 'SIGINT') {
-    await sendAgentRequest(record.agentId, 'terminal.signal', { id: sessionId, signal });
+    await sendAgentRequest(record.agentId, 'terminal.signal', { id: sessionId, signal }, userId);
     return;
   }
   // SIGTERM/SIGKILL end the shell for good; kill it on the agent and forget it.
-  await sendAgentRequest(record.agentId, 'terminal.kill', { id: sessionId });
+  await sendAgentRequest(record.agentId, 'terminal.kill', { id: sessionId }, userId);
   hostSessions.delete(sessionId);
 }
 
@@ -244,7 +304,7 @@ export async function killHostSession(sessionId: string, userId: string): Promis
   const record = getOwnedHostSession(sessionId, userId);
   if (!record) return false;
   try {
-    await sendAgentRequest(record.agentId, 'terminal.kill', { id: sessionId });
+    await sendAgentRequest(record.agentId, 'terminal.kill', { id: sessionId }, userId);
   } catch (error) {
     log.warn({ err: error, sessionId }, 'failed to kill host terminal on the agent');
   }

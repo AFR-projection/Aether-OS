@@ -408,6 +408,24 @@ export function killSession(sessionId: string, reason: string): boolean {
   return true;
 }
 
+/**
+ * Kills a session only if `userId` owns it.
+ *
+ * `killSession` above is the internal killer: the idle timer, logout and
+ * shutdown call it, and none of them acts as a person, so none of them has an
+ * owner to check against. A request arriving over the wire does, so the request
+ * path goes through here instead.
+ *
+ * A session owned by someone else and a session that does not exist both answer
+ * `false`. That is deliberate and matches `getOwnedSession`: an unowned id must
+ * not be distinguishable from a missing one.
+ */
+export function killOwnedSession(sessionId: string, userId: string, reason: string): boolean {
+  const runtime = sessions.get(sessionId);
+  if (!runtime || runtime.ownerUserId !== userId) return false;
+  return killSession(sessionId, reason);
+}
+
 export interface AttachResult {
   session: TerminalSession;
   /** Output produced before the client attached, oldest first. */
@@ -485,6 +503,51 @@ export function resetSessionsForTests(): void {
     if (runtime.killTimer) clearTimeout(runtime.killTimer);
   }
   sessions.clear();
+}
+
+/**
+ * Test-only hook: registers a session with no process behind it.
+ *
+ * Ownership is checked before anything touches the PTY, so a session with no
+ * PTY is enough to test it — and testing it that way means the ownership rules
+ * run on every platform, not only where `node-pty` builds. A suite that skipped
+ * them on a Windows dev box would be a suite that never checked them at all
+ * there. Production code never calls this; nothing else can put a `pty: null`
+ * runtime in the table, since the two spawn paths always have a child.
+ */
+export function seedSessionForTests(
+  ownerUserId: string,
+  overrides: Partial<TerminalSession> = {}
+): TerminalSession {
+  const id = overrides.id ?? randomUUID();
+  const now = new Date().toISOString();
+  const session: TerminalSession = {
+    id,
+    pid: null,
+    shell: '/bin/bash',
+    cwd: '/',
+    cols: 80,
+    rows: 24,
+    status: 'running',
+    exitCode: null,
+    createdAt: now,
+    lastActivityAt: now,
+    attachedClients: 0,
+    ...overrides,
+  };
+
+  sessions.set(id, {
+    session,
+    ownerUserId,
+    pty: null,
+    subscribers: new Set(),
+    scrollback: [],
+    scrollbackBytes: 0,
+    idleTimer: null,
+    killTimer: null,
+  });
+
+  return { ...session };
 }
 
 export { joinToRoot };

@@ -31,6 +31,34 @@ describe('parseAgentMessage', () => {
     expect(() => parseAgentMessage(JSON.stringify({ type: 'system.info' }))).toThrow(/envelope/i);
   });
 
+  it('carries the principal the frame names', () => {
+    const owner = '00000000-0000-4000-8000-0000000000b2';
+    const request = parseAgentMessage(
+      JSON.stringify({ id: 'a5', type: 'terminal.list', ownerUserId: owner, params: {} })
+    );
+
+    expect(request.ownerUserId).toBe(owner);
+  });
+
+  it('leaves the principal absent when the frame names nobody', () => {
+    // Absent means "the connection's paired owner", which is what the agent did
+    // before this field existed; the distinction is what lets the backend name a
+    // user per request without every older frame becoming invalid.
+    const request = parseAgentMessage(JSON.stringify({ id: 'a6', type: 'terminal.list' }));
+
+    expect(request.ownerUserId).toBeUndefined();
+  });
+
+  it('rejects a principal that is not a UUID', () => {
+    // A malformed principal must not be quietly dropped: falling back to the
+    // paired owner would attribute the request to whoever paired first.
+    expect(() =>
+      parseAgentMessage(
+        JSON.stringify({ id: 'a7', type: 'terminal.list', ownerUserId: 'agent:abc', params: {} })
+      )
+    ).toThrow(/envelope/i);
+  });
+
   it('rejects out-of-range process signal pids', () => {
     expect(() =>
       parseAgentMessage(

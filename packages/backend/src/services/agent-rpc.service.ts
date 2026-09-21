@@ -155,13 +155,46 @@ function dispatch(agentId: string, frameFields: Record<string, unknown>): Promis
   });
 }
 
-/** Sends a `{ type, params }` request to a connected agent and awaits its reply. */
+/**
+ * Sends a `{ type, params }` request to a connected agent and awaits its reply.
+ *
+ * `ownerUserId` names the principal the request is made on behalf of, and the
+ * agent acts as that principal. It is optional only because the whole RPC
+ * surface does not need it equally:
+ *
+ * - `terminal.*` is per-user on the agent — sessions are keyed by owner, and
+ *   `terminal.list` returns only that owner's sessions. Omitting the principal
+ *   there makes the agent fall back to whoever paired the connection, which on
+ *   an instance-scoped local agent means one user's `terminal.list` can answer
+ *   with another user's shells. Every terminal call site passes it.
+ * - `files.*` is role-gated over a single instance-wide workspace
+ *   (`files:read`/`write`/`delete`), so there is no per-user split for the agent
+ *   to enforce and the parameter is not load-bearing.
+ * - `ports.*` is per-user on the agent (tunnels carry an owner), but the backend
+ *   does not yet thread the requesting user down to those call sites. That gap is
+ *   recorded in `docs/architecture/EXECUTION-PRIMITIVE.md` (OPEN-1) rather than
+ *   papered over here.
+ */
 export function sendAgentRequest(
   agentId: string,
   type: string,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  ownerUserId?: string
 ): Promise<unknown> {
-  return dispatch(agentId, { type, params });
+  return dispatch(agentId, {
+    type,
+    params,
+    ...(ownerUserId !== undefined ? { ownerUserId } : {}),
+  });
+}
+
+/** Ids of every agent this replica currently holds an open socket to. */
+export function connectedAgentIds(): string[] {
+  const ids: string[] = [];
+  for (const [agentId, channel] of channels) {
+    if (channel.socket.readyState === channel.socket.OPEN) ids.push(agentId);
+  }
+  return ids;
 }
 
 /**
@@ -171,15 +204,21 @@ export function sendAgentRequest(
  * `terminal.event` frames), routes each event to `onEvent`, and returns an
  * unsubscribe function that both stops routing and tells the agent to stop
  * streaming. Rejects if the subscribe handshake fails.
+ *
+ * `ownerUserId` is required here, unlike in `sendAgentRequest`: the agent checks
+ * it against the session's owner before streaming, and a subscribe that named
+ * nobody would silently succeed as the paired owner — the exact confusion this
+ * parameter removes.
  */
 export async function subscribeAgentTerminal(
   agentId: string,
   sessionId: string,
+  ownerUserId: string,
   onEvent: (event: unknown) => void
 ): Promise<() => void> {
   const stopRouting = setTerminalSubscriber(agentId, sessionId, onEvent);
   try {
-    await dispatch(agentId, { type: 'terminal.subscribe', sessionId });
+    await dispatch(agentId, { type: 'terminal.subscribe', sessionId, ownerUserId });
   } catch (error) {
     stopRouting();
     throw error;

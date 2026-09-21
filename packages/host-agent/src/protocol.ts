@@ -9,6 +9,22 @@ const baseEnvelope = z.object({
   /** Correlation id echoed in the reply. */
   id: z.string().min(1).max(128),
   type: z.string().min(1),
+  /**
+   * The principal this request is made on behalf of.
+   *
+   * Optional, and absent means "the connection's paired owner" — the behaviour
+   * before this field existed. The backend sends it on every request because a
+   * single agent can serve several users (an instance-scoped local agent is
+   * listed for every owner), and one owner per *connection* cannot express
+   * that: the agent keyed every session on whoever paired first, so on a local
+   * agent one user's `terminal.list` returned another user's shells.
+   *
+   * Only the backend sets this, and only over the authenticated agent socket.
+   * The agent trusts it for the same reason it trusts `hello_ack`: it has no
+   * user database, so the backend is the identity authority and the agent's job
+   * is containment — see `dispatchRequest` and `killOwnedSession`.
+   */
+  ownerUserId: uuidSchema.optional(),
 });
 
 export const helloPayloadSchema = z.object({
@@ -217,6 +233,12 @@ export type RequestType = keyof typeof requestParamsByType;
 export interface ParsedRequest {
   id: string;
   type: RequestType;
+  /**
+   * The principal to act as, when the frame named one. `undefined` means the
+   * connection's paired owner — see `baseEnvelope`. The `| undefined` is what
+   * lets this be assigned under `exactOptionalPropertyTypes`.
+   */
+  ownerUserId?: string | undefined;
   params: unknown;
 }
 
@@ -249,7 +271,12 @@ export function parseAgentMessage(raw: string): ParsedRequest {
     throw new Error(`Invalid params for ${envelope.data.type}: ${errorMessage(params.error)}`);
   }
 
-  return { id: envelope.data.id, type: envelope.data.type, params: params.data };
+  return {
+    id: envelope.data.id,
+    type: envelope.data.type,
+    ownerUserId: envelope.data.ownerUserId,
+    params: params.data,
+  };
 }
 
 export interface ReplyOk {

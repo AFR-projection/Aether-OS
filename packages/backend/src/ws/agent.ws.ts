@@ -52,14 +52,20 @@ export function registerAgentWebSocket(app: FastifyInstance): void {
 
       // Answer the handshake. The agent refuses to dispatch any request until
       // it has seen `hello_ack` (it would answer UNAUTHENTICATED and give up
-      // after 15s), and the owner id it receives is the principal its terminal
-      // sessions are keyed on. Nothing else in the backend sends this frame —
-      // the gateway deliberately drops `hello` — so without it the agent
-      // reconnects forever and every capability call fails.
+      // after 15s). Nothing else in the backend sends this frame — the gateway
+      // deliberately drops `hello` — so without it the agent reconnects forever
+      // and every capability call fails.
       // The agent validates `ownerUserId` as a UUID, so a local (instance-scoped)
       // agent is given its own agent id — also a UUID, and stable across
       // reconnects. The gateway's `agent:<id>` form is a backend-side principal
       // for terminal ownership and must not be sent here.
+      //
+      // This principal is the *fallback*, not the answer to "whose shell is
+      // this": the backend names the user on every terminal request (see
+      // `host-terminal.service`), and the agent prefers that name. The fallback
+      // matters because requests that arrive without one — a control frame from
+      // an older backend, a capability the user id does not apply to — would
+      // otherwise be refused or, worse, attributed to whoever paired first.
       const ownerUserId = record.ownerUserId ?? record.agentId;
       try {
         socket.send(

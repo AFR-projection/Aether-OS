@@ -249,15 +249,21 @@ is a design proposal awaiting approval before any code.
    with exit code** (the primitive everything else is built on), then service status/control,
    then container status/control, then logs, then installed-package query.
    **Design of record: [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md)** (revision 2,
-   adversarially reviewed). It records two blockers this item did not know about. First, ownership:
-   the agent binds `ownerUserId` once per connection (`connection.ts:291`), so on an
-   instance-scoped local agent the agent keys every session on its own id while the backend records
-   the user's — so adoption (the fix for the reported backend-restart session loss) must not ship
-   before per-unit ownership, or it leaks sessions between users. Second, and larger: `files.*`,
-   `processes.*` and `terminal.kill` have **no ownership check at all** on the agent side
-   (see [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §5b), so "fix the whole RPC surface or document
-   the hole" is an open decision the design puts to the owner. Design first; no P1 code until
-   approved.
+   adversarially reviewed). It recorded two blockers this item did not know about; the first is now
+   **closed**, the second answered.
+   *Ownership* (closed): the agent bound `ownerUserId` once per connection while the backend recorded
+   the user's, so on an instance-scoped local agent it keyed every session on its own id. Every
+   terminal request now names its user, the agent prefers that name (`connection.ts`), `terminal.kill`
+   refuses a session the named principal does not own (`killOwnedSession`), and adoption ships with it
+   — `reconcileHostSessionsForUser` adopts sessions the agent reports **for that user**, from agents
+   that user may use. A shell now survives a backend restart.
+   *The unowned RPC surface* (answered, not closed): `files.*` and `processes.*` are dispatched
+   without agent-side authorization. That stays, deliberately — they are role-gated over one
+   instance-wide workspace, so there is no per-user split to enforce and a second copy of the role
+   model would only be a second place to disagree with it. **Port tunnels are the remaining real
+   gap**: they are per-user on the agent but the backend does not yet pass the requesting user, so
+   the agent stamps the connection's owner. See [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §5b.
+   Design first for the rest; no further P1 code until approved.
 6. Each new verb gets a Zod schema in `shared`, a capability module in the agent, a service and
    route in the backend, a permission string, and an audit event — the existing pattern, followed
    exactly rather than shortcut.
@@ -324,9 +330,10 @@ is a design proposal awaiting approval before any code.
     outliving its owner. A PTY dies when the process that opened it restarts, so survival needs a
     broker — tmux/screen as an opt-in owner, or a dedicated PTY-owning daemon. This is **P3** in
     [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §18; the private-ownership half
-    of it (per-unit ownership over the agent protocol) is needed **much earlier, in P1**, because it
+    of it (per-unit ownership over the agent protocol) was needed **much earlier, in P1**, because it
     is what makes backend-restart adoption safe, and it is what fixes the reported
-    "session no longer exists" bug. Do not bundle the two: ownership is small, the broker is not.
+    "session no longer exists" bug — that half is **done** (item 5). Do not bundle the two: ownership
+    was small, the broker is not.
 34. Health and readiness that report the *running* revision, and make `aether update` prove git
     revision == deployment revision == running revision, as the brief's §30 requires. Today it
     proves source revision and health, not the running build.

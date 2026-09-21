@@ -133,6 +133,10 @@ reuse, but it does **not** cover:
 
 ## 4. Ownership — the blocker, and the one incompatible change
 
+> **Status: shipped.** This is the first implementation slice; see §29 for the table of changes and
+> the one-time cost. The section below is left as written, because the reasoning is what the code
+> has to keep satisfying.
+
 ### The defect, proven from the code
 
 Ownership is asserted **once per connection** and never again.
@@ -601,6 +605,11 @@ second.**
 re-register it as running. Adoption must treat the list as a **hint**, re-checking each candidate's
 liveness (§3) before registering, and it must be idempotent so two reconciles do not duplicate.
 
+*Shipped for terminal sessions, where the race is already closed:* `reconcileHostSessionsForUser`
+asks only agents the user is listed for, adopts what the agent reports for that user, and the agent
+is the authority on liveness — a session it no longer reports is dropped from the backend rather
+than resurrected. The unit version of this arrives with units.
+
 **Multiple backend replicas duplicate records.** `hostSessions` is per-process
 (`host-terminal.service.ts:38`) and the design keeps that for P1, so under more than one replica each
 one adopts its own copy of every unit and they will disagree after a kill. Two honest options: state
@@ -868,6 +877,10 @@ scenarios 5 and 6 **reported as not solved in P1**.
 against where it is going — the test in §17: if P2 or P3 requires changing the primitive, the
 primitive was too narrow.
 
+**One P1 line is already shipped** — per-unit ownership (for terminal sessions) and race-safe
+adoption, which is the reported bug. Everything else in the P1 row is still design. §29 has the
+change table.
+
 ---
 
 ## 28. What the adversarial review changed, and what is still open
@@ -906,10 +919,51 @@ primitive was too narrow.
 
 **Still open — for the owner, not for the author:**
 
-- **OPEN-1 (§4, §14, DoD 3):** does P1's ownership work cover the whole agent RPC surface
-  (`files.*`, `processes.*`) or only units + `terminal.kill`? The former is correct and bigger; the
-  latter is smaller and leaves a documented hole.
+- **OPEN-1 (§4, §14, DoD 3) — answered for `files.*`/`processes.*`, still open for ports.** The
+  question was whether P1's ownership work covers the whole agent RPC surface or only the terminal
+  verbs. It now covers the terminal surface: the backend names the user on every terminal request,
+  the agent prefers that name, and `terminal.kill` refuses a session the named principal does not
+  own. `files.*` and `processes.*` stay delegated to the backend **by decision** — they are
+  role-gated over one instance-wide workspace, so there is no per-user split for the agent to
+  enforce, and a second copy of the role model is a second place to disagree with it. **Port
+  tunnels remain a real gap**: the agent already stamps and checks a tunnel owner
+  (`capabilities/port-tunnel.ts`), but `agent-ports.service.ts` does not pass the requesting user, so
+  the owner stamped is the connection's paired owner. Self-consistent today, wrong in the same way
+  the terminal surface was. Not in the shipped slice.
 - **OPEN-2 (§16, §19):** does P1 stay single-replica (matching the default install, with converging
-  reconciliation) or move the unit→agent mapping into the database now?
+  reconciliation) or move the unit→agent mapping into the database now? The shipped adoption step
+  narrows the gap without answering it: a restarted backend re-adopts from the agent, so a
+  single-replica deployment no longer needs the mapping in the database to be correct.
 - **Still pending from revision 1:** approval of the hybrid supervisor (§5), and of the deferred
   `runAs` (§13).
+
+---
+
+## 29. What shipped first, and why
+
+The first implementation slice is **ownership + adoption** (§4, §16), and it is the only part of P1
+whose code exists. It was chosen because it is the reported defect: a user's shell becomes
+unreachable when the backend restarts, and — more seriously — the agent could not tell one user's
+session from another's on an instance-scoped local agent.
+
+What is in the working tree as of this slice:
+
+| Change | Where | Why |
+|---|---|---|
+| `ownerUserId` on the request envelope | `packages/host-agent/src/protocol.ts` | One agent serves several users; one owner per connection cannot express that |
+| The per-request principal preferred over the paired one; a malformed `ownerUserId` on the subscribe control frame **refused**, not ignored | `packages/host-agent/src/connection.ts` | Falling back to the paired owner would silently act as the wrong principal |
+| `killOwnedSession` | `packages/host-agent/src/capabilities/terminal.ts` | `killSession` is the internal killer (idle timer, logout, shutdown — none of which acts as a person); the request path needs the owner check. An unowned id and a missing one both answer `false`, matching the 404-not-403 rule |
+| `terminal.kill` routed through it | `packages/host-agent/src/router.ts` | |
+| `ownerUserId` on `sendAgentRequest`; **required** on `subscribeAgentTerminal`; `connectedAgentIds()` | `packages/backend/src/services/agent-rpc.service.ts` | A subscribe that named nobody would silently succeed as the paired owner |
+| The user named on every terminal send; adoption of sessions this replica has no record of, from agents the user is listed for | `packages/backend/src/services/host-terminal.service.ts` | Ownership and adoption ship together — adoption without it is the leak |
+| The hello owner documented as the **fallback**, not the answer | `packages/backend/src/ws/agent.ws.ts` | |
+| `seedSessionForTests` | `packages/host-agent/src/capabilities/terminal.ts` | Ownership is checked before anything touches the PTY, so a session with no PTY tests it — on every platform, including where `node-pty` does not build |
+
+**One-time cost, stated:** sessions created before this change were keyed on the agent's id rather
+than the user's, so the first `terminal.list` after deploying scopes them out and the backend drops
+its records for them. Live shells from before the upgrade therefore become unaddressable once, and a
+new session is correct. This is the price of removing the ambiguity; there is no way to migrate a
+key the agent never told the backend it was using.
+
+**Not shipped, and not claimed:** units, `units.*`, the supervisor, rlimits, audit events — all of
+§5–§21 remain design. P2 and P3 are untouched.
