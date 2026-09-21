@@ -1135,3 +1135,38 @@ itself.
 
 **No one-time cost this slice.** Revocation of an agent already ended its usefulness; this only makes
 the live socket agree with the database sooner.
+
+---
+
+## 32. What the completion-gate audit caught — DoD #5, the create-path agent check
+
+The item-by-item DoD re-audit that gates "P1 done" found **#5** ("`POST` verifies the principal may
+use the named agent before creating") only **partially** met, and closed the gap rather than reword
+the item.
+
+**The gap.** The `units.*` backend surface authorized every verb the same way: `requireConnected`,
+which checks the agent is *connected*, never that the caller may *use* it. For the read/mutate verbs
+that is enough — they name an existing unit id, and the agent answers a stranger's unit id with the
+same 404 a missing one gets (§25 ownership). But `create` has no prior unit to own-check against, so
+a user holding `execution:create` who knew another user's **paired** agent id could spawn a process
+on that machine. On the default single-local-agent install there is no exposure — the local agent is
+`owner_user_id IS NULL`, usable by every user by design — but a multi-user instance with per-owner
+paired agents had a cross-user hole on exactly the verb #5 names.
+
+**The fix.** `createHostUnit` now calls `assertMayUseAgent(agentId, ownerUserId)` before anything
+else, which throws `NotFoundError` unless the agent is in `listAgents(ownerUserId)` — the same query
+(`owner_user_id = $1 OR owner_user_id IS NULL`) the terminal surface already uses to build its
+allow-set, so the two surfaces authorize agent access identically. It answers **404, not 403**: an
+agent the caller may not use is, to them, indistinguishable from one that does not exist — the same
+not-found-not-forbidden rule the unit check follows, so it cannot be used to probe for other users'
+agents. The check runs **before** `requireConnected` and before any RPC, so a refused caller leaves
+no frame on the wire — the process is never spawned.
+
+| Change | Where | Why |
+|---|---|---|
+| `assertMayUseAgent(agentId, ownerUserId)` — 404 unless the agent is in the caller's `listAgents` set | `packages/backend/src/services/host-units.service.ts` | #5; the create path now authorizes agent *use*, not just connectivity |
+| Called first in `createHostUnit`, before `requireConnected`/RPC | same | A refused caller spawns nothing and leaves no trace on the wire |
+| Tests: stranger 404; partial-visibility 404; no create frame sent; positive control (allowed → succeeds); falsified against a disabled gate | `host-units.service.test.ts` (+ `units.routes.test.ts` mock) | The hole reproduced with the gate off; closed with it on |
+
+**No one-time cost.** No state is re-keyed; the check is a read of the same agent list the caller can
+already see.

@@ -7,8 +7,9 @@ import {
   type UnitSignal,
 } from '@aether/shared';
 
+import { listAgents } from './agent-pairing.service.js';
 import { isAgentRpcConnected, sendAgentRequest } from './agent-rpc.service.js';
-import { ForbiddenError, ServiceUnavailableError } from '../utils/errors.js';
+import { ForbiddenError, NotFoundError, ServiceUnavailableError } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
 
 const log = subsystemLogger('host-units');
@@ -85,6 +86,31 @@ function requireConnected(agentId: string): void {
 }
 
 /**
+ * Refuses an agent the caller may not use — the DoD-#5 check, on the one verb
+ * that needs it: create.
+ *
+ * A unit id is owned, so `get`/`signal`/`kill`/`restart`/`log` are already safe
+ * — the agent answers a stranger's unit id with the same 404 a missing one gets.
+ * `create` has no prior unit to own-check against, so without this a user who
+ * holds `execution:create` and knows another user's *paired* agent id could
+ * spawn a process on that machine. `listAgents(ownerUserId)` returns exactly the
+ * agents this user may use — their own, plus every instance-scoped local agent
+ * (`owner_user_id IS NULL`), which is usable by everyone by design — so an agent
+ * absent from that set is one the caller has no claim to.
+ *
+ * Answered as a 404, not a 403: an agent the caller may not use is, to them,
+ * indistinguishable from one that does not exist — the same not-found-not-
+ * forbidden rule the unit ownership check follows, so the two cannot be told
+ * apart to probe for another user's agents.
+ */
+async function assertMayUseAgent(agentId: string, ownerUserId: string): Promise<void> {
+  const allowed = await listAgents(ownerUserId);
+  if (!allowed.some((agent) => agent.agentId === agentId)) {
+    throw new NotFoundError('Host agent not found');
+  }
+}
+
+/**
  * Refuses limits above the instance defaults unless the caller may raise them.
  *
  * `execution:limits:raise` is what makes the instance's default output ring and
@@ -137,6 +163,7 @@ export async function createHostUnit(
   ownerUserId: string,
   body: CreateUnitBody
 ): Promise<ExecutionUnit> {
+  await assertMayUseAgent(body.agentId, ownerUserId);
   requireConnected(body.agentId);
 
   const reply = await sendAgentRequest(

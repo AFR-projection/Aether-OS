@@ -1,5 +1,5 @@
 import { DEFAULT_EXECUTION_UNIT_LIMITS, LIMITS } from '@aether/shared';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handleAgentFrame, registerAgentSocket, unregisterAgentSocket } from './agent-rpc.service.js';
 import {
@@ -14,6 +14,27 @@ import {
 } from './host-units.service.js';
 
 import type { CreateUnitBody } from '@aether/shared';
+
+// `createHostUnit` gates on `listAgents(ownerUserId)` — the DoD-#5 check that
+// the caller may use the named agent — so the pairing service is mocked to a
+// controllable allow-set rather than reaching the database. `agentsForUser`
+// returns the agent ids each user is allowed to use; a user absent from the map
+// is allowed nothing, which is what the cross-user regression below asserts.
+const { agentsForUser } = vi.hoisted(() => ({
+  agentsForUser: new Map<string, string[]>(),
+}));
+
+vi.mock('./agent-pairing.service.js', () => ({
+  listAgents: (ownerUserId: string) =>
+    Promise.resolve(
+      (agentsForUser.get(ownerUserId) ?? []).map((agentId) => ({
+        agentId,
+        label: 'stub',
+        ownerUserId,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      }))
+    ),
+}));
 
 /**
  * The backend half of the `units.*` surface: who it says it is acting for, what
@@ -148,6 +169,21 @@ function baseCreateBody(overrides: Partial<CreateUnitBody> = {}): CreateUnitBody
 beforeEach(() => {
   sent.length = 0;
   connectAgent(AGENT_ID);
+  // Every user in the existing suite is allowed both agents, so the DoD-#5 gate
+  // passes and each test exercises what it was written to — the disconnected
+  // case still reaches `requireConnected` rather than tripping the gate first.
+  agentsForUser.clear();
+  for (const user of [
+    USER_CREATE,
+    USER_LIST,
+    USER_GET,
+    USER_SIGNAL,
+    USER_RESTART,
+    USER_KILL,
+    USER_LOG,
+  ]) {
+    agentsForUser.set(user, [AGENT_ID, OTHER_AGENT]);
+  }
 });
 
 describe('every request to an agent names the user it is made for', () => {
@@ -243,6 +279,53 @@ describe('a disconnected agent is reported, never faked', () => {
     await expect(getHostUnit(AGENT_ID, UNIT_ID, USER_GET)).rejects.toMatchObject({
       statusCode: 503,
     });
+  });
+});
+
+describe('creating a unit is refused on an agent the caller may not use (DoD #5)', () => {
+  // A stranger who never paired AGENT_ID and cannot see it in listAgents. The
+  // agent is connected and healthy — the only thing standing between this user
+  // and a process on someone else's machine is the create-path authorization
+  // gate, so the agent must never be asked.
+  const STRANGER = '00000000-0000-4000-8000-0000000000c9';
+
+  it('refuses with a 404, indistinguishable from an agent that does not exist', async () => {
+    agentsForUser.set(STRANGER, []);
+
+    await expect(createHostUnit(STRANGER, baseCreateBody())).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      statusCode: 404,
+    });
+  });
+
+  it('never sends a create frame to the agent when the caller may not use it', async () => {
+    agentsForUser.set(STRANGER, []);
+
+    await expect(createHostUnit(STRANGER, baseCreateBody())).rejects.toBeDefined();
+    // The gate is checked before `requireConnected` and before any RPC, so a
+    // rejected caller leaves no trace on the wire — the process is never spawned.
+    expect(lastFrameOfType('units.create')).toBeUndefined();
+  });
+
+  it('refuses even an agent the caller can partly see but was not granted', async () => {
+    // The stranger is allowed OTHER_AGENT but asks to create on AGENT_ID: being
+    // allowed *an* agent is not being allowed *this* one.
+    agentsForUser.set(STRANGER, [OTHER_AGENT]);
+
+    await expect(
+      createHostUnit(STRANGER, baseCreateBody({ agentId: AGENT_ID }))
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(lastFrameOfType('units.create')).toBeUndefined();
+  });
+
+  it('allows the create once the agent is in the caller\'s allow-set', async () => {
+    // The same stranger, now granted the agent, gets through the gate — proving
+    // the refusal above is the gate doing its job, not a blanket denial.
+    agentsForUser.set(STRANGER, [AGENT_ID]);
+
+    const unit = await createHostUnit(STRANGER, baseCreateBody());
+    expect(unit.id).toBe(UNIT_ID);
+    expect(lastFrameOfType('units.create')?.ownerUserId).toBe(STRANGER);
   });
 });
 

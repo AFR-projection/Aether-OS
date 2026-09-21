@@ -55,6 +55,27 @@ vi.mock('../services/audit.service.js', () => ({
   recordAuditEvent: (): Promise<void> => Promise.resolve(),
 }));
 
+// `createHostUnit` gates on `listAgents(ownerUserId)` — the DoD-#5 check that
+// the caller may use the named agent — which would otherwise hit the database.
+// The rest of the pairing service is preserved because the server registers its
+// pair/revoke routes at build time; only the list is stubbed, and it answers
+// that this principal may use AGENT_ID.
+vi.mock('../services/agent-pairing.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/agent-pairing.service.js')>();
+  return {
+    ...actual,
+    listAgents: (ownerUserId: string) =>
+      Promise.resolve([
+        {
+          agentId: '00000000-0000-4000-8000-0000000000a1',
+          label: 'stub',
+          ownerUserId,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ]),
+  };
+});
+
 interface SentFrame {
   id: string;
   type: string;
