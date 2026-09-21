@@ -18,8 +18,9 @@ the actual machine, not a simulation.
 Everything below is implemented and covered by the test suite. If it is not listed here, assume it
 is not built — see [Known limitations](docs/status/KNOWN-LIMITATIONS.md).
 
-**Desktop shell** — window manager (drag, resize, minimize, maximise, snap), taskbar and launcher,
-notification centre, light/dark themes, session persistence across reloads.
+**Desktop shell** — window manager (drag, resize, minimize, maximise), taskbar and launcher,
+light/dark themes. Live terminal sessions reattach after a browser reload; window layout itself is
+not yet persisted.
 
 **Terminal** — a real PTY (`node-pty`) running `bash`/`sh` on the host as a **login shell**, streamed
 over a WebSocket with a short-lived ticket rather than the access token in the URL. Because it is a
@@ -51,13 +52,13 @@ and four roles (`owner`, `admin`, `operator`, `viewer`) enforced server-side on 
 | --------------- | ------------------------------------------------ |
 | Files           | File manager over the workspace                  |
 | Terminal        | Multi-tab real shell                             |
-| Code Studio     | Plain-text editor with line numbers and save     |
+| Code Studio     | Monaco code editor with tabs, file tree, highlighting |
 | Ports           | Servers listening on the host, opened as windows |
 | Task Manager    | Process list, memory use, search filter          |
 | System Monitor  | Live CPU / memory / disk graphs                  |
 | Settings        | Account, sessions, users, host agents, about     |
 | Security Center | Audit log and session review                     |
-| App Catalog     | The registry of installed apps                   |
+| App Catalog     | Pin or unpin which apps show on the desktop      |
 
 ---
 

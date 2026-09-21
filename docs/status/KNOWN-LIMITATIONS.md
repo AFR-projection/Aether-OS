@@ -96,14 +96,13 @@ content indexing and no full-text search.
 _Impact:_ searching for a phrase inside a file finds nothing. There is no grep-like capability in
 the UI.
 
-### 8. Code Studio has no syntax highlighting
+### 8. Code Studio cannot save a file that was truncated for display
 
 **→ referenced by `packages/frontend/src/apps/code-studio/CodeStudioApp.tsx`**
 
-It is a `textarea` with a line-number gutter, not a code editor. No editor library is a dependency
-of the frontend package, and a half-configured one was judged worse than an honest plain editor.
-
-_Impact:_ editing works and is safe; there is no highlighting, autocomplete, or bracket matching.
+Code Studio is a Monaco editor with tabs, a file tree, and syntax highlighting (Monaco is lazy-loaded
+as its own chunk, `apps/code-studio/MonacoPane.tsx`). It is not a plain editor. Debugging, a language
+server, and multi-cursor/refactor tooling are not wired up — it is an editor, not a full IDE.
 
 _Related safety rule:_ a file the backend truncated for display can never be written back — saving
 would silently discard everything past the truncation point. Saving is disabled in that case.
@@ -148,11 +147,15 @@ Only relevant to the _agent_ (the backend and frontend are platform-independent)
 agent on a non-`x86_64` host requires building `node-pty` from source; the installer installs a
 compiler toolchain, so this works, but the build is slow.
 
-### 15. Process signalling is off by default
+### 15. Process signalling is on by default, with hard guards
 
-`AETHER_PROCESS_SIGNAL_ENABLED` defaults to `false`. Ending a process is the one API action that can
-take a host down — a careless click on `sshd` locks the operator out — so it is opt-in. Even when
-enabled, the backend refuses to signal PID 1, itself, or any of its own ancestors.
+`AETHER_PROCESS_SIGNAL_ENABLED` (backend) and `PROCESS_SIGNAL_ENABLED` (agent) both default to `true`
+(`packages/backend/src/config.ts:131`, `packages/host-agent/src/config.ts:50`), and the installer
+writes `PROCESS_SIGNAL_ENABLED=true` into `agent.env` so the Task Manager can end processes. Ending a
+process is the one API action that can take a host down — a careless kill of `sshd` locks the
+operator out — so it stays behind the `process:manage` permission, and both sides refuse to signal
+PID 1, the agent itself, or any of its own ancestors. Set the variable to `false` to make the process
+table read-only on a host.
 
 ### 16. Backups are operator-driven, and unencrypted
 

@@ -1,6 +1,6 @@
 # Computer completeness roadmap
 
-**Date:** 2026-09-21 · **Branch:** main @ `c8d4dba` · **Scope:** the whole repository
+**Date:** 2026-09-21 · **Branch:** main @ `c8d4dba` · **Refreshed:** 2026-09-22 @ `fef28ef` · **Scope:** the whole repository
 
 This is the audit the project's own rule requires before large work: what is genuinely
 implemented, what stops at the UI, and what is missing for Aether to be a *computer* rather than a
@@ -9,6 +9,21 @@ inferred.
 
 It supersedes nothing. [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) is still the per-feature honest
 list; this document is the layer above it — the completeness question.
+
+**Progress since `c8d4dba` (see the P0 section for detail):**
+
+- **P0 #1 — the six false doc claims: DONE.** README and KNOWN-LIMITATIONS were corrected (notification
+  centre, session persistence, plain-text editor, "registry of installed apps", "no syntax
+  highlighting", process-signal default). No fake capability claim remains in the docs.
+- **P0 #2 — terminal reattach after browser reload: DONE.** `desktop/useTerminalRecovery.ts` +
+  `GET /api/terminal/sessions`, on top of a single real login-shell execution model
+  (`packages/shared/src/execution-environment.ts`, [EXECUTION-MODEL.md](../architecture/EXECUTION-MODEL.md)),
+  enforced by a test at every `pty.spawn` site.
+- **Still open in P0:** #3 (window-layout persistence) and #4 (preview-port range reconcile).
+- **Known refinement inside P7 #33:** a backend-only restart wipes the in-memory host-session map and
+  the current `reconcileHostSessionsForUser` only refreshes sessions it already knows, so it does not
+  re-adopt live sessions from a connected agent after a restart. This is already the "per-session
+  ownership carried across the agent protocol" work called out in P7 #33 — recorded, not hidden.
 
 ---
 
@@ -210,13 +225,14 @@ before the next is started.**
 
 ### P0 — Core correctness
 
-1. Correct the six documentation claims above.
-2. Reattach UI for terminal sessions: surface `GET /api/terminal/sessions` so a reload does not
-   orphan live shells. Small, high-value, closes a real hole.
+1. ~~Correct the six documentation claims above.~~ **DONE (`fef28ef`+).** README and
+   KNOWN-LIMITATIONS no longer carry a false capability claim.
+2. ~~Reattach UI for terminal sessions: surface `GET /api/terminal/sessions` so a reload does not
+   orphan live shells.~~ **DONE (`f2c4081`).** `useTerminalRecovery` rebinds live sessions on load.
 3. Persist window layout (per user, server-side in the existing `settings` table, matching how
-   `pinnedApps` is stored) and restore it on load.
+   `pinnedApps` is stored) and restore it on load. **← next P0.**
 4. Reconcile the preview port range: derive the published range and the firewall rule from one
-   source so `.env` and the compose literal cannot drift.
+   source so `.env` and the compose literal cannot drift. **← next P0.**
 
 ### P1 — Real host integration
 
