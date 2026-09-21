@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { DesktopIcons } from './DesktopIcons.js';
 import { Launcher } from './Launcher.js';
 import { Shell } from './Shell.js';
+import { useDesktopLayout } from './useDesktopLayout.js';
 import { useTerminalRecovery } from './useTerminalRecovery.js';
 import { Window } from './Window.js';
 import { APP_REGISTRY } from '../apps/registry.js';
@@ -68,6 +69,10 @@ export function Desktop() {
     (terminalApp?.requiredPermission === undefined ||
       user.permissions.includes(terminalApp.requiredPermission));
   useTerminalRecovery(canUseTerminal ? terminalApp : undefined);
+
+  // Restore and persist the per-user window layout. Runs for any signed-in
+  // user; gated on `user` only so it does nothing on the login screen.
+  useDesktopLayout(user !== null);
 
   if (user === null) return null;
 

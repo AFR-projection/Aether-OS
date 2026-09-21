@@ -13,6 +13,7 @@ export * from './types/user.js';
 
 export * from './schemas/auth.schema.js';
 export * from './schemas/common.schema.js';
+export * from './schemas/desktop.schema.js';
 export * from './schemas/files.schema.js';
 export * from './schemas/ports.schema.js';
 export * from './schemas/terminal.schema.js';

@@ -1,3 +1,4 @@
+import { DESKTOP_LAYOUT_VERSION, type DesktopLayout, type PersistedWindow } from '@aether/shared';
 import { create } from 'zustand';
 
 /**
@@ -72,6 +73,14 @@ interface DesktopState {
   toggleMaximize: (id: string) => void;
   setWindowTitle: (id: string, title: string) => void;
   setWindowProps: (id: string, props: Record<string, unknown>) => void;
+  /**
+   * Reopens the windows in a saved layout, appended to whatever is already on
+   * the desktop. Geometry is clamped to the current viewport; unknown apps are
+   * skipped (via `isKnownApp`) so a layout saved before an app was removed does
+   * not create a blank window. Application state is not restored — props are
+   * empty — which is why terminals are persisted and recovered separately.
+   */
+  applyLayout: (layout: DesktopLayout, options?: { isKnownApp?: (appId: string) => boolean }) => void;
 }
 
 const CASCADE_STEP = 28;
@@ -309,7 +318,74 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       ),
     }));
   },
+
+  applyLayout: (layout, options = {}) => {
+    const isKnownApp = options.isKnownApp ?? ((): boolean => true);
+
+    set((state) => {
+      const desktop = state.desktopSize;
+      let zIndex = state.topZIndex;
+      const added: WindowInstance[] = [];
+
+      // Back-to-front: the array is already in z-order, so each window opened
+      // later sits above the previous one, reproducing the saved stack.
+      for (const persisted of layout.windows) {
+        if (!isKnownApp(persisted.appId)) continue;
+
+        zIndex += 1;
+        added.push({
+          id: nextWindowId(persisted.appId),
+          appId: persisted.appId,
+          title: persisted.title,
+          bounds: clampPosition(clampSize(persisted.bounds, desktop), desktop),
+          restoreBounds:
+            persisted.restoreBounds === null
+              ? null
+              : clampPosition(clampSize(persisted.restoreBounds, desktop), desktop),
+          zIndex,
+          minimized: persisted.minimized,
+          props: {},
+        });
+      }
+
+      if (added.length === 0) return state;
+
+      // Focus the topmost restored window that is not minimised, matching what a
+      // user sees after arranging their desktop by hand.
+      const focused = added
+        .filter((window) => !window.minimized)
+        .sort((a, b) => b.zIndex - a.zIndex)[0];
+
+      return {
+        windows: [...state.windows, ...added],
+        topZIndex: zIndex,
+        focusedId: focused?.id ?? state.focusedId,
+        cascadeIndex: state.cascadeIndex + added.length,
+      };
+    });
+  },
 }));
+
+/**
+ * Distils the live windows into the persistable layout shape.
+ *
+ * Pure and app-agnostic: the caller decides which windows to hand it (the
+ * desktop excludes terminals, which are recovered from their live sessions
+ * instead). Windows are emitted in z-order, back to front, so `applyLayout`
+ * rebuilds the same stack. Application state (`props`) is intentionally dropped
+ * — the layout records arrangement, never a session id or file contents.
+ */
+export function serializeLayout(windows: WindowInstance[]): DesktopLayout {
+  const ordered = [...windows].sort((a, b) => a.zIndex - b.zIndex);
+  const persisted: PersistedWindow[] = ordered.map((window) => ({
+    appId: window.appId,
+    title: window.title,
+    bounds: window.bounds,
+    restoreBounds: window.restoreBounds,
+    minimized: window.minimized,
+  }));
+  return { version: DESKTOP_LAYOUT_VERSION, windows: persisted };
+}
 
 /** Windows in the order the taskbar should show them (creation order). */
 export function selectTaskbarWindows(state: DesktopState): WindowInstance[] {

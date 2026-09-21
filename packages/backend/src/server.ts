@@ -16,6 +16,7 @@ import { config } from './config.js';
 import { registerAgentRoutes } from './routes/agent.routes.js';
 import { registerAuditRoutes } from './routes/audit.routes.js';
 import { registerAuthRoutes, registerUserRoutes } from './routes/auth.routes.js';
+import { registerDesktopRoutes } from './routes/desktop.routes.js';
 import { registerFilesRoutes } from './routes/files.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
 import { registerPortsRoutes, registerPreviewGateway } from './routes/ports.routes.js';
@@ -151,6 +152,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   registerFilesRoutes(app);
   registerTerminalRoutes(app);
   registerSystemRoutes(app);
+  registerDesktopRoutes(app);
   registerAuditRoutes(app);
   registerPortsRoutes(app);
   registerAgentRoutes(app);
