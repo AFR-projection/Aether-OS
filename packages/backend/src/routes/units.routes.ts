@@ -68,7 +68,10 @@ export function registerUnitRoutes(app: FastifyInstance): void {
       // `all` is a privileged view of everyone's units, so the permission is
       // checked before the unfiltered request is sent — never after, which would
       // leak the list to the agent round-trip even on a refusal.
-      if (query.scope === 'all' && !principal.user.permissions.includes('execution:manage-others')) {
+      if (
+        query.scope === 'all' &&
+        !principal.user.permissions.includes('execution:manage-others')
+      ) {
         throw new ForbiddenError(
           'Listing every user\'s units requires the "execution:manage-others" permission',
           { requiredPermission: 'execution:manage-others' }

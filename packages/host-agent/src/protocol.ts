@@ -15,7 +15,12 @@ const uuidSchema = z.string().uuid();
 const unitLimitsShape = {
   wallClockMs: z.number().int().min(1000).nullable().default(null),
   graceMs: z.number().int().min(100).max(120_000).default(5_000),
-  maxOutputBytes: z.number().int().min(4096).max(8 * 1024 * 1024).default(262_144),
+  maxOutputBytes: z
+    .number()
+    .int()
+    .min(4096)
+    .max(8 * 1024 * 1024)
+    .default(262_144),
 };
 
 const unitRestartSchema = z
@@ -313,7 +318,12 @@ export const unitsLogParamsSchema = z
   .object({
     id: uuidSchema,
     offset: z.number().int().min(0).default(0),
-    limit: z.number().int().min(1).max(512 * 1024).default(64 * 1024),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(512 * 1024)
+      .default(64 * 1024),
     stream: z.enum(['combined', 'stdout', 'stderr']).default('combined'),
   })
   .strict();

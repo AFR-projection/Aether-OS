@@ -1,7 +1,11 @@
 import { DEFAULT_EXECUTION_UNIT_LIMITS, LIMITS } from '@aether/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { handleAgentFrame, registerAgentSocket, unregisterAgentSocket } from './agent-rpc.service.js';
+import {
+  handleAgentFrame,
+  registerAgentSocket,
+  unregisterAgentSocket,
+} from './agent-rpc.service.js';
 import {
   assertMayUseRequestedLimits,
   createHostUnit,
@@ -268,7 +272,9 @@ describe('a disconnected agent is reported, never faked', () => {
       code: 'INTERNAL_ERROR',
       statusCode: 503,
     });
-    await expect(createHostUnit(USER_CREATE, baseCreateBody({ agentId: OTHER_AGENT }))).rejects.toThrow();
+    await expect(
+      createHostUnit(USER_CREATE, baseCreateBody({ agentId: OTHER_AGENT }))
+    ).rejects.toThrow();
   });
 
   it('reports an agent that disconnects mid-life', async () => {
@@ -318,7 +324,7 @@ describe('creating a unit is refused on an agent the caller may not use (DoD #5)
     expect(lastFrameOfType('units.create')).toBeUndefined();
   });
 
-  it('allows the create once the agent is in the caller\'s allow-set', async () => {
+  it("allows the create once the agent is in the caller's allow-set", async () => {
     // The same stranger, now granted the agent, gets through the gate — proving
     // the refusal above is the gate doing its job, not a blanket denial.
     agentsForUser.set(STRANGER, [AGENT_ID]);

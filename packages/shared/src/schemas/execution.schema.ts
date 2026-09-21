@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-import { EXECUTION_UNIT_KINDS, EXECUTION_UNIT_LOG_MODES, RESTART_POLICIES } from '../execution-units.js';
+import {
+  EXECUTION_UNIT_KINDS,
+  EXECUTION_UNIT_LOG_MODES,
+  RESTART_POLICIES,
+} from '../execution-units.js';
 import { relativePathSchema, uuidSchema } from './common.schema.js';
 
 /**
@@ -111,7 +115,14 @@ export type UnitResizeBody = z.infer<typeof unitResizeBodySchema>;
  * to the unit's process group, so a shell and everything it started are reached
  * together.
  */
-export const UNIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGKILL', 'SIGHUP', 'SIGUSR1', 'SIGUSR2'] as const;
+export const UNIT_SIGNALS = [
+  'SIGINT',
+  'SIGTERM',
+  'SIGKILL',
+  'SIGHUP',
+  'SIGUSR1',
+  'SIGUSR2',
+] as const;
 
 export type UnitSignal = (typeof UNIT_SIGNALS)[number];
 
@@ -143,7 +154,12 @@ export type UnitsQuery = z.infer<typeof unitsQuerySchema>;
 export const unitLogQuerySchema = z.object({
   /** Byte offset into the retained ring. Defaults to 0, i.e. everything held. */
   offset: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(512 * 1024).default(64 * 1024),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(512 * 1024)
+    .default(64 * 1024),
   /** Which stream to read. `stdout` and `stderr` are distinct on a pipe unit. */
   stream: z.enum(['combined', 'stdout', 'stderr']).default('combined'),
 });

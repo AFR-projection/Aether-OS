@@ -226,7 +226,10 @@ export async function reconcileHostSessionsForUser(userId: string): Promise<void
     try {
       reply = await sendAgentRequest(agentId, 'terminal.list', {}, userId);
     } catch (error) {
-      log.warn({ err: error, agentId }, 'could not reconcile host terminal sessions with the agent');
+      log.warn(
+        { err: error, agentId },
+        'could not reconcile host terminal sessions with the agent'
+      );
       continue;
     }
 

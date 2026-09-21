@@ -20,10 +20,7 @@ function build(
   overrides: Partial<ShellIdentity> = {},
   ambient: Record<string, string | undefined> = {}
 ): Record<string, string> {
-  return buildShellEnvironment(
-    { ...IDENTITY, ...overrides },
-    { cwd: CWD, ambient }
-  );
+  return buildShellEnvironment({ ...IDENTITY, ...overrides }, { cwd: CWD, ambient });
 }
 
 describe('buildShellArgv', () => {

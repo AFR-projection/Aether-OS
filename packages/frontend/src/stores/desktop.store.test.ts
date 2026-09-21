@@ -41,7 +41,13 @@ beforeEach(resetStore);
 describe('serializeLayout', () => {
   it('emits windows back-to-front by z-order and drops app state', () => {
     const windows: WindowInstance[] = [
-      windowFixture({ id: 'a', appId: 'settings', title: 'Settings', zIndex: 14, props: { secret: 1 } }),
+      windowFixture({
+        id: 'a',
+        appId: 'settings',
+        title: 'Settings',
+        zIndex: 14,
+        props: { secret: 1 },
+      }),
       windowFixture({ id: 'b', appId: 'files', title: 'Files', zIndex: 12 }),
     ];
 
@@ -99,10 +105,7 @@ describe('applyLayout', () => {
   it('skips apps that no longer exist', () => {
     const layout: DesktopLayout = {
       version: 1,
-      windows: [
-        windowLayoutEntry('files'),
-        windowLayoutEntry('an-app-that-was-removed'),
-      ],
+      windows: [windowLayoutEntry('files'), windowLayoutEntry('an-app-that-was-removed')],
     };
 
     useDesktopStore.getState().applyLayout(layout, { isKnownApp: (id) => id === 'files' });
@@ -112,7 +115,9 @@ describe('applyLayout', () => {
 
   it('appends to existing windows rather than replacing them', () => {
     useDesktopStore.setState({
-      windows: [windowFixture({ id: 'terminal-1', appId: 'terminal', title: 'Terminal', zIndex: 11 })],
+      windows: [
+        windowFixture({ id: 'terminal-1', appId: 'terminal', title: 'Terminal', zIndex: 11 }),
+      ],
       topZIndex: 11,
     });
 

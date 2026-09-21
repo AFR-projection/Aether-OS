@@ -113,7 +113,7 @@ describe('DELETE /api/agents/:agentId', () => {
     );
   });
 
-  it('never touches a socket when the agent is not the caller\'s (404)', async () => {
+  it("never touches a socket when the agent is not the caller's (404)", async () => {
     // `revokeAgent` returns false when the row is not the caller's or does not
     // exist. The route must stop there — closing a socket for an agent you were
     // just told you cannot revoke would be a cross-owner disconnect.

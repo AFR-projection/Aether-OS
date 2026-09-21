@@ -101,11 +101,7 @@ export function registerAgentRoutes(app: FastifyInstance): void {
       // requests fail, terminal streams bridged through this agent stop, and any
       // later request is refused because the channel is gone. Keyed by agent id,
       // so no other agent's socket is touched.
-      const socketClosed = closeAgentSocket(
-        agentId,
-        WS_CLOSE.FORBIDDEN,
-        'Agent has been revoked'
-      );
+      const socketClosed = closeAgentSocket(agentId, WS_CLOSE.FORBIDDEN, 'Agent has been revoked');
 
       void recordAuditEvent({
         action: 'agent.revoked',

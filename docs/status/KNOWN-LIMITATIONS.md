@@ -80,30 +80,30 @@ calling `killSession(params.id, …)`, which did `sessions.get(sessionId)` with 
 it: the backend sends `ownerUserId` on every terminal call (`host-terminal.service.ts`), the agent
 prefers it over the connection's paired owner (`connection.ts`), and `terminal.kill` goes through
 `killOwnedSession`, which refuses a session the named principal does not own
-(`capabilities/terminal.ts`). A malformed principal on the subscribe control frame is refused
-rather than ignored, because falling back to the paired owner would silently act as the wrong
-principal. Tests: `capabilities/terminal.test.ts` ("terminal session ownership") and
+(`capabilities/terminal.ts`). A malformed principal on the subscribe control frame is refused rather
+than ignored, because falling back to the paired owner would silently act as the wrong principal.
+Tests: `capabilities/terminal.test.ts` ("terminal session ownership") and
 `services/host-terminal.service.test.ts`.
 
 **What remains, precisely:**
 
 - **`files.*` and `processes.*` are still dispatched with no agent-side authorization, and that is
   now a decision rather than an oversight.** There is no per-user split to enforce: the workspace is
-  **instance-wide** and access is granted by **role** (`files:read` / `files:write` / `files:delete`,
-  `process:read` / `process:manage` — `packages/shared/src/constants.ts:14`, guarded in
-  `routes/files.routes.ts` and `routes/system.routes.ts`). Every authorised user is meant to see the
-  same files and the same process table, so the agent adds **no second line of defence** here — it
-  does not create a leak, and duplicating the role model into the agent would give two places to
+  **instance-wide** and access is granted by **role** (`files:read` / `files:write` /
+  `files:delete`, `process:read` / `process:manage` — `packages/shared/src/constants.ts:14`, guarded
+  in `routes/files.routes.ts` and `routes/system.routes.ts`). Every authorised user is meant to see
+  the same files and the same process table, so the agent adds **no second line of defence** here —
+  it does not create a leak, and duplicating the role model into the agent would give two places to
   disagree about it. Recorded as the answer to OPEN-1 in the design of record.
 - **Port tunnels: now closed.** `openTunnel` stamps an owner and `read`/`write`/`close` check it
   (`capabilities/port-tunnel.ts`); the backend's `agent-ports.service.ts` now threads the requesting
-  user through `ports.list`/`open`/`read`/`write`/`close`, so the agent stamps and checks the **real**
-  principal rather than the connection's paired owner — the same fix the terminal surface got. A
-  stranger is refused another user's tunnel with the same 404 a missing tunnel gets, and sign-out
-  closes only that user's tunnels; proven by `capabilities/port-tunnel.test.ts`.
+  user through `ports.list`/`open`/`read`/`write`/`close`, so the agent stamps and checks the
+  **real** principal rather than the connection's paired owner — the same fix the terminal surface
+  got. A stranger is refused another user's tunnel with the same 404 a missing tunnel gets, and
+  sign-out closes only that user's tunnels; proven by `capabilities/port-tunnel.test.ts`.
 
-So OPEN-1 is now fully answered: the three per-user surfaces (terminal, units, ports) are owner-checked
-per request, and `files.*`/`processes.*` stay role-gated in the backend by decision.
+So OPEN-1 is now fully answered: the three per-user surfaces (terminal, units, ports) are
+owner-checked per request, and `files.*`/`processes.*` stay role-gated in the backend by decision.
 
 **Exposure today:** limited to a compromised or mistaken backend, since the agent is reachable only
 with a valid pairing token over the authenticated `/ws/agent` socket, and every backend route checks
@@ -142,9 +142,10 @@ the UI.
 
 **→ referenced by `packages/frontend/src/apps/code-studio/CodeStudioApp.tsx`**
 
-Code Studio is a Monaco editor with tabs, a file tree, and syntax highlighting (Monaco is lazy-loaded
-as its own chunk, `apps/code-studio/MonacoPane.tsx`). It is not a plain editor. Debugging, a language
-server, and multi-cursor/refactor tooling are not wired up — it is an editor, not a full IDE.
+Code Studio is a Monaco editor with tabs, a file tree, and syntax highlighting (Monaco is
+lazy-loaded as its own chunk, `apps/code-studio/MonacoPane.tsx`). It is not a plain editor.
+Debugging, a language server, and multi-cursor/refactor tooling are not wired up — it is an editor,
+not a full IDE.
 
 _Related safety rule:_ a file the backend truncated for display can never be written back — saving
 would silently discard everything past the truncation point. Saving is disabled in that case.
@@ -191,13 +192,13 @@ compiler toolchain, so this works, but the build is slow.
 
 ### 15. Process signalling is on by default, with hard guards
 
-`AETHER_PROCESS_SIGNAL_ENABLED` (backend) and `PROCESS_SIGNAL_ENABLED` (agent) both default to `true`
-(`packages/backend/src/config.ts:131`, `packages/host-agent/src/config.ts:50`), and the installer
-writes `PROCESS_SIGNAL_ENABLED=true` into `agent.env` so the Task Manager can end processes. Ending a
-process is the one API action that can take a host down — a careless kill of `sshd` locks the
-operator out — so it stays behind the `process:manage` permission, and both sides refuse to signal
-PID 1, the agent itself, or any of its own ancestors. Set the variable to `false` to make the process
-table read-only on a host.
+`AETHER_PROCESS_SIGNAL_ENABLED` (backend) and `PROCESS_SIGNAL_ENABLED` (agent) both default to
+`true` (`packages/backend/src/config.ts:131`, `packages/host-agent/src/config.ts:50`), and the
+installer writes `PROCESS_SIGNAL_ENABLED=true` into `agent.env` so the Task Manager can end
+processes. Ending a process is the one API action that can take a host down — a careless kill of
+`sshd` locks the operator out — so it stays behind the `process:manage` permission, and both sides
+refuse to signal PID 1, the agent itself, or any of its own ancestors. Set the variable to `false`
+to make the process table read-only on a host.
 
 ### 16. Backups are operator-driven, and unencrypted
 
@@ -238,19 +239,19 @@ care about. (Related: #19.)
 
 A shell's PTY is owned by the process that opened it — the host agent (or the backend, for a
 workspace terminal). A **browser refresh** now recovers cleanly: the backend was not restarted, the
-shells are still there, and the desktop rediscovers them via `GET /api/terminal/sessions` and rebinds
-(scenario 2). But:
+shells are still there, and the desktop rediscovers them via `GET /api/terminal/sessions` and
+rebinds (scenario 2). But:
 
 - **Agent restart or host reboot ends the shells.** The kernel sends `SIGHUP` when the master fd
   closes; the shell dies, as it would on any machine. Aether reports such a session as **gone, never
   as alive** — it does not fake survival. Making a shell outlive its owner needs a session broker
-  (tmux, or a dedicated PTY-owning daemon); the trade-offs are assessed in EXECUTION-MODEL.md and the
-  broker is scheduled as its own roadmap item, not built yet (scenarios 5 and 6).
-- **A backend-only restart used to be an honest gap; it is now closed.** The agent holds one owner per
-  connection while several backend users can hold sessions on one agent, so adopting the agent's
+  (tmux, or a dedicated PTY-owning daemon); the trade-offs are assessed in EXECUTION-MODEL.md and
+  the broker is scheduled as its own roadmap item, not built yet (scenarios 5 and 6).
+- **A backend-only restart used to be an honest gap; it is now closed.** The agent holds one owner
+  per connection while several backend users can hold sessions on one agent, so adopting the agent's
   session list blindly would have leaked one user's shell to another — and the instance-scoped local
-  agent keyed sessions on its own id while the backend recorded the user's, so adoption and ownership
-  had to ship together. Both now do: every terminal request names the user
+  agent keyed sessions on its own id while the backend recorded the user's, so adoption and
+  ownership had to ship together. Both now do: every terminal request names the user
   (`host-terminal.service.ts`), the agent enforces that name, and `reconcileHostSessionsForUser`
   adopts sessions the agent reports for that user alone. Restarting the backend no longer loses live
   shells; restarting the **agent** still does, because the PTY dies with its master fd (the broker
@@ -271,21 +272,21 @@ group signalling.
 
 What it does **not** yet do, and does not pretend to:
 
-- **`service` and `worker` kinds are refused with `NOT_IMPLEMENTED` (501).** The supervisor that would
-  own a long-lived, restart-managed process is P2. The refusal is deliberate honesty — a 501 "not
-  built", preserved across the RPC hop as a 501 and not a generic 503 — rather than accepting the
-  request and running an unsupervised process that looks managed.
-- **A unit does not survive its agent restarting.** Same reason as a terminal PTY (#18b): the process
-  dies with the agent that owns it. The backend keeps no unit bookkeeping, so a backend restart is
-  invisible to a still-running unit, but an agent restart genuinely ends it and the registry reports
-  it gone.
+- **`service` and `worker` kinds are refused with `NOT_IMPLEMENTED` (501).** The supervisor that
+  would own a long-lived, restart-managed process is P2. The refusal is deliberate honesty — a 501
+  "not built", preserved across the RPC hop as a 501 and not a generic 503 — rather than accepting
+  the request and running an unsupervised process that looks managed.
+- **A unit does not survive its agent restarting.** Same reason as a terminal PTY (#18b): the
+  process dies with the agent that owns it. The backend keeps no unit bookkeeping, so a backend
+  restart is invisible to a still-running unit, but an agent restart genuinely ends it and the
+  registry reports it gone.
 - **No resource limits, restart policies, log files, `runAs`, or DB persistence.** All P2. A unit's
-  output lives in memory and its history is not recorded. `maxOutputBytes` and a restart *ceiling*
+  output lives in memory and its history is not recorded. `maxOutputBytes` and a restart _ceiling_
   above the instance default are gated by `execution:limits:raise`, but cgroup enforcement and the
-  restart *policies* themselves are not built.
+  restart _policies_ themselves are not built.
 - **No interactive input/resize or streaming on the units REST surface.** Driving a `tty` unit
-  interactively still goes through the terminal API and its WebSocket; the units API is lifecycle-only
-  (create/list/get/signal/restart/kill/log-by-offset).
+  interactively still goes through the terminal API and its WebSocket; the units API is
+  lifecycle-only (create/list/get/signal/restart/kill/log-by-offset).
 
 ### 18d. Agent revocation closes the live socket on the replica that holds it, not across replicas
 
@@ -296,7 +297,7 @@ the live agent socket, failing in-flight requests, dropping terminal streams, an
 requests immediately — so a revoked agent stops being reachable at once rather than on its next
 handshake. The socket held by **that backend process** is closed.
 
-_Impact:_ with `REDIS_URL` and more than one backend replica, an agent connected to a *different*
+_Impact:_ with `REDIS_URL` and more than one backend replica, an agent connected to a _different_
 replica than the one serving the revoke keeps its socket until it next reconnects (at which point
 `authenticateAgent` refuses it, because the database flag is shared). There is no cross-replica
 revocation broadcast. The default install is one replica, where the socket being closed is the only
@@ -398,28 +399,28 @@ the update path on one that matters.
 
 The terminal's host-environment behaviour is covered by `deploy/tests/host-environment.sh` and the
 `@aether/shared` and host-agent suites. The shared unit tests (argv, environment allowlist, passwd
-identity) and the host-agent real-PTY integration tests (the profile-chain / `~/.local/bin` case, its
-negative without `-l`, the secret non-leak, and session-lifecycle honesty) run in CI on
-`ubuntu-latest`; the integration tests skip on a host with no `node-pty` or POSIX shell, so they have
-**not** been executed on Windows. `deploy/tests/host-environment.sh` runs its host-shell portion
-anywhere bash and a POSIX shell exist and was run here (six checks pass, proving the login-shell fix
-and reproducing the no-`-l` defect); its API portion needs `AETHER_BASE_URL`/`AETHER_USERNAME`/
-`AETHER_PASSWORD` and was **skipped**, not run, so the live-instance lifecycle and refresh-discovery
-checks are delivered runnable but unexecuted against a real instance. See
-[EXECUTION-MODEL.md](../architecture/EXECUTION-MODEL.md).
+identity) and the host-agent real-PTY integration tests (the profile-chain / `~/.local/bin` case,
+its negative without `-l`, the secret non-leak, and session-lifecycle honesty) run in CI on
+`ubuntu-latest`; the integration tests skip on a host with no `node-pty` or POSIX shell, so they
+have **not** been executed on Windows. `deploy/tests/host-environment.sh` runs its host-shell
+portion anywhere bash and a POSIX shell exist and was run here (six checks pass, proving the
+login-shell fix and reproducing the no-`-l` defect); its API portion needs
+`AETHER_BASE_URL`/`AETHER_USERNAME`/ `AETHER_PASSWORD` and was **skipped**, not run, so the
+live-instance lifecycle and refresh-discovery checks are delivered runnable but unexecuted against a
+real instance. See [EXECUTION-MODEL.md](../architecture/EXECUTION-MODEL.md).
 
 The execution-unit survival matrix is covered by `deploy/tests/execution.sh`, which drives the real
 `units.*` REST API and runs the six scenarios (normal execution; browser/backend reconnect; backend
-restart + adoption; agent restart; `aether restart`; VPS reboot). It reports a per-scenario verdict —
-**PASS** / **PARTIAL** / **UNEXECUTED** / **BLOCKED** — and never a pass for a check it did not run:
-scenarios 1 and 2 are fully API-driven, while the restart/reboot orchestration for 3–6 mutates a live
-VPS and is opt-in per action (it must run on the host, as root, with systemd and Docker). On a
-machine that cannot reach an instance — or without `curl`/`jq` — it exits `77` with
-`BLOCKED_BY_ENVIRONMENT`. **It has not been run against a live instance here:** this machine (Windows,
-no reachable instance, no `jq`) blocks the API tier, so the whole matrix is **UNEXECUTED** and the
-harness prints the exact commands to run it on the VPS. Scenarios 4 and 6 are, by design, "pass" only
-by proving the unit is reported *gone* — P1 does not make a `tty` survive an agent restart or a
-reboot, and the harness does not pretend it does. See
+restart + adoption; agent restart; `aether restart`; VPS reboot). It reports a per-scenario verdict
+— **PASS** / **PARTIAL** / **UNEXECUTED** / **BLOCKED** — and never a pass for a check it did not
+run: scenarios 1 and 2 are fully API-driven, while the restart/reboot orchestration for 3–6 mutates
+a live VPS and is opt-in per action (it must run on the host, as root, with systemd and Docker). On
+a machine that cannot reach an instance — or without `curl`/`jq` — it exits `77` with
+`BLOCKED_BY_ENVIRONMENT`. **It has not been run against a live instance here:** this machine
+(Windows, no reachable instance, no `jq`) blocks the API tier, so the whole matrix is **UNEXECUTED**
+and the harness prints the exact commands to run it on the VPS. Scenarios 4 and 6 are, by design,
+"pass" only by proving the unit is reported _gone_ — P1 does not make a `tty` survive an agent
+restart or a reboot, and the harness does not pretend it does. See
 [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §31.
 
 The installer interface (limitation #21) is covered separately by `deploy/tests/installer-ui.sh`,

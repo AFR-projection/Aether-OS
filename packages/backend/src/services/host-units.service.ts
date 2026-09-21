@@ -133,7 +133,7 @@ export function assertMayUseRequestedLimits(
 
   if (body.maxOutputBytes > DEFAULT_EXECUTION_UNIT_LIMITS.maxOutputBytes) {
     throw new ForbiddenError(
-      'Raising a unit\'s retained output above the instance default requires the ' +
+      "Raising a unit's retained output above the instance default requires the " +
         '"execution:limits:raise" permission',
       {
         requiredPermission: 'execution:limits:raise',
@@ -147,7 +147,7 @@ export function assertMayUseRequestedLimits(
   const requestedAttempts = body.restart?.maxAttempts ?? 0;
   if (requestedAttempts > LIMITS.EXECUTION_UNIT_MAX_RESTART_ATTEMPTS) {
     throw new ForbiddenError(
-      'Raising a unit\'s restart ceiling above the instance default requires the ' +
+      "Raising a unit's restart ceiling above the instance default requires the " +
         '"execution:limits:raise" permission',
       {
         requiredPermission: 'execution:limits:raise',

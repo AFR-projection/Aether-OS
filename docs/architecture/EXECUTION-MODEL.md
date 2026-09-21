@@ -10,8 +10,8 @@ code points back to it, and a test enforces the one rule it turns on.
 `packages/shared/src/execution-environment.ts` — `buildShellArgv` and `buildShellEnvironment` — and
 nowhere else builds a child environment by hand.** A test in the host agent's suite checks every
 `pty.spawn` call site against this, so a future spawn path that improvises its own environment fails
-CI rather than quietly diverging. That is what makes "one model" a fact about the code and not a note
-in a document.
+CI rather than quietly diverging. That is what makes "one model" a fact about the code and not a
+note in a document.
 
 The two current consumers:
 
@@ -27,7 +27,7 @@ when they are built, they use these builders or they do not merge.
 
 ## Why a login shell
 
-A shell started without `-l` is an *interactive, non-login* shell. It reads `~/.bashrc` and nothing
+A shell started without `-l` is an _interactive, non-login_ shell. It reads `~/.bashrc` and nothing
 else — not `/etc/profile`, not `~/.profile`. On Ubuntu and Debian the line that puts `~/.local/bin`
 on `PATH` lives in `~/.profile`, which **only a login shell reads**.
 
@@ -48,17 +48,17 @@ hardcoding a directory would paper over a host whose profile chain is broken, di
 same user sees over SSH, and need editing again for every tool that picks a different directory. No
 tool is named anywhere in the environment module.
 
-This is not hypothetical. On Ubuntu **as root**, the profile chain does not add `~/.local/bin` at all:
-the Debian `~/.profile` skeleton adds it only for a regular user whose `~/.profile` exists, and
+This is not hypothetical. On Ubuntu **as root**, the profile chain does not add `~/.local/bin` at
+all: the Debian `~/.profile` skeleton adds it only for a regular user whose `~/.profile` exists, and
 `/root` typically has no such line — so a tool installed by `curl … | bash` into `/root/.local/bin`
 resolves in **neither** an Aether terminal **nor** a plain SSH login. The remedy is a host-
-configuration one, applied where the profile chain lives rather than in the spawn code: the installer
-(`deploy/scripts/setup-host.sh`, `write_login_profile`) drops `/etc/profile.d/aether-local-bin.sh`, a
-tool-agnostic, existence-guarded rule that prepends `$HOME/.local/bin` to `PATH` for every login
-shell — the same mechanism by which the host already gets `/snap/bin` from `apps-bin-path.sh`. The
-spawn code still names no tool and adds nothing to `PATH` by hand; the login shell picks the rule up
-because it sources `/etc/profile.d/*.sh`, so a tool becomes reachable for exactly the reason it is
-reachable over SSH.
+configuration one, applied where the profile chain lives rather than in the spawn code: the
+installer (`deploy/scripts/setup-host.sh`, `write_login_profile`) drops
+`/etc/profile.d/aether-local-bin.sh`, a tool-agnostic, existence-guarded rule that prepends
+`$HOME/.local/bin` to `PATH` for every login shell — the same mechanism by which the host already
+gets `/snap/bin` from `apps-bin-path.sh`. The spawn code still names no tool and adds nothing to
+`PATH` by hand; the login shell picks the rule up because it sources `/etc/profile.d/*.sh`, so a
+tool becomes reachable for exactly the reason it is reachable over SSH.
 
 The cost of `-l` on the command path is real and accepted: profile scripts run before each run, so a
 run is marginally slower and profile output can appear in the run's terminal. That is the honest
@@ -92,9 +92,9 @@ environment and asserts `env` inside it does not print the value.
 
 `resolveHostIdentity` in `@aether/shared/node` is the authoritative source for `USER`, `HOME`, and
 the login-shell preference. It reads `os.userInfo()`, which calls `getpwuid_r` — the **passwd
-database** for the process's effective uid — and falls back to the ambient `USER`/`HOME`/`SHELL` (and
-finally to `aether` / `/` / `/bin/sh`) only for a uid with no passwd entry, as can happen for a bare
-container uid.
+database** for the process's effective uid — and falls back to the ambient `USER`/`HOME`/`SHELL`
+(and finally to `aether` / `/` / `/bin/sh`) only for a uid with no passwd entry, as can happen for a
+bare container uid.
 
 It is deliberately node-only and exposed **only** through the `@aether/shared/node` subpath export,
 never re-exported from the package root, so `node:os` can never enter the frontend bundle. The pure
@@ -102,10 +102,10 @@ policy (`execution-environment.ts`) and the node-only identity resolver (`host-i
 split for exactly this reason.
 
 Why passwd beats `$HOME`: under systemd the unit sets no `HOME`, so the daemon's `HOME` may be
-absent. The old fallback then landed on the working directory, which in the default full-host install
-(workspace root `/`) put a shell in `/` instead of `/root`. Resolving from passwd makes the code
-independent of the unit's environment and repairs existing installs without a reinstall — systemd's
-`SetLoginEnvironment=` only exists in ≥ 255, and Ubuntu 22.04 ships 249.
+absent. The old fallback then landed on the working directory, which in the default full-host
+install (workspace root `/`) put a shell in `/` instead of `/root`. Resolving from passwd makes the
+code independent of the unit's environment and repairs existing installs without a reinstall —
+systemd's `SetLoginEnvironment=` only exists in ≥ 255, and Ubuntu 22.04 ships 249.
 
 The reported `SHELL` is the shell actually spawned, not the passwd preference. The two can differ:
 `resolveShell` only spawns a shell on `TERMINAL_ALLOWED_SHELLS`, so a service account's
@@ -127,35 +127,37 @@ What it does not do: it does not resurrect an `exited`/`killed` session (that wo
 screen for a process that is gone), it does not restore window geometry (the desktop never persisted
 geometry for any app), and it runs once onto an empty desktop so it can never double-open a shell.
 
-Reattach preserves the **process** and up to 256 KB of scrollback. It does not reproduce exact screen
-state for a full-screen program; xterm.js rebuilds the screen from scrollback.
+Reattach preserves the **process** and up to 256 KB of scrollback. It does not reproduce exact
+screen state for a full-screen program; xterm.js rebuilds the screen from scrollback.
 
 ### Honest lifecycle
 
 The backend reconciles every host session against the agent that owns it before it answers a list or
 a get. The agent is the authority on a PTY it owns: a session it still reports is mirrored (status
 and exit code included), a session it no longer knows is dropped. An exited session is retained for
-30 seconds with `status: 'exited'`, `pid: null`, and its final scrollback, so a client can still read
-how it ended — but it is rendered as **ended**, never as running. **Aether never reports a session as
-alive when the underlying PTY is dead.**
+30 seconds with `status: 'exited'`, `pid: null`, and its final scrollback, so a client can still
+read how it ended — but it is rendered as **ended**, never as running. **Aether never reports a
+session as alive when the underlying PTY is dead.**
 
 ### Why backend-restart adoption is not faked
 
-A host session's owner is a **backend** user id. The agent, though, tracks a single `ownerUserId` per
-connection (`packages/host-agent/src/connection.ts:291`), and multiple backend users can hold sessions
-on one agent. On an instance-scoped local agent it is worse than that: the agent keys sessions on its
-**own** id (`packages/backend/src/ws/agent.ws.ts:63`, `record.ownerUserId ?? record.agentId`) while the
-backend records the **user's** id (`packages/backend/src/services/host-terminal.service.ts:74`), so the
-two disagree and `terminal.list` returns every session on the host to whoever asks. After a backend
-restart, blindly adopting what the agent returns would therefore attribute every session to whoever
-asked first — a cross-user leak. Rather than fake ownership, a backend-only restart is left as an
-honest gap: the sessions are gone from the backend's view even though the shells live on the agent.
+A host session's owner is a **backend** user id. The agent, though, tracks a single `ownerUserId`
+per connection (`packages/host-agent/src/connection.ts:291`), and multiple backend users can hold
+sessions on one agent. On an instance-scoped local agent it is worse than that: the agent keys
+sessions on its **own** id (`packages/backend/src/ws/agent.ws.ts:63`,
+`record.ownerUserId ?? record.agentId`) while the backend records the **user's** id
+(`packages/backend/src/services/host-terminal.service.ts:74`), so the two disagree and
+`terminal.list` returns every session on the host to whoever asks. After a backend restart, blindly
+adopting what the agent returns would therefore attribute every session to whoever asked first — a
+cross-user leak. Rather than fake ownership, a backend-only restart is left as an honest gap: the
+sessions are gone from the backend's view even though the shells live on the agent.
 
-Closing it cleanly needs per-unit ownership carried across the agent protocol. That is **P1**, not the
-broker — it is a small, well-scoped change (assert the principal per request and freeze it on the
-unit) and it is where the reported bug is actually fixed. See
-[EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §4 and §16; the ordering constraint is that adoption
-and ownership ship together, or adoption is restricted to personal agents. It is not improvised here.
+Closing it cleanly needs per-unit ownership carried across the agent protocol. That is **P1**, not
+the broker — it is a small, well-scoped change (assert the principal per request and freeze it on
+the unit) and it is where the reported bug is actually fixed. See
+[EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §4 and §16; the ordering constraint is that
+adoption and ownership ship together, or adoption is restricted to personal agents. It is not
+improvised here.
 
 ## PTY survival across agent restart and reboot (scenarios 5 and 6): assessment
 
@@ -173,23 +175,23 @@ Survival requires the PTY to be owned by something that outlives the agent. Two 
   component: a socket that hands out shells needs its own authentication, authorization, unit,
   lifecycle, and review, on a host sized at 1 vCPU.
 
-**Neither is built now.** Building the broker before the roadmap's P1 execution/supervision primitive
-would mean building it twice — the broker is a *client* of that primitive, and its design is recorded
-there as **P3** ([EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §18) with the phasing that separates
-it from the cheap P1 ownership fix. Until then Aether ships the honest behaviour — a session that is
-gone is reported gone, never alive — and this assessment. Scenarios 5 and 6 are **not** claimed as
-solved.
+**Neither is built now.** Building the broker before the roadmap's P1 execution/supervision
+primitive would mean building it twice — the broker is a _client_ of that primitive, and its design
+is recorded there as **P3** ([EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §18) with the phasing
+that separates it from the cheap P1 ownership fix. Until then Aether ships the honest behaviour — a
+session that is gone is reported gone, never alive — and this assessment. Scenarios 5 and 6 are
+**not** claimed as solved.
 
 ## The six-scenario matrix
 
-| # | Scenario | Verdict |
-| --- | --- | --- |
-| 1 | Terminal reconnect | **Solved** — same PTY, reattached; environment unchanged |
-| 2 | Browser refresh | **Solved** — sessions discovered and rebound; the shell survives (backend not restarted) |
-| 3 | New terminal session | **Solved** — a fresh login shell; profile chain runs, `~/.local/bin` on `PATH` |
-| 4 | Logout / login | **Solved** — sessions end on logout by design; the next session is correct |
-| 5 | Aether restart | **Partial, reported as such** — agent restart kills the PTYs (reported gone); backend-only restart is an honest gap, not faked adoption, and is **closed by P1** ([EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §16) |
-| 6 | Host reboot | **Not solved, documented** — a PTY dies on reboot as on any machine; reported gone, never alive. A new session afterwards is correct |
+| #   | Scenario             | Verdict                                                                                                                                                                                                                 |
+| --- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Terminal reconnect   | **Solved** — same PTY, reattached; environment unchanged                                                                                                                                                                |
+| 2   | Browser refresh      | **Solved** — sessions discovered and rebound; the shell survives (backend not restarted)                                                                                                                                |
+| 3   | New terminal session | **Solved** — a fresh login shell; profile chain runs, `~/.local/bin` on `PATH`                                                                                                                                          |
+| 4   | Logout / login       | **Solved** — sessions end on logout by design; the next session is correct                                                                                                                                              |
+| 5   | Aether restart       | **Partial, reported as such** — agent restart kills the PTYs (reported gone); backend-only restart is an honest gap, not faked adoption, and is **closed by P1** ([EXECUTION-PRIMITIVE.md](EXECUTION-PRIMITIVE.md) §16) |
+| 6   | Host reboot          | **Not solved, documented** — a PTY dies on reboot as on any machine; reported gone, never alive. A new session afterwards is correct                                                                                    |
 
 ## Tests
 
@@ -198,10 +200,11 @@ solved.
   `PATH` = `SYSTEM_PATH` with no tool-specific entry, the allowlist proof (a secret-shaped key is
   absent, `LANG`/`TZ` carried), and passwd resolution with its fallbacks.
 - **Integration, real PTY** (`packages/host-agent/src/capabilities/terminal.test.ts`, runs on CI
-  `ubuntu-latest`, skips on a host with no `node-pty` or POSIX shell): the profile-chain case (a tool
-  in a `.profile`-added directory resolves — the user's case in miniature; **fails on the pre-change
-  code**), the negative case (no `-l` → not found), the secret non-leak, the command path, and
-  session-lifecycle honesty (an exited session reports `exited`/`null` pid, never `running`).
+  `ubuntu-latest`, skips on a host with no `node-pty` or POSIX shell): the profile-chain case (a
+  tool in a `.profile`-added directory resolves — the user's case in miniature; **fails on the
+  pre-change code**), the negative case (no `-l` → not found), the secret non-leak, the command
+  path, and session-lifecycle honesty (an exited session reports `exited`/`null` pid, never
+  `running`).
 - **VPS E2E** (`deploy/tests/host-environment.sh`): portion A drives a real login shell on the host
   and asserts the profile chain, the regression, and the secret non-leak; portion B drives the real
   API for the session lifecycle and the refresh-discovery listing, skipping (counted) without

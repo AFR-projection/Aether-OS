@@ -71,14 +71,10 @@ export function resolveIdentityFrom(
   fallbacks: IdentityFallbacks
 ): ShellIdentity {
   return {
-    user: (isUsableName(passwd?.username) ? passwd.username : undefined) ??
-      fallbacks.user ?? 'aether',
-    home:
-      (isUsablePath(passwd?.homedir) ? passwd.homedir : undefined) ??
-      fallbacks.home ?? '/',
-    shell:
-      (isUsablePath(passwd?.shell) ? passwd.shell : undefined) ??
-      fallbacks.shell ?? '/bin/sh',
+    user:
+      (isUsableName(passwd?.username) ? passwd.username : undefined) ?? fallbacks.user ?? 'aether',
+    home: (isUsablePath(passwd?.homedir) ? passwd.homedir : undefined) ?? fallbacks.home ?? '/',
+    shell: (isUsablePath(passwd?.shell) ? passwd.shell : undefined) ?? fallbacks.shell ?? '/bin/sh',
   };
 }
 

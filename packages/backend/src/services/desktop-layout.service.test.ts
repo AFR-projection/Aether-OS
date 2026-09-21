@@ -10,9 +10,8 @@ vi.mock('../db/pool.js', () => ({
   queryOne: queryOneMock,
 }));
 
-const { desktopLayoutKey, getDesktopLayout, saveDesktopLayout } = await import(
-  './desktop-layout.service.js'
-);
+const { desktopLayoutKey, getDesktopLayout, saveDesktopLayout } =
+  await import('./desktop-layout.service.js');
 
 const USER_A = '00000000-0000-4000-8000-00000000000a';
 const USER_B = '00000000-0000-4000-8000-00000000000b';

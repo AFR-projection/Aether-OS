@@ -82,7 +82,13 @@ function runShell(
   return new Promise<SpawnResult>((resolve, reject) => {
     let child: IPty;
     try {
-      child = ptyModule.spawn(shell, argv, { name: 'xterm-256color', cols: 80, rows: 24, cwd, env });
+      child = ptyModule.spawn(shell, argv, {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 24,
+        cwd,
+        env,
+      });
     } catch (error) {
       reject(error instanceof Error ? error : new Error(String(error)));
       return;
@@ -153,11 +159,7 @@ describe('terminal environment model (real PTY)', () => {
 
     const localBin = path.join(home, '.local', 'bin');
     await mkdir(localBin, { recursive: true });
-    await writeFile(
-      path.join(home, '.profile'),
-      'export PATH="$HOME/.local/bin:$PATH"\n',
-      'utf8'
-    );
+    await writeFile(path.join(home, '.profile'), 'export PATH="$HOME/.local/bin:$PATH"\n', 'utf8');
     const tool = path.join(localBin, 'mytool');
     await writeFile(tool, '#!/bin/sh\necho "mytool-ran"\n', 'utf8');
     await chmod(tool, 0o755);
@@ -165,7 +167,12 @@ describe('terminal environment model (real PTY)', () => {
     const shell = bash as string;
     const env = buildShellEnvironment(identity, { cwd: home, ambient: {} });
     // The old argv: `-c` with no `-l`. This is the regression, reproduced.
-    const result = await runShell(shell, ['-c', 'command -v mytool || echo "not-found"'], env, home);
+    const result = await runShell(
+      shell,
+      ['-c', 'command -v mytool || echo "not-found"'],
+      env,
+      home
+    );
 
     expect(result.output).toContain('not-found');
     expect(result.output).not.toContain('mytool-ran');
@@ -202,7 +209,12 @@ describe('terminal environment model (real PTY)', () => {
 
     const shell = bash as string;
     const env = buildShellEnvironment(identity, { cwd: home, ambient: {} });
-    const result = await runShell(shell, buildShellArgv('echo "profile=$AETHER_PROFILE_RAN"'), env, home);
+    const result = await runShell(
+      shell,
+      buildShellArgv('echo "profile=$AETHER_PROFILE_RAN"'),
+      env,
+      home
+    );
 
     expect(result.output).toContain('profile=1');
   }, 30_000);
@@ -238,7 +250,12 @@ describe('terminal session lifecycle honesty', () => {
     if (!canSpawn()) return;
 
     // A shell that exits on its own the moment it starts.
-    const session = await createSession(cfg, { ownerUserId: OWNER, cols: 80, rows: 24, command: 'true' });
+    const session = await createSession(cfg, {
+      ownerUserId: OWNER,
+      cols: 80,
+      rows: 24,
+      command: 'true',
+    });
     expect(session.status).toBe('running');
 
     // Wait for the process to exit; the agent flips status on the exit event.
@@ -293,7 +310,7 @@ describe('terminal session ownership', () => {
     return { id: `own-${type}`, type, params };
   }
 
-  it('refuses to kill another user\'s session, and leaves it running', async () => {
+  it("refuses to kill another user's session, and leaves it running", async () => {
     const session = seedSessionForTests(OWNER);
 
     const reply = await dispatchRequest(
@@ -310,7 +327,7 @@ describe('terminal session ownership', () => {
     expect(listSessionsForUser(OWNER).map((s) => s.id)).toContain(session.id);
   });
 
-  it('kills the owner\'s own session', async () => {
+  it("kills the owner's own session", async () => {
     // The mirror of the test above: the ownership check must not be a refusal to
     // kill anything at all.
     const session = seedSessionForTests(OWNER);
@@ -333,7 +350,7 @@ describe('terminal session ownership', () => {
     expect(listSessionsForUser(OWNER).map((s) => s.id)).toContain(session.id);
   });
 
-  it('does not list, drive, or resize another user\'s session', async () => {
+  it("does not list, drive, or resize another user's session", async () => {
     const session = seedSessionForTests(OWNER);
 
     const listed = await dispatchRequest(cfg, OTHER_USER, request('terminal.list', {}));

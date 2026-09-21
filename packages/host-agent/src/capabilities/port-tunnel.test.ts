@@ -64,7 +64,7 @@ describe('port tunnel ownership', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('refuses to read, write, or close another user\'s tunnel with a 404', async () => {
+  it("refuses to read, write, or close another user's tunnel with a 404", async () => {
     const { tunnelId } = await openTunnel(cfg, { port, ownerUserId: OWNER });
 
     // Read: the byte pipe must not answer to a stranger.
@@ -87,7 +87,7 @@ describe('port tunnel ownership', () => {
     expect(Buffer.from(read.contentBase64, 'base64').toString('utf8')).toContain('hello-from-host');
   });
 
-  it('answers a missing tunnel and someone else\'s tunnel identically', async () => {
+  it("answers a missing tunnel and someone else's tunnel identically", async () => {
     const { tunnelId } = await openTunnel(cfg, { port, ownerUserId: OWNER });
     const MISSING = '00000000-0000-4000-8000-0000000000ff';
 

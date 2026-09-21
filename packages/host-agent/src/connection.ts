@@ -413,7 +413,11 @@ export class AgentConnection {
     if (typeof rawId !== 'string' || rawId.length === 0) {
       this.send(
         socket,
-        errReply(id, 'VALIDATION_FAILED', `${channel === 'units' ? 'unitId' : 'sessionId'} is required`)
+        errReply(
+          id,
+          'VALIDATION_FAILED',
+          `${channel === 'units' ? 'unitId' : 'sessionId'} is required`
+        )
       );
       return;
     }

@@ -177,7 +177,10 @@ describe('host terminal sessions over REST', () => {
   it('reports the session it created', async () => {
     await createHostSession();
 
-    const response = await app.inject({ method: 'GET', url: `/api/terminal/sessions/${SESSION_ID}` });
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/sessions/${SESSION_ID}`,
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.json<{ data: { id: string } }>().data.id).toBe(SESSION_ID);
@@ -234,7 +237,7 @@ describe('host terminal sessions over REST', () => {
  * nothing revised it. `GET /api/terminal/sessions` therefore reported a session
  * the user had already ended as running, for as long as the process lived.
  */
-describe('session status is the agent\'s, not this process\'s', () => {
+describe("session status is the agent's, not this process's", () => {
   it('lists a session it created', async () => {
     await createHostSession();
 
@@ -271,9 +274,9 @@ describe('session status is the agent\'s, not this process\'s', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json<{ data: { status: string; exitCode: number | null } }>().data).toMatchObject(
-      { status: 'exited', exitCode: 130 }
-    );
+    expect(
+      response.json<{ data: { status: string; exitCode: number | null } }>().data
+    ).toMatchObject({ status: 'exited', exitCode: 130 });
   });
 
   it('leaves the record alone when the agent cannot answer', async () => {

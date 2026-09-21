@@ -82,7 +82,12 @@ const envSchema = z.object({
     .min(1_000)
     .default(24 * 60 * 60 * 1000),
   /** Bytes of output retained per unit before the oldest bytes are dropped. */
-  EXECUTION_LOG_MAX_BYTES: z.coerce.number().int().min(4096).max(8 * 1024 * 1024).default(262_144),
+  EXECUTION_LOG_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(4096)
+    .max(8 * 1024 * 1024)
+    .default(262_144),
   /**
    * How long a finished unit's record is kept before it is forgotten.
    *

@@ -431,7 +431,10 @@ export function terminalStatusToUnitState(status: TerminalStatus): ExecutionUnit
  * anything: it reads units of kind `tty` through this function, which is why a
  * fix to the registry is a fix to the Terminal, and why the two cannot drift.
  */
-export function terminalSessionFromUnit(unit: ExecutionUnit, attachedClients: number): TerminalSession {
+export function terminalSessionFromUnit(
+  unit: ExecutionUnit,
+  attachedClients: number
+): TerminalSession {
   return {
     id: unit.id,
     pid: unit.process.pid,

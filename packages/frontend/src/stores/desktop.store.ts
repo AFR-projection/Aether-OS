@@ -80,7 +80,10 @@ interface DesktopState {
    * not create a blank window. Application state is not restored — props are
    * empty — which is why terminals are persisted and recovered separately.
    */
-  applyLayout: (layout: DesktopLayout, options?: { isKnownApp?: (appId: string) => boolean }) => void;
+  applyLayout: (
+    layout: DesktopLayout,
+    options?: { isKnownApp?: (appId: string) => boolean }
+  ) => void;
 }
 
 const CASCADE_STEP = 28;

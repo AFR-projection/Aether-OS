@@ -22,13 +22,13 @@ is not built — see [Known limitations](docs/status/KNOWN-LIMITATIONS.md).
 light/dark themes. Live terminal sessions reattach after a browser reload; window layout itself is
 not yet persisted.
 
-**Terminal** — a real PTY (`node-pty`) running `bash`/`sh` on the host as a **login shell**, streamed
-over a WebSocket with a short-lived ticket rather than the access token in the URL. Because it is a
-login shell, the host's own profile chain runs, so a tool a user installs into `~/.local/bin` (via a
-`curl | bash` installer, `pipx`, `cargo install`, `nvm`, `rustup`…) is on `PATH` exactly as it is
-over SSH — nothing is special-cased per tool. Its environment is built from an allowlist, never
-inherited wholesale, so no Aether secret reaches the shell. A browser refresh rediscovers and rebinds
-your live shells rather than orphaning them. Multiple tabs. See
+**Terminal** — a real PTY (`node-pty`) running `bash`/`sh` on the host as a **login shell**,
+streamed over a WebSocket with a short-lived ticket rather than the access token in the URL. Because
+it is a login shell, the host's own profile chain runs, so a tool a user installs into
+`~/.local/bin` (via a `curl | bash` installer, `pipx`, `cargo install`, `nvm`, `rustup`…) is on
+`PATH` exactly as it is over SSH — nothing is special-cased per tool. Its environment is built from
+an allowlist, never inherited wholesale, so no Aether secret reaches the shell. A browser refresh
+rediscovers and rebinds your live shells rather than orphaning them. Multiple tabs. See
 [docs/architecture/EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md).
 
 **Files** — browse, read, write, rename, delete, upload, download, and search the workspace tree.
@@ -48,17 +48,17 @@ and four roles (`owner`, `admin`, `operator`, `viewer`) enforced server-side on 
 
 ### Applications
 
-| App             | What it does                                     |
-| --------------- | ------------------------------------------------ |
-| Files           | File manager over the workspace                  |
-| Terminal        | Multi-tab real shell                             |
+| App             | What it does                                          |
+| --------------- | ----------------------------------------------------- |
+| Files           | File manager over the workspace                       |
+| Terminal        | Multi-tab real shell                                  |
 | Code Studio     | Monaco code editor with tabs, file tree, highlighting |
-| Ports           | Servers listening on the host, opened as windows |
-| Task Manager    | Process list, memory use, search filter          |
-| System Monitor  | Live CPU / memory / disk graphs                  |
-| Settings        | Account, sessions, users, host agents, about     |
-| Security Center | Audit log and session review                     |
-| App Catalog     | Pin or unpin which apps show on the desktop      |
+| Ports           | Servers listening on the host, opened as windows      |
+| Task Manager    | Process list, memory use, search filter               |
+| System Monitor  | Live CPU / memory / disk graphs                       |
+| Settings        | Account, sessions, users, host agents, about          |
+| Security Center | Audit log and session review                          |
+| App Catalog     | Pin or unpin which apps show on the desktop           |
 
 ---
 

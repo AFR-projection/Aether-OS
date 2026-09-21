@@ -131,7 +131,9 @@ function appendToRing(ring: LogRing, data: string, stream: 'pty' | 'stdout' | 's
   // A single chunk larger than the whole ring is kept as its own tail: what
   // matters about a burst of output is its end, not its beginning.
   if (size >= ring.maxBytes) {
-    const tail = Buffer.from(data, 'utf8').subarray(size - ring.maxBytes).toString('utf8');
+    const tail = Buffer.from(data, 'utf8')
+      .subarray(size - ring.maxBytes)
+      .toString('utf8');
     const kept = Buffer.byteLength(tail, 'utf8');
     ring.dropped += ring.bytes + (size - kept);
     ring.chunks = [tail];
@@ -162,11 +164,7 @@ function appendToRing(ring: LogRing, data: string, stream: 'pty' | 'stdout' | 's
  * and notice that it fell behind, instead of being handed the tail of a stream
  * it believes is contiguous.
  */
-function readRing(
-  ring: LogRing,
-  skip: number,
-  limit: number
-): { text: string; missed: number } {
+function readRing(ring: LogRing, skip: number, limit: number): { text: string; missed: number } {
   // Where the retained window starts, in absolute terms.
   const windowStart = ring.total - ring.bytes;
   const missed = Math.max(0, windowStart - skip);
@@ -192,7 +190,11 @@ function readRing(
       parts.push(piece);
       taken += pieceBytes;
     } else {
-      parts.push(Buffer.from(piece, 'utf8').subarray(0, limit - taken).toString('utf8'));
+      parts.push(
+        Buffer.from(piece, 'utf8')
+          .subarray(0, limit - taken)
+          .toString('utf8')
+      );
       taken = limit;
     }
   }
@@ -756,21 +758,17 @@ async function spawnInto(
     // The allowlist matters most here: the agent's pairing token lives in this
     // process's environment, and a shell running as the same user could read it
     // with a single `env`.
-    const child = pty.spawn(
-      shell,
-      buildShellArgv(options.command),
-      {
-        name: options.term ?? DEFAULT_TERM,
-        cols: runtime.unit.spec.cols ?? 80,
-        rows: runtime.unit.spec.rows ?? 24,
-        cwd,
-        env: {
-          ...buildShellEnvironment({ ...identity, shell }, { cwd, ambient: process.env }),
-          ...(options.term !== undefined ? { TERM: options.term } : {}),
-          ...(options.env ?? {}),
-        },
-      }
-    );
+    const child = pty.spawn(shell, buildShellArgv(options.command), {
+      name: options.term ?? DEFAULT_TERM,
+      cols: runtime.unit.spec.cols ?? 80,
+      rows: runtime.unit.spec.rows ?? 24,
+      cwd,
+      env: {
+        ...buildShellEnvironment({ ...identity, shell }, { cwd, ambient: process.env }),
+        ...(options.term !== undefined ? { TERM: options.term } : {}),
+        ...(options.env ?? {}),
+      },
+    });
 
     runtime.pty = child;
     runtime.unit.process = describeProcess(child.pid);
@@ -938,7 +936,11 @@ function terminateProcessGroup(runtime: UnitRuntime, signal: NodeJS.Signals): vo
 }
 
 /** Records output, fans it out to subscribers, and restarts the idle clock. */
-function applyOutput(runtime: UnitRuntime, data: string, stream: 'pty' | 'stdout' | 'stderr'): void {
+function applyOutput(
+  runtime: UnitRuntime,
+  data: string,
+  stream: 'pty' | 'stdout' | 'stderr'
+): void {
   appendToRing(runtime.rings.combined, data, stream);
   if (stream === 'stdout') appendToRing(runtime.rings.stdout, data, stream);
   if (stream === 'stderr') appendToRing(runtime.rings.stderr, data, stream);
@@ -1828,7 +1830,11 @@ export function seedUnitForTests(
 }
 
 /** Test-only: records output on a seeded unit, so the log path is testable without a process. */
-export function appendOutputForTests(unitId: string, data: string, stream: 'pty' | 'stdout' | 'stderr' = 'pty'): void {
+export function appendOutputForTests(
+  unitId: string,
+  data: string,
+  stream: 'pty' | 'stdout' | 'stderr' = 'pty'
+): void {
   const runtime = units.get(unitId);
   if (!runtime) throw new Error(`no such unit: ${unitId}`);
   applyOutput(runtime, data, stream);

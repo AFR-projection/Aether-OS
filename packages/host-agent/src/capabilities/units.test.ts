@@ -134,7 +134,7 @@ describe('unit ownership', () => {
     expect(listUnits({ ownerUserId: OWNER }).map((u) => u.id)).toContain(unit.id);
   });
 
-  it('raises the same 404 for another user\'s unit as for a missing one, on get', () => {
+  it("raises the same 404 for another user's unit as for a missing one, on get", () => {
     const unit = seedUnitForTests(OWNER);
 
     expect(() => getUnit(unit.id, OTHER_USER)).toThrowError(/does not exist/i);

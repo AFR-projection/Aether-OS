@@ -80,7 +80,9 @@ describe('closeAgentSocket', () => {
     // pending — exactly the state a real revocation interrupts.
     const inflight = sendAgentRequest('rpc-close-2', 'files.read', { path: '/etc/hostname' });
 
-    expect(closeAgentSocket('rpc-close-2', WS_CLOSE.FORBIDDEN, 'Agent has been revoked')).toBe(true);
+    expect(closeAgentSocket('rpc-close-2', WS_CLOSE.FORBIDDEN, 'Agent has been revoked')).toBe(
+      true
+    );
 
     await expect(inflight).rejects.toThrow('Agent has been revoked');
   });
@@ -92,14 +94,22 @@ describe('closeAgentSocket', () => {
     const events: unknown[] = [];
     setTerminalSubscriber('rpc-close-3', 'sess-a', (event) => events.push(event));
 
-    handleAgentFrame('rpc-close-3', { type: 'terminal.event', sessionId: 'sess-a', event: 'before' });
+    handleAgentFrame('rpc-close-3', {
+      type: 'terminal.event',
+      sessionId: 'sess-a',
+      event: 'before',
+    });
     expect(events).toEqual(['before']);
 
     closeAgentSocket('rpc-close-3', WS_CLOSE.FORBIDDEN, 'Agent has been revoked');
 
     // A frame arriving after revocation finds no channel, so the subscriber is
     // never called again — the stream is genuinely torn down, not just flagged.
-    handleAgentFrame('rpc-close-3', { type: 'terminal.event', sessionId: 'sess-a', event: 'after' });
+    handleAgentFrame('rpc-close-3', {
+      type: 'terminal.event',
+      sessionId: 'sess-a',
+      event: 'after',
+    });
     expect(events).toEqual(['before']);
   });
 

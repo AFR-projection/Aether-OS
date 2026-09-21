@@ -299,8 +299,7 @@ export function seedSessionForTests(
   const unit = seedUnitForTests(ownerUserId, {
     id: overrides.id,
     kind: 'tty',
-    state:
-      overrides.status === undefined ? 'running' : terminalStatusToUnitState(overrides.status),
+    state: overrides.status === undefined ? 'running' : terminalStatusToUnitState(overrides.status),
     spec: {
       kind: 'tty',
       shell: overrides.shell ?? '/bin/bash',

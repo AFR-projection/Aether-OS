@@ -190,7 +190,7 @@ describe('scope=all is gated by execution:manage-others', () => {
     expect(lastFrameOfType('units.list')?.params?.scope).toBe('all');
   });
 
-  it('lists the caller\'s own units without any special permission', async () => {
+  it("lists the caller's own units without any special permission", async () => {
     const response = await app.inject({
       method: 'GET',
       url: `/api/units?agentId=${AGENT_ID}&scope=mine`,
@@ -255,7 +255,10 @@ describe('raised limits are gated by execution:limits:raise', () => {
 
 describe('the lifecycle verbs reach the right host and unit', () => {
   it('gets, signals, restarts, kills and reads the log of a unit on its host', async () => {
-    const get = await app.inject({ method: 'GET', url: `/api/units/${UNIT_ID}?agentId=${AGENT_ID}` });
+    const get = await app.inject({
+      method: 'GET',
+      url: `/api/units/${UNIT_ID}?agentId=${AGENT_ID}`,
+    });
     expect(get.statusCode).toBe(200);
     expect(get.json<{ data: { unit: { id: string } } }>().data.unit.id).toBe(UNIT_ID);
 
@@ -266,7 +269,10 @@ describe('the lifecycle verbs reach the right host and unit', () => {
     });
     expect(signal.statusCode).toBe(200);
     expect(signal.json<{ data: { delivered: boolean } }>().data.delivered).toBe(true);
-    expect(lastFrameOfType('units.signal')?.params).toMatchObject({ id: UNIT_ID, signal: 'SIGTERM' });
+    expect(lastFrameOfType('units.signal')?.params).toMatchObject({
+      id: UNIT_ID,
+      signal: 'SIGTERM',
+    });
 
     const restart = await app.inject({
       method: 'POST',
@@ -286,7 +292,10 @@ describe('the lifecycle verbs reach the right host and unit', () => {
     ).toString('utf8');
     expect(decoded).toBe('out');
 
-    const del = await app.inject({ method: 'DELETE', url: `/api/units/${UNIT_ID}?agentId=${AGENT_ID}` });
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/api/units/${UNIT_ID}?agentId=${AGENT_ID}`,
+    });
     expect(del.statusCode).toBe(204);
     expect(lastFrameOfType('units.kill')?.params?.id).toBe(UNIT_ID);
   });
