@@ -1,9 +1,10 @@
 # P1 — General Execution + Supervision Primitive
 
-**Status:** design **revision 2**, approved and **partially implemented**. Two slices have shipped:
-ownership + adoption for terminal sessions (§29), and the Execution Unit registry with its `units.*`
-surface and the port-ownership fix (§30). The P2/P3 rows — systemd, rlimits, restart policies, log
-files, DB persistence, `runAs`, the session broker — remain design.
+**Status:** design **revision 2**, approved and **partially implemented**. Three slices have shipped:
+ownership + adoption for terminal sessions (§29), the Execution Unit registry with its `units.*`
+surface and the port-ownership fix (§30), and revocation that closes the live agent socket with its
+E2E harness (§31). The P2/P3 rows — systemd, rlimits, restart policies, log files, DB persistence,
+`runAs`, the session broker — remain design.
 **Scope:** one reusable primitive that Terminal, Code Studio, AI agents, App Runtime,
 Deployments and background workers all consume, instead of each growing its own spawn path.
 
@@ -1045,3 +1046,92 @@ cannot quietly grow its own environment. A future spawn path that improvises fai
 
 **No one-time cost this slice.** Unlike the ownership slice (§29), nothing re-keys existing state: the
 registry is new, and the terminal view reads the same units the agent already held.
+
+---
+
+## 31. What shipped third — revocation closes the socket, and the E2E harness
+
+The third slice closes the last two P1 items that were still design: **DoD #14** (revocation closes
+the live agent socket) and the executable half of **DoD #15** (the six-scenario matrix, re-run and
+reported honestly).
+
+### Revocation was a database flag; now it ends the connection
+
+`revokeAgent` stamped `revoked_at`, and `authenticateAgent` refused a revoked agent's *next*
+handshake — but a socket already registered in `agent-rpc.service`'s channel map kept serving
+`files.*`, `terminal.*` and `units.*` until it happened to drop. A revoked agent stayed fully
+reachable, which is the defect #14 names.
+
+`closeAgentSocket(agentId, code, reason)` makes revocation take effect on the live connection. In
+order: it **fails every in-flight request** (a clear error, not the 20s timeout), **drops every
+terminal subscriber** (a bridged browser stream stops at once), **deletes the channel before** the
+socket's async close event (so a request racing the close finds no channel and is refused exactly as
+a disconnected agent would be), then **closes the socket** with `WS_CLOSE.FORBIDDEN`. The revoke
+route calls it after `revokeAgent` succeeds, and records `socketClosed` in the audit metadata.
+
+Three properties held deliberately, and tested:
+
+- **Keyed strictly by `agentId`** — closing one agent's socket can touch no other agent's channel,
+  stream, or reachability. Revoking one agent is not a way to disconnect another.
+- **Ownership isolation preserved** — `revokeAgent` returns false (a 404) for an agent that is not
+  the caller's, and the route stops there: no socket is closed for an agent the caller was just told
+  it cannot revoke.
+- **Idempotent with the real close event** — the `ws` 'close' that follows calls
+  `unregisterAgentSocket` for a channel already gone; keyed on the exact socket, it no-ops and cannot
+  evict a channel a reconnect installed.
+
+Honest scope, stated: this closes the socket **this backend replica holds**. A multi-replica
+deployment where the agent is connected to a different replica needs a revocation broadcast that is
+not built; the default single-replica install has one socket, here. (Recorded in
+`KNOWN-LIMITATIONS.md`.)
+
+### The E2E harness — real API, honest verdicts
+
+`deploy/tests/execution.sh` drives the **real** execution-unit API over an instance's URL and runs
+the six-scenario survival matrix (§9, §21). It follows the `deploy/tests/` house style —
+`PASS`/`FAIL`/`skip` counters, `BLOCKED_BY_ENVIRONMENT` + exit 77 — and adds a per-scenario verdict:
+**PASS** (executed and verified), **PARTIAL**, **UNEXECUTED** (harness present, environment
+insufficient), or **BLOCKED**. It never fakes a unit, a state, or a reconnection, and never reports a
+pass for a check it did not run.
+
+Two capability tiers, probed at startup:
+
+| Tier | Needs | Covers |
+|---|---|---|
+| **API** | `AETHER_URL` + credentials (or a token) + a connected agent, with `curl` and `jq` | Scenario 1 in full; the verification half of 2/3/5/6 |
+| **Host** | to run **on the VPS**, as root, with systemd + docker, and an explicit opt-in flag per action | The restart/reboot **orchestration** for scenarios 3–6 |
+
+Scenario outcomes, matching the corrected survival matrix (§9):
+
+| # | Scenario | What the harness asserts |
+|---|---|---|
+| 1 | Normal execution | create → running → real stdout in the log → SIGTERM → reported `killed`/`failed`, never a clean exit. Fully API-driven. |
+| 2 | Backend/browser reconnect | a unit created under one session is still `running` under a freshly re-authenticated session — the stateless-proxy property a browser refresh relies on. Fully API-driven. |
+| 3 | Backend restart + adoption | restart the backend container; the agent and unit survive; the backend **re-adopts** (unit still `running`). Verified after a host-tier restart. |
+| 4 | Agent restart | restart `aether-host-agent`; the unit is reported **gone** (`MISSING`/terminal), **never** `running` — a `tty` dies with the agent. Passing = correctly reported gone. |
+| 5 | Aether restart | `aether restart` bounces docker services only; the agent (a separate systemd unit) survives, so the unit survives and re-adopts — like scenario 3. |
+| 6 | VPS reboot | a reboot ends everything; the pre-reboot unit is reported **gone** and a new unit works. Verified in **two phases** (`AETHER_EXEC_REBOOT_MARKER`), because a harness that reboots from under its own report proves nothing. |
+
+**What P1 solves: 1, 2, 3, 5.** Scenarios 4 and 6 are **not solved** in the sense of survival, and
+the harness does not pretend they are — it passes them by proving the unit is reported *gone*, which
+is the honest P1 behaviour (§9: "P1 fixes backend restart; it does not fix agent restart or reboot").
+
+**Where it was executed.** Scenario 1 and 2 are fully executable from any host that can reach a live
+instance. The host-tier orchestration (3–6) mutates a live VPS and is opt-in per action; on a
+developer machine (Windows, no reachable instance) the harness reports the API tier `BLOCKED` and
+exits 77 without claiming any pass — which is exactly what it did in this slice's verification. The
+VPS run is **UNEXECUTED** here and the commands to run it on the instance are printed by the harness
+itself.
+
+### The change table
+
+| Change | Where | Why |
+|---|---|---|
+| `close(code?, reason?)` on the `AgentSocket` interface | `packages/backend/src/services/agent-rpc.service.ts` | The channel could send but not close; revocation needs to close |
+| `closeAgentSocket(agentId, code, reason)` — drain pending, drop subscribers, delete channel, close socket | `packages/backend/src/services/agent-rpc.service.ts` | Revocation takes effect on the live connection, not only the next handshake |
+| The revoke route calls it after `revokeAgent`, audits `socketClosed` | `packages/backend/src/routes/agent.routes.ts` | #14; ownership isolation preserved — a 404 revoke closes nothing |
+| The E2E harness — real API, six-scenario matrix, PASS/PARTIAL/UNEXECUTED/BLOCKED | `deploy/tests/execution.sh` | #15; honest verdicts, no fake state, VPS orchestration opt-in |
+| Tests: socket close mechanics (drain, subscriber teardown, isolation, idempotent close); route wiring + ownership isolation; falsified against pre-change code | `agent-rpc.service.test.ts`, `agent.routes.test.ts` | The six #14 sub-requirements, each under test; shown to fail before the fix |
+
+**No one-time cost this slice.** Revocation of an agent already ended its usefulness; this only makes
+the live socket agree with the database sooner.

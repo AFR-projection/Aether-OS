@@ -287,6 +287,21 @@ What it does **not** yet do, and does not pretend to:
   interactively still goes through the terminal API and its WebSocket; the units API is lifecycle-only
   (create/list/get/signal/restart/kill/log-by-offset).
 
+### 18d. Agent revocation closes the live socket on the replica that holds it, not across replicas
+
+**→ see [EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §31**
+
+Revoking an agent (`DELETE /api/agents/:agentId`) now does more than stamp `revoked_at`: it closes
+the live agent socket, failing in-flight requests, dropping terminal streams, and refusing later
+requests immediately — so a revoked agent stops being reachable at once rather than on its next
+handshake. The socket held by **that backend process** is closed.
+
+_Impact:_ with `REDIS_URL` and more than one backend replica, an agent connected to a *different*
+replica than the one serving the revoke keeps its socket until it next reconnects (at which point
+`authenticateAgent` refuses it, because the database flag is shared). There is no cross-replica
+revocation broadcast. The default install is one replica, where the socket being closed is the only
+one. This is the same per-replica boundary as #18 and #19; it only matters if you scale the backend.
+
 ### 19. No horizontal scaling of the WebSocket layer beyond Redis
 
 Redis makes WebSocket _tickets_ portable between replicas, so a client can connect to any replica.
@@ -392,6 +407,20 @@ and reproducing the no-`-l` defect); its API portion needs `AETHER_BASE_URL`/`AE
 `AETHER_PASSWORD` and was **skipped**, not run, so the live-instance lifecycle and refresh-discovery
 checks are delivered runnable but unexecuted against a real instance. See
 [EXECUTION-MODEL.md](../architecture/EXECUTION-MODEL.md).
+
+The execution-unit survival matrix is covered by `deploy/tests/execution.sh`, which drives the real
+`units.*` REST API and runs the six scenarios (normal execution; browser/backend reconnect; backend
+restart + adoption; agent restart; `aether restart`; VPS reboot). It reports a per-scenario verdict —
+**PASS** / **PARTIAL** / **UNEXECUTED** / **BLOCKED** — and never a pass for a check it did not run:
+scenarios 1 and 2 are fully API-driven, while the restart/reboot orchestration for 3–6 mutates a live
+VPS and is opt-in per action (it must run on the host, as root, with systemd and Docker). On a
+machine that cannot reach an instance — or without `curl`/`jq` — it exits `77` with
+`BLOCKED_BY_ENVIRONMENT`. **It has not been run against a live instance here:** this machine (Windows,
+no reachable instance, no `jq`) blocks the API tier, so the whole matrix is **UNEXECUTED** and the
+harness prints the exact commands to run it on the VPS. Scenarios 4 and 6 are, by design, "pass" only
+by proving the unit is reported *gone* — P1 does not make a `tty` survive an agent restart or a
+reboot, and the harness does not pretend it does. See
+[EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §31.
 
 The installer interface (limitation #21) is covered separately by `deploy/tests/installer-ui.sh`,
 which drives the real renderer and the real stage registry against eighteen guarantees — the

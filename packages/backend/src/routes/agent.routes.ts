@@ -1,12 +1,12 @@
+import { WS_CLOSE, type HostAgent } from '@aether/shared';
 import { type FastifyInstance } from 'fastify';
 
 import { authenticate, requirePrincipal, requirePermission } from '../middleware/auth.js';
 import { agentConnectedAt, isAgentConnected } from '../services/agent-connections.js';
 import { pairAgent, listAgents, revokeAgent } from '../services/agent-pairing.service.js';
+import { closeAgentSocket } from '../services/agent-rpc.service.js';
 import { recordAuditEvent } from '../services/audit.service.js';
 import { subsystemLogger } from '../utils/logger.js';
-
-import type { HostAgent } from '@aether/shared';
 
 const log = subsystemLogger('agent-routes');
 
@@ -94,6 +94,19 @@ export function registerAgentRoutes(app: FastifyInstance): void {
         return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Agent not found' } });
       }
 
+      // Revocation is not just a database flag. The row now carries `revoked_at`,
+      // so the agent's *next* handshake is refused — but a socket that is already
+      // registered would keep serving until it happened to drop. Closing it here
+      // makes the revocation take effect on the live connection: in-flight
+      // requests fail, terminal streams bridged through this agent stop, and any
+      // later request is refused because the channel is gone. Keyed by agent id,
+      // so no other agent's socket is touched.
+      const socketClosed = closeAgentSocket(
+        agentId,
+        WS_CLOSE.FORBIDDEN,
+        'Agent has been revoked'
+      );
+
       void recordAuditEvent({
         action: 'agent.revoked',
         outcome: 'success',
@@ -102,9 +115,10 @@ export function registerAgentRoutes(app: FastifyInstance): void {
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'],
         target: agentId,
+        metadata: { socketClosed },
       });
 
-      log.warn({ agentId }, 'agent revoked via API');
+      log.warn({ agentId, socketClosed }, 'agent revoked via API');
       return reply.status(200).send({ data: { revoked: true } });
     },
   });

@@ -40,6 +40,8 @@ export interface AgentSocket {
   send(data: string): void;
   readyState: number;
   readonly OPEN: number;
+  /** Closes the underlying connection. Matches `ws`'s `close(code?, reason?)`. */
+  close(code?: number, reason?: string): void;
 }
 
 interface PendingRequest {
@@ -97,6 +99,58 @@ export function unregisterAgentSocket(agentId: string, socket: AgentSocket): voi
 export function isAgentRpcConnected(agentId: string): boolean {
   const channel = channels.get(agentId);
   return channel !== undefined && channel.socket.readyState === channel.socket.OPEN;
+}
+
+/**
+ * Forcibly closes a live agent socket this replica holds, and tears down its
+ * channel — used when an agent is revoked.
+ *
+ * Revocation must be more than a database flag. `authenticateAgent` already
+ * refuses a revoked agent's *next* handshake, but a socket that is already
+ * registered keeps serving `files.*`, `terminal.*` and `units.*` until it
+ * happens to drop — so a revoked agent stays fully reachable, which is the
+ * defect DoD #14 names. Closing the socket here makes the revocation take
+ * effect on the live connection, not only on the next one.
+ *
+ * What this does, in order:
+ * - **fails every in-flight request** with a clear reason, so a caller awaiting
+ *   a reply gets an error rather than the 20s timeout;
+ * - **drops every terminal subscriber**, so a browser stream bridged through
+ *   this agent stops receiving output immediately rather than lingering;
+ * - **deletes the channel** before the socket's async `close` event fires, so
+ *   any request racing in between finds no channel and is refused (the same
+ *   `ServiceUnavailableError` a disconnected agent gives);
+ * - **closes the socket** with a policy-violation code and reason.
+ *
+ * Returns whether a live socket was found and closed. It is keyed strictly by
+ * `agentId`, so it can never touch another agent's channel — and it says
+ * nothing about other users: an agent's socket is shared infrastructure, and
+ * closing it ends only *that agent's* reachability, not any user's session on a
+ * different agent.
+ *
+ * Per-replica by nature, exactly like `agent-connections`: this closes the
+ * socket held by *this* backend process. A multi-replica deployment where the
+ * agent is connected to a different replica needs the revocation broadcast that
+ * `KNOWN-LIMITATIONS.md` records is not built; the default single-replica
+ * install has one socket, here.
+ */
+export function closeAgentSocket(agentId: string, code: number, reason: string): boolean {
+  const channel = channels.get(agentId);
+  if (!channel) return false;
+
+  drainPending(channel, reason);
+  channel.terminalSubscribers.clear();
+  // Delete before the async close event so a request racing the close is
+  // refused rather than sent into a socket that is going away.
+  channels.delete(agentId);
+
+  try {
+    channel.socket.close(code, reason);
+  } catch (error) {
+    log.debug({ err: error, agentId }, 'failed to close revoked agent socket');
+  }
+  log.warn({ agentId }, 'agent rpc channel force-closed');
+  return true;
 }
 
 /**

@@ -240,8 +240,9 @@ before the next is started.**
    the sed literal is gone, and `install_compose_file` reconciles rather than asserts (so an update
    from an older version self-heals). Guarded by `deploy/tests/preview-ports.sh`.
 
-**P0 is complete.** The P1 execution primitive below is approved and **partially implemented** — two
-slices have shipped (ownership + adoption, then the unit registry); the P2/P3 rows remain design.
+**P0 is complete.** The P1 execution primitive below is approved and **partially implemented** — three
+slices have shipped (ownership + adoption, the unit registry, then revocation-closes-the-socket with
+its E2E harness); the P2/P3 rows remain design.
 
 ### P1 — Real host integration
 
@@ -271,6 +272,16 @@ slices have shipped (ownership + adoption, then the unit registry); the P2/P3 ro
    `service`/`worker` are refused with `NOT_IMPLEMENTED` rather than faked. Still design: the systemd
    path, rlimits, restart policies, log files, the `execution_units` table, `runAs`, the units WS
    stream — all P2/P3.
+   **Shipped — revocation closes the live socket + the E2E harness**
+   ([EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §31): revoking an agent now closes
+   the socket this replica holds — failing in-flight requests, dropping terminal streams, refusing
+   later requests — rather than only stamping the database, keyed by agent id so no other agent is
+   touched and gated so a 404 revoke closes nothing (DoD #14). `deploy/tests/execution.sh` drives the
+   real `units.*` API through the six-scenario survival matrix with honest PASS/PARTIAL/UNEXECUTED/
+   BLOCKED verdicts, no fake state, and VPS restart/reboot orchestration opt-in per action (DoD #15).
+   With these, **every P1 Definition-of-Done item that can be verified on a developer machine is
+   done**; the VPS-only scenarios (agent restart, `aether restart`, reboot) are delivered runnable and
+   reported UNEXECUTED until run on the instance. See [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §18d.
 6. Each new verb gets a Zod schema in `shared`, a capability module in the agent, a service and
    route in the backend, a permission string, and an audit event — the existing pattern, followed
    exactly rather than shortcut. **Done for `units.*`.**
