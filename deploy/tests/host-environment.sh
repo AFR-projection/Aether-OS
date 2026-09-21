@@ -189,26 +189,47 @@ ACCESS_TOKEN=""
 # present and falls back to a narrow grep that is good enough for the flat
 # fields this harness reads (token, id, status). Never trusts the fallback for
 # anything nested.
+# Reads a field from a JSON object, addressed by a jq path (e.g. `.data.id`).
+# Uses jq when present. Without jq — the common case on a stock host and in Git
+# Bash — it falls back to a grep for the path's LEAF key (`id`), which is enough
+# for the flat fields this harness reads. The leaf is taken from the path so the
+# same call site works with or without jq; passing a bare `.field` grep pattern
+# to jq, or a `.a.b` path to grep, is the portability bug this shape avoids.
 json_field() {
-    local field="$1" body="$2"
+    local path="$1" body="$2"
     if command -v jq >/dev/null 2>&1; then
-        printf '%s' "$body" | jq -r "$1" 2>/dev/null
+        printf '%s' "$body" | jq -r "$path" 2>/dev/null
         return
     fi
+    # Leaf key: everything after the last dot, with any leading dot stripped.
+    local field="${path##*.}"
     # Fallback: "field":"value" or "field":value, first match only.
     printf '%s' "$body" | grep -oE "\"$field\"[[:space:]]*:[[:space:]]*(\"[^\"]*\"|[^,}]*)" |
         head -n1 | sed -E "s/\"$field\"[[:space:]]*:[[:space:]]*//; s/^\"//; s/\"$//"
 }
 
 api() {
-    # api METHOD PATH [BODY] — prints the response body; sets API_STATUS.
+    # api METHOD PATH [BODY] — prints the response body; records the HTTP status
+    # in $WORK/status for read_api_status().
+    #
+    # The status cannot be returned through a normal variable: `api` is invoked
+    # through a command substitution, which runs in a subshell and discards its
+    # assignments (under `set -u` a later read is an unbound-variable error). It
+    # therefore travels by file. The body goes to $WORK/resp, printed by `cat`.
     local method="$1" path="$2" body="${3:-}"
     local args=(-sS -o "$WORK/resp" -w '%{http_code}' -X "$method" "$BASE_URL$path")
     args+=(-H 'Content-Type: application/json')
     [ -n "$ACCESS_TOKEN" ] && args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
     [ -n "$body" ] && args+=(--data "$body")
-    API_STATUS="$(curl "${args[@]}" 2>/dev/null)"
+    curl "${args[@]}" 2>/dev/null >"$WORK/status"
     cat "$WORK/resp"
+}
+
+# The HTTP status of the last api() call. Because `api` is invoked through a
+# command substitution (a subshell), its variable assignments are lost; the
+# status travels by file and this reads it back in the caller.
+read_api_status() {
+    cat "$WORK/status"
 }
 
 portion_b() {
@@ -227,8 +248,8 @@ portion_b() {
     # --- log in --------------------------------------------------------------
     local resp
     resp="$(api POST /api/auth/login "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")"
-    if [ "$API_STATUS" != "200" ]; then
-        fail "login (HTTP $API_STATUS)"
+    if [ "$(read_api_status)" != "200" ]; then
+        fail "login (HTTP $(read_api_status))"
         printf '%s\n' "$resp" | head -c 400 | sed 's/^/         /'
         return
     fi
@@ -244,8 +265,8 @@ portion_b() {
     # instance. The environment fix applies to this path identically; a host
     # session would additionally need a connected agent to exist.
     resp="$(api POST /api/terminal/sessions '{"cols":80,"rows":24}')"
-    if [ "$API_STATUS" != "201" ]; then
-        fail "create session (HTTP $API_STATUS)"
+    if [ "$(read_api_status)" != "201" ]; then
+        fail "create session (HTTP $(read_api_status))"
         printf '%s\n' "$resp" | head -c 400 | sed 's/^/         /'
         return
     fi
@@ -263,18 +284,18 @@ portion_b() {
     # --- discovery: it appears in the listing --------------------------------
     # This is the call a browser refresh now makes to find its live shells.
     resp="$(api GET /api/terminal/sessions)"
-    if [ "$API_STATUS" = "200" ] && printf '%s\n' "$resp" | grep -q "$sid"; then
+    if [ "$(read_api_status)" = "200" ] && printf '%s\n' "$resp" | grep -q "$sid"; then
         ok "the session is discoverable via GET /api/terminal/sessions (refresh reattach)"
     else
-        fail "the live session was not found in the listing (HTTP $API_STATUS)"
+        fail "the live session was not found in the listing (HTTP $(read_api_status))"
     fi
 
     # --- kill it, then confirm it is reported gone/ended, never running ------
     resp="$(api DELETE "/api/terminal/sessions/$sid")"
-    if [ "$API_STATUS" = "204" ] || [ "$API_STATUS" = "200" ]; then
-        ok "killed the session (HTTP $API_STATUS)"
+    if [ "$(read_api_status)" = "204" ] || [ "$(read_api_status)" = "200" ]; then
+        ok "killed the session (HTTP $(read_api_status))"
     else
-        fail "kill session (HTTP $API_STATUS)"
+        fail "kill session (HTTP $(read_api_status))"
     fi
 
     # The honesty rule: after the kill, the session must never be listed as
