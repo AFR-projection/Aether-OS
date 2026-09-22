@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { serializeLayout, useDesktopStore, type WindowInstance } from './desktop.store.js';
+import {
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  resizeBounds,
+  serializeLayout,
+  useDesktopStore,
+  type WindowBounds,
+  type WindowInstance,
+} from './desktop.store.js';
 
 import type { DesktopLayout } from '@aether/shared';
 
@@ -164,3 +172,91 @@ function windowLayoutEntry(appId: string): DesktopLayout['windows'][number] {
     minimized: false,
   };
 }
+
+/**
+ * Edge and corner resizing. The geometry is `resizeBounds` — pure, so the parts
+ * that are easy to get subtly wrong (an origin that moves with the edge, a
+ * minimum size that pins the opposite edge) are asserted directly rather than
+ * inferred from a rendered window.
+ */
+describe('resizeBounds', () => {
+  const origin: WindowBounds = { x: 100, y: 100, width: 400, height: 300 };
+
+  it('grows east without moving the origin', () => {
+    expect(resizeBounds(origin, 'e', 50, 0)).toEqual({ x: 100, y: 100, width: 450, height: 300 });
+  });
+
+  it('grows south without moving the origin', () => {
+    expect(resizeBounds(origin, 's', 0, 40)).toEqual({ x: 100, y: 100, width: 400, height: 340 });
+  });
+
+  it('moves the origin west as it widens leftward', () => {
+    // Dragging the left edge 60px left: x drops by 60, width grows by 60, the
+    // right edge (x+width = 500) stays put.
+    const next = resizeBounds(origin, 'w', -60, 0);
+    expect(next).toEqual({ x: 40, y: 100, width: 460, height: 300 });
+    expect(next.x + next.width).toBe(origin.x + origin.width);
+  });
+
+  it('moves the origin north as it grows upward', () => {
+    const next = resizeBounds(origin, 'n', 0, -50);
+    expect(next).toEqual({ x: 100, y: 50, width: 400, height: 350 });
+    expect(next.y + next.height).toBe(origin.y + origin.height);
+  });
+
+  it('resizes both axes from a corner', () => {
+    expect(resizeBounds(origin, 'se', 30, 20)).toEqual({
+      x: 100,
+      y: 100,
+      width: 430,
+      height: 320,
+    });
+  });
+
+  it('pins the right edge when a west drag hits the minimum width', () => {
+    // Drag the left edge far past the minimum. Width clamps to MIN and x stops
+    // at right - MIN rather than overshooting into an inside-out window.
+    const next = resizeBounds(origin, 'w', 10_000, 0);
+    expect(next.width).toBe(MIN_WINDOW_WIDTH);
+    expect(next.x).toBe(origin.x + origin.width - MIN_WINDOW_WIDTH);
+  });
+
+  it('pins the bottom edge when a north drag hits the minimum height', () => {
+    const next = resizeBounds(origin, 'n', 0, 10_000);
+    expect(next.height).toBe(MIN_WINDOW_HEIGHT);
+    expect(next.y).toBe(origin.y + origin.height - MIN_WINDOW_HEIGHT);
+  });
+});
+
+describe('setWindowBounds', () => {
+  beforeEach(() => {
+    useDesktopStore.setState({
+      windows: [windowFixture({ id: 'w-1', bounds: { x: 100, y: 100, width: 400, height: 300 } })],
+      desktopSize: { width: 1280, height: 720 },
+    });
+  });
+
+  it('applies new geometry to the named window', () => {
+    useDesktopStore.getState().setWindowBounds('w-1', { x: 200, y: 150, width: 500, height: 350 });
+    expect(useDesktopStore.getState().windows[0]!.bounds).toEqual({
+      x: 200,
+      y: 150,
+      width: 500,
+      height: 350,
+    });
+  });
+
+  it('clamps a size larger than the viewport down to it', () => {
+    useDesktopStore.getState().setWindowBounds('w-1', { x: 0, y: 0, width: 5000, height: 5000 });
+    const { bounds } = useDesktopStore.getState().windows[0]!;
+    expect(bounds.width).toBe(1280);
+    expect(bounds.height).toBe(720);
+  });
+
+  it('never shrinks a window below the minimum', () => {
+    useDesktopStore.getState().setWindowBounds('w-1', { x: 100, y: 100, width: 10, height: 10 });
+    const { bounds } = useDesktopStore.getState().windows[0]!;
+    expect(bounds.width).toBe(MIN_WINDOW_WIDTH);
+    expect(bounds.height).toBe(MIN_WINDOW_HEIGHT);
+  });
+});

@@ -1,21 +1,40 @@
 import { useRef, type ReactNode } from 'react';
 
 import { WindowControls } from './WindowControls.js';
-import { useDesktopStore, type WindowInstance } from '../stores/desktop.store.js';
+import {
+  resizeBounds,
+  useDesktopStore,
+  type ResizeEdge,
+  type WindowBounds,
+  type WindowInstance,
+} from '../stores/desktop.store.js';
 import { useActiveTheme } from '../stores/theme.store.js';
 
 /**
  * A draggable, resizable window frame.
  *
  * Dragging and resizing are pointer-based so touch and mouse behave the same.
- * The title bar is the drag handle; the bottom-right corner is the resize
- * handle. Double-clicking the title bar toggles maximisation.
+ * The title bar is the drag handle; every edge and corner resizes, so a window
+ * can grow in any direction like a native one rather than only from the
+ * bottom-right. Double-clicking the title bar toggles maximisation.
  *
  * The title-bar layout follows the active OS theme: where the controls sit
  * (left for macOS traffic lights, right for Windows/GNOME), how the title is
  * aligned, the bar height, and the window corner radius all come from the
  * theme's chrome definition.
  */
+
+/** The eight resize handles: four edges and four corners, with their cursors. */
+const RESIZE_HANDLES: Array<{ edge: ResizeEdge; className: string; cursor: string }> = [
+  { edge: 'n', className: 'left-2 right-2 top-0 h-1.5', cursor: 'ns-resize' },
+  { edge: 's', className: 'left-2 right-2 bottom-0 h-1.5', cursor: 'ns-resize' },
+  { edge: 'w', className: 'top-2 bottom-2 left-0 w-1.5', cursor: 'ew-resize' },
+  { edge: 'e', className: 'top-2 bottom-2 right-0 w-1.5', cursor: 'ew-resize' },
+  { edge: 'nw', className: 'left-0 top-0 h-2.5 w-2.5', cursor: 'nwse-resize' },
+  { edge: 'ne', className: 'right-0 top-0 h-2.5 w-2.5', cursor: 'nesw-resize' },
+  { edge: 'sw', className: 'left-0 bottom-0 h-2.5 w-2.5', cursor: 'nesw-resize' },
+  { edge: 'se', className: 'right-0 bottom-0 h-2.5 w-2.5', cursor: 'nwse-resize' },
+];
 
 export function Window({
   instance,
@@ -30,7 +49,7 @@ export function Window({
   const closeWindow = useDesktopStore((state) => state.closeWindow);
   const minimizeWindow = useDesktopStore((state) => state.minimizeWindow);
   const moveWindow = useDesktopStore((state) => state.moveWindow);
-  const resizeWindow = useDesktopStore((state) => state.resizeWindow);
+  const setWindowBounds = useDesktopStore((state) => state.setWindowBounds);
   const toggleMaximize = useDesktopStore((state) => state.toggleMaximize);
   const { chrome } = useActiveTheme();
 
@@ -41,10 +60,10 @@ export function Window({
     originY: number;
   } | null>(null);
   const resizeRef = useRef<{
+    edge: ResizeEdge;
     startX: number;
     startY: number;
-    originWidth: number;
-    originHeight: number;
+    origin: WindowBounds;
   } | null>(null);
 
   if (instance.minimized) return null;
@@ -148,40 +167,45 @@ export function Window({
       {/* App content */}
       <div className="min-h-0 flex-1">{children}</div>
 
-      {/* Resize handle */}
-      {!maximised ? (
-        <div
-          className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
-          aria-hidden="true"
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            event.stopPropagation();
-            (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
-            resizeRef.current = {
-              startX: event.clientX,
-              startY: event.clientY,
-              originWidth: instance.bounds.width,
-              originHeight: instance.bounds.height,
-            };
-          }}
-          onPointerMove={(event) => {
-            const resize = resizeRef.current;
-            if (resize === null) return;
-            resizeWindow(
-              instance.id,
-              resize.originWidth + (event.clientX - resize.startX),
-              resize.originHeight + (event.clientY - resize.startY)
-            );
-          }}
-          onPointerUp={() => {
-            resizeRef.current = null;
-          }}
-        >
-          <svg viewBox="0 0 16 16" className="h-4 w-4 text-slate-600">
-            <path d="M14 14 L4 14 L14 4 Z" fill="currentColor" />
-          </svg>
-        </div>
-      ) : null}
+      {/* Resize handles — every edge and corner. Hidden while maximised, where
+          the window is pinned to the viewport. */}
+      {!maximised
+        ? RESIZE_HANDLES.map((handle) => (
+            <div
+              key={handle.edge}
+              className={`absolute ${handle.className}`}
+              style={{ cursor: handle.cursor, touchAction: 'none' }}
+              aria-hidden="true"
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                event.stopPropagation();
+                (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
+                resizeRef.current = {
+                  edge: handle.edge,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  origin: instance.bounds,
+                };
+              }}
+              onPointerMove={(event) => {
+                const resize = resizeRef.current;
+                if (resize === null) return;
+                setWindowBounds(
+                  instance.id,
+                  resizeBounds(
+                    resize.origin,
+                    resize.edge,
+                    event.clientX - resize.startX,
+                    event.clientY - resize.startY
+                  )
+                );
+              }}
+              onPointerUp={() => {
+                resizeRef.current = null;
+              }}
+            />
+          ))
+        : null}
     </div>
   );
 }

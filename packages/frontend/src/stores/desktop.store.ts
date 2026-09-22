@@ -70,6 +70,13 @@ interface DesktopState {
   toggleMinimize: (id: string) => void;
   moveWindow: (id: string, x: number, y: number) => void;
   resizeWindow: (id: string, width: number, height: number) => void;
+  /**
+   * Sets a window's full geometry at once, clamped to the viewport. Used by
+   * edge/corner resizing, where the origin moves as the size changes (dragging
+   * the left edge grows the window leftward), which the width/height-only
+   * `resizeWindow` cannot express.
+   */
+  setWindowBounds: (id: string, bounds: WindowBounds) => void;
   toggleMaximize: (id: string) => void;
   setWindowTitle: (id: string, title: string) => void;
   setWindowProps: (id: string, props: Record<string, unknown>) => void;
@@ -112,6 +119,53 @@ function clampPosition(
     ),
     y: Math.min(Math.max(bounds.y, 0), Math.max(desktop.height - 40, 0)),
   };
+}
+
+/** The edge or corner a resize drag is anchored to. */
+export type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+/**
+ * New bounds when dragging `edge` by `(dx, dy)` from a captured `origin`.
+ *
+ * Pure geometry, so the fiddly part is tested rather than eyeballed: an edge
+ * that moves the origin (west grows leftward, north grows upward) must keep the
+ * *opposite* edge pinned, and the minimum size has to hold without letting the
+ * moving edge cross the pinned one — otherwise a fast drag past the minimum
+ * flips the window inside out. The viewport clamp is applied separately by
+ * `setWindowBounds`; this function only resolves the drag.
+ */
+export function resizeBounds(
+  origin: WindowBounds,
+  edge: ResizeEdge,
+  dx: number,
+  dy: number
+): WindowBounds {
+  let { x, y, width, height } = origin;
+  const right = origin.x + origin.width;
+  const bottom = origin.y + origin.height;
+
+  if (edge.includes('e')) width = origin.width + dx;
+  if (edge.includes('s')) height = origin.height + dy;
+  if (edge.includes('w')) {
+    width = origin.width - dx;
+    x = origin.x + dx;
+  }
+  if (edge.includes('n')) {
+    height = origin.height - dy;
+    y = origin.y + dy;
+  }
+
+  if (width < MIN_WINDOW_WIDTH) {
+    width = MIN_WINDOW_WIDTH;
+    // A west drag anchors the right edge, so the left edge stops at right - min.
+    if (edge.includes('w')) x = right - MIN_WINDOW_WIDTH;
+  }
+  if (height < MIN_WINDOW_HEIGHT) {
+    height = MIN_WINDOW_HEIGHT;
+    if (edge.includes('n')) y = bottom - MIN_WINDOW_HEIGHT;
+  }
+
+  return { x, y, width, height };
 }
 
 function clampSize(bounds: WindowBounds, desktop: { width: number; height: number }): WindowBounds {
@@ -278,6 +332,16 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       windows: state.windows.map((window) =>
         window.id === id
           ? { ...window, bounds: clampSize({ ...window.bounds, width, height }, state.desktopSize) }
+          : window
+      ),
+    }));
+  },
+
+  setWindowBounds: (id, bounds) => {
+    set((state) => ({
+      windows: state.windows.map((window) =>
+        window.id === id
+          ? { ...window, bounds: clampPosition(clampSize(bounds, state.desktopSize), state.desktopSize) }
           : window
       ),
     }));
