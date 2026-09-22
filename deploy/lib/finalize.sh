@@ -124,7 +124,14 @@ configure_firewall() {
     # allowed from the moment it comes up rather than needing a second pass.
     ensure_preview_firewall_rule --even-if-inactive
 
-    if [ "${AETHER_YES:-false}" = "true" ] || confirm "Enable UFW now?"; then
+    # AETHER_ENABLE_UFW was collected upfront in run_interactive_setup.
+    # --yes always enables; non-interactive without the flag disables.
+    local enable_ufw="${AETHER_ENABLE_UFW:-false}"
+    if [ "${AETHER_YES:-false}" = "true" ]; then
+        enable_ufw="true"
+    fi
+
+    if [ "$enable_ufw" = "true" ]; then
         $SUDO ufw --force enable
     else
         warn "UFW left in its previous state. Enable it later with: sudo ufw enable"

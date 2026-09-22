@@ -341,6 +341,49 @@ prompt_host_access() {
     printf '\n'
 }
 
+# Interactive prompt for firewall (UFW) configuration. Collected upfront so the
+# rest of the install runs unattended. Stored in AETHER_ENABLE_UFW; the firewall
+# step in finalize.sh reads it rather than prompting in-place.
+prompt_firewall() {
+    if ! command -v ufw >/dev/null 2>&1; then
+        AETHER_ENABLE_UFW="false"
+        export AETHER_ENABLE_UFW
+        return 0
+    fi
+
+    printf '\n'
+    printf '═══════════════════════════════════════════════════════════════\n'
+    printf '  FIREWALL CONFIGURATION\n'
+    printf '═══════════════════════════════════════════════════════════════\n'
+    printf '\n'
+    printf 'UFW (Uncomplicated Firewall) is installed on this system.\n'
+    printf '\n'
+    printf 'Enable UFW to restrict incoming connections to SSH, HTTP, HTTPS,\n'
+    printf 'and the preview port range used by Aether Cloud OS.\n'
+    printf '\n'
+    printf 'If you enable it, the following rules will be applied:\n'
+    printf '  - Allow SSH (port %s)\n' "${SSH_CLIENT:-22}"
+    printf '  - Allow HTTP (port 80)\n'
+    printf '  - Allow HTTPS (port 443)\n'
+    printf '  - Allow preview port range (%s-tcp)\n' "${AETHER_PREVIEW_PORT_START:-30000}"
+    printf '\n'
+    printf 'Enable UFW now? [Y/n]: '
+    local answer=""
+    read -r answer || true
+    case "$answer" in
+        [Nn]*)
+            AETHER_ENABLE_UFW="false"
+            info "UFW: will not be enabled during installation."
+            ;;
+        *)
+            AETHER_ENABLE_UFW="true"
+            info "UFW: will be enabled during installation."
+            ;;
+    esac
+    export AETHER_ENABLE_UFW
+    printf '\n'
+}
+
 # Run interactive setup
 run_interactive_setup() {
     # Skip if --yes flag or non-interactive
@@ -361,4 +404,5 @@ run_interactive_setup() {
 
     prompt_master_account
     prompt_host_access
+    prompt_firewall
 }

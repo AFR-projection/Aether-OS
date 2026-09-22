@@ -33,54 +33,59 @@ fatal() {
     exit 1
 }
 
-# --- Presentation -----------------------------------------------------------
-# The first thing the operator sees, and it is drawn here rather than by the
-# installer because this script runs for seconds before the installer exists —
-# it clones the repository. Making the one-liner sit silent through that download
-# and only then draw a wordmark would put the branding in the wrong place: the
-# wait is the first thing that happens, so it is the thing that needs to look
-# deliberate.
-#
-# Deliberately self-contained. Nothing in the repository can be sourced yet, so
-# the capability test and the few escape sequences are repeated here instead of
-# shared. It says AETHER_UI_BANNER_SHOWN so the installer does not draw a second
-# wordmark two lines below this one.
+# The first thing the operator sees. This runs during the clone/download phase,
+# before the installer exists, so the branding has to be drawn here. The repo's
+# own ui.sh wordmark suppresses itself when AETHER_UI_BANNER_SHOWN is already true,
+# so the two banners never clash.
 print_banner() {
     [ "$AETHER_UI_QUIET" != "true" ] || return 0
-    # Non-TTY gets nothing: this is output meant for a person, and a redirect, a
-    # CI log, and a pipe all have somewhere better to put the bytes.
     [ -t 1 ] || return 0
     case "${TERM:-}" in
         "" | dumb) return 0 ;;
     esac
 
-    local colour="" bold="" dim="" reset="" rule="-" width cols
+    # Cool blue→cyan vertical gradient — the same ramp the installer's own
+    # ui_wordmark uses, so the banner drawn here during the clone window and the
+    # one the installer draws a moment later read as one identity. Coloured per
+    # row (one SGR per line) so no multibyte box-drawing glyph is ever split.
+    local bold="" dim="" reset="" colour=""
+    local g1="" g2="" g3="" g4="" g5=""
     if [ -z "${NO_COLOR:-}" ]; then
-        colour=$'\033[38;5;39m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
+        bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'; colour=$'\033[38;5;39m'
+        g1=$'\033[38;5;33m'; g2=$'\033[38;5;39m'; g3=$'\033[38;5;45m'
+        g4=$'\033[38;5;51m'; g5=$'\033[38;5;87m'
     fi
+
+    # Check for UTF-8 so we know whether to draw the ASCII art or fall back.
+    local is_utf8=false
     case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
-        *UTF-8* | *UTF8* | *utf-8* | *utf8*) rule='─' ;;
+        *UTF-8* | *UTF8* | *utf-8* | *utf8*) is_utf8=true ;;
     esac
 
-    cols="${COLUMNS:-}"
-    if [ -z "$cols" ] && command -v tput >/dev/null 2>&1; then
-        cols="$(tput cols 2>/dev/null || true)"
+    printf '\n'
+    if [ "$is_utf8" = "true" ]; then
+        # A · E · T · H · E · R in the ANSI Shadow figlet face — the same clean
+        # block the installer's ui_wordmark draws. Each row is exactly 49 cells
+        # wide. Do NOT hand-edit these strings: regenerate the whole block from
+        # figlet (ANSI Shadow) if the wordmark changes, or a box-drawing join
+        # drifts and a letter turns into a different one.
+        printf '%s%s █████╗ ███████╗████████╗██╗  ██╗███████╗██████╗ %s\n' \
+            "$g1" "$bold" "$reset"
+        printf '%s██╔══██╗██╔════╝╚══██╔══╝██║  ██║██╔════╝██╔══██╗%s\n' \
+            "$g2" "$reset"
+        printf '%s%s███████║█████╗     ██║   ███████║█████╗  ██████╔╝%s\n' \
+            "$g3" "$bold" "$reset"
+        printf '%s██╔══██║██╔══╝     ██║   ██╔══██║██╔══╝  ██╔══██╗%s\n' \
+            "$g4" "$reset"
+        printf '%s%s██║  ██║███████╗   ██║   ██║  ██║███████╗██║  ██║%s\n' \
+            "$g5" "$bold" "$reset"
+        printf '\n'
+        printf '%s%s  CLOUD OS — Infrastructure Installer%s\n' \
+            "$bold" "$colour" "$reset"
+    else
+        # Fallback for non-UTF-8 terminals.
+        printf '%s%s  AETHER CLOUD OS%s\n' "$bold" "$colour" "$reset"
     fi
-    case "$cols" in
-        '' | *[!0-9]*) cols=80 ;;
-    esac
-    # The same clamp ui_term_width applies, so the rule below is the same length
-    # as the one the installer's own banner draws a moment later. Two rules of
-    # different lengths two lines apart is the kind of detail that reads as a bug.
-    [ "$cols" -lt 64 ] && cols=64
-    [ "$cols" -gt 100 ] && cols=100
-    width=$cols
-
-    printf '\n%s%s  AETHER CLOUD OS%s\n' "$bold" "$colour" "$reset"
-
-    local line
-    printf -v line '%*s' "$width" ''
-    printf '%s  %s%s\n' "$dim" "${line// /$rule}" "$reset"
 
     export AETHER_UI_BANNER_SHOWN=true
 }

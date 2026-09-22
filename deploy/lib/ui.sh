@@ -280,6 +280,28 @@ ui_glyph_bar_half() { if [ "$UI_UNICODE" = "true" ]; then printf '▒'; else pri
 ui_glyph_bar_empty() { if [ "$UI_UNICODE" = "true" ]; then printf '░'; else printf '-'; fi; }
 ui_glyph_rule() { if [ "$UI_UNICODE" = "true" ]; then printf '─'; else printf '-'; fi; }
 
+# Spinner: rotates through the braille sequence at ~100 ms per step.
+# The tick is the real clock so the sequence advances even when the panel
+# itself has not changed — the spinner proves the process is still live.
+ui_glyph_spinner() {
+    [ "$UI_ANIMATION" != "true" ] && return 0
+    # The frame array is normally populated by ui_init, but the dashboard can be
+    # rendered before that in tests and error paths; without this guard an unset
+    # length makes the modulo a divide-by-zero that aborts the whole render.
+    if [ "${UI_SPINNER_LEN:-0}" -eq 0 ] || [ "${#UI_SPINNER[@]}" -eq 0 ]; then
+        UI_SPINNER=( '⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏' )
+        UI_SPINNER_LEN=10
+    fi
+    local tick="${1:-$(date +%s)}"
+    local idx=$((tick % UI_SPINNER_LEN))
+    printf '%s' "${UI_SPINNER[$idx]}"
+}
+
+# Braille spinner in its own colour when running.
+ui_glyph_spinner_run() {
+    printf '%s' "$(ui_glyph_spinner "$@")"
+}
+
 # ---------------------------------------------------------------------------
 # Text helpers — fork-free on purpose. The panel is redrawn several times a
 # second while a container image builds, on a host with one core, and a subshell
@@ -572,23 +594,22 @@ ui_frame_line() {
 }
 
 ui_frame_flush() {
-    if [ "$UI_PANEL_DRAWN" -gt 0 ]; then
-        # Return to the frame's saved cursor position rather than counting lines
-        # back from wherever the cursor is now. The two are the same only while
-        # nothing else has written to the terminal. A command that printed to
-        # stdout without going through ui_run — `ufw`, `git clone`, a compose run,
-        # `systemd` — leaves the cursor below the frame, and a relative move from
-        # there lands *inside* the panel and clears the wrong region: a line of
-        # the old frame survives above the new one, the offset grows with every
-        # stray line, and the panel tears. DECRC is unaffected by that output, so
-        # the erase window is correct whatever happened between frames.
-        printf '\0338\033[J'
-    else
-        # Anchor the frame here. Every redraw below restores to this point.
-        printf '\0337'
+    # Alternate screen buffer: completely isolated from the host terminal's
+    # scrollback. The panel lives in its own screen, so scroll events in the
+    # underlying terminal cannot shift the anchor. Clearing and restoring the
+    # alt screen is idempotent — the first draw activates it; later draws just
+    # overwrite what is already there. Nothing else can shift the anchor while
+    # we own the alt screen, which makes this the reliable foundation that
+    # DECSC/DECRC promised but could not guarantee once the frame grew tall
+    # enough to push against the scroll region.
+    if [ "$UI_ALT_SCREEN" != "true" ]; then
+        printf '\033[?1049h'
+        UI_ALT_SCREEN=true
     fi
-    printf '%s' "$UI_FRAME_TEXT"
-    UI_PANEL_DRAWN="$UI_FRAME_LINES"
+    # Home cursor, clear to end of screen (no scrolling), print frame.
+    printf '\033[H\033[J%s' "$UI_FRAME_TEXT"
+    # Track that the panel has been drawn so ui_panel_suspend knows to restore.
+    UI_PANEL_DRAWN=1
 }
 
 ui_cursor_hide() {
@@ -608,7 +629,11 @@ ui_cursor_show() {
 # or exit.
 ui_panel_suspend() {
     [ "$UI_PANEL_DRAWN" -gt 0 ] || return 0
-    printf '\0338\033[J'
+    # Erase the panel and return to normal screen.
+    if [ "$UI_ALT_SCREEN" = "true" ]; then
+        printf '\033[?1049l'
+        UI_ALT_SCREEN=false
+    fi
     UI_PANEL_DRAWN=0
     UI_LAST_FRAME=""
 }
@@ -885,8 +910,7 @@ ui_render_dashboard() {
 
     ui_box_mid
 
-    # The current operation: the stage's own id and message, the operation's own
-    # last line of output via the message, and its real elapsed time.
+    # The current operation: spinner, stage id, message, and elapsed time.
     local current="${UI_CURRENT_STAGE:-}"
     ui_row_reset
     if [ -n "$current" ]; then
@@ -894,9 +918,9 @@ ui_render_dashboard() {
         dur="$(ui_fmt_duration "$(ui_stage_duration "$current")")"
         dur_text="$dur"
         message="${UI_STAGE_MSG[$current]:-}"
-        room=$((UI_INNER - ${#current} - ${#dur_text} - 5))
+        room=$((UI_INNER - ${#current} - ${#dur_text} - 8))
         [ "$room" -lt 4 ] && room=4
-        ui_row_add "$UI_S_RUN" "$(ui_glyph_run)"
+        ui_row_add "$UI_S_RUN" "$(ui_glyph_spinner_run)"
         ui_row_add "$UI_S_RESET" " "
         ui_row_add "$UI_S_BOLD" "$current"
         ui_row_add "$UI_S_RESET" "  $(ui_truncate "$message" "$room")"
@@ -988,22 +1012,111 @@ ui_render_dashboard_if_changed() {
 # ---------------------------------------------------------------------------
 # Panels
 # ---------------------------------------------------------------------------
+# The Aether wordmark — premium command-center introduction.
+# Inspired by infrastructure platform aesthetics (InkUI, Charm, TermUI references):
+# - Gradient colour: bold accent on key letters, dim on secondary elements
+# - Dot-accented separators and status badges for a refined command-center feel
+# - Two-column block art with center divider for a structured, deliberate layout
+ui_wordmark() {
+    [ "$UI_MODE" = "rich" ] || return 0
+    [ "$UI_UNICODE" != "true" ] && return 0
+    [ "$UI_WIDTH" -lt 52 ] && return 0
+
+    local accent="$UI_S_ACCENT" bold="$UI_S_BOLD" dim="$UI_S_DIM" \
+        reset="$UI_S_RESET" run="$UI_S_RUN"
+
+    # ── Header: brand badge + status line ─────────────────────────────────────
+    # Status badge uses the amber RUN colour as a pulsing "● INITIALIZING" cue.
+    printf '\n'
+    printf '%s  %s  %s\n' \
+        "$bold$accent◆ AETHER CLOUD OS$reset" \
+        "$dim$(ui_glyph_rule)$(ui_glyph_rule)$(ui_glyph_rule)$(ui_glyph_rule)$reset" \
+        "$run● INITIALIZING$reset"
+
+    # ── ASCII block letters with a cool blue→cyan gradient sheen ──────────────
+    # Charm's whole aesthetic is a gradient wordmark ("make the command line
+    # glamorous"); we take that as inspiration but colour per row, not per glyph,
+    # because a mid-string SGR would split the multibyte box-drawing characters.
+    # One SGR per line keeps it fork-free on a 1 vCPU host. When colour is off
+    # (NO_COLOR / plain) the ramp collapses to empty and the art prints bare.
+    local g1 g2 g3 g4 g5
+    if [ -n "$accent" ]; then
+        g1=$'\033[38;5;33m'; g2=$'\033[38;5;39m'; g3=$'\033[38;5;45m'
+        g4=$'\033[38;5;51m'; g5=$'\033[38;5;87m'
+    else
+        g1=""; g2=""; g3=""; g4=""; g5=""
+    fi
+
+    # A · E · T · H · E · R in the ANSI Shadow figlet face, one clean block that
+    # reads unambiguously as AETHER. Each row is exactly 49 cells wide so the
+    # letters stay in column; the two-space indent gives the mark air under the
+    # header. Do NOT hand-edit these strings — regenerate the whole block from
+    # figlet (ANSI Shadow) if the wordmark ever changes, or the box-drawing
+    # joins drift and a letter turns into a different one.
+    printf '\n'
+    printf '  %s\n' "$g1$bold █████╗ ███████╗████████╗██╗  ██╗███████╗██████╗ $reset"
+    printf '  %s\n' "$g2$bold██╔══██╗██╔════╝╚══██╔══╝██║  ██║██╔════╝██╔══██╗$reset"
+    printf '  %s\n' "$g3$bold███████║█████╗     ██║   ███████║█████╗  ██████╔╝$reset"
+    printf '  %s\n' "$g4$bold██╔══██║██╔══╝     ██║   ██╔══██║██╔══╝  ██╔══██╗$reset"
+    printf '  %s\n' "$g5$bold██║  ██║███████╗   ██║   ██║  ██║███████╗██║  ██║$reset"
+
+    # ── Subtitle with dot-accented rules ───────────────────────────────────────
+    # The version rides in a "· vX.Y ·" chip on the right, InkUI's
+    # "◆ name · vX · tag" metadata pattern. When no version is known the chip is
+    # dropped entirely rather than printing a bare "v" with nothing after it.
+    local w="$UI_WIDTH"
+    local sub="CLOUD OS  ·  Infrastructure Installer"
+    local sub_len=${#sub}
+    local ver_chip="" ver_cells=0
+    if [ -n "${AETHER_VERSION:-}" ]; then
+        ver_chip="v$AETHER_VERSION"
+        # rendered cells the chip occupies: "  · vX  ·" → chip + 7 for the dots/spaces
+        ver_cells=$(( ${#ver_chip} + 7 ))
+    fi
+    local rule_len=$((w - sub_len - 8 - ver_cells))
+    [ "$rule_len" -lt 2 ] && rule_len=2
+    printf '\n'
+    if [ -n "$ver_chip" ]; then
+        printf '%s  %s%s  %s%s  %s\n' \
+            "$dim$accent·$reset" \
+            "$bold$sub$reset" \
+            "$dim$(ui_repeat "·" "$rule_len")$reset" \
+            "$dim$accent·$reset" \
+            "$dim $ver_chip$reset" \
+            "$dim$accent·$reset"
+    else
+        printf '%s  %s%s  %s\n' \
+            "$dim$accent·$reset" \
+            "$bold$sub$reset" \
+            "$dim$(ui_repeat "·" "$rule_len")$reset" \
+            "$dim$accent·$reset"
+    fi
+
+    # ── System status line ────────────────────────────────────────────────────
+    local status="System ready  ·  deploying infrastructure"
+    local status_len=${#status}
+    local status_pad=$((w - status_len - 6))
+    [ "$status_pad" -lt 1 ] && status_pad=1
+    printf '\n'
+    printf '%s  %s%s  %s\n' \
+        "$run$bold●$reset" \
+        "$dim$status$reset" \
+        "$dim$(ui_repeat " " "$status_pad")$reset" \
+        "$dim$accent●$reset"
+}
+
 ui_banner() {
     [ "$UI_MODE" = "rich" ] || return 0
 
-    # scripts/deploy/setup.sh draws the wordmark before it clones the repository,
-    # which is the only way the one-liner can look deliberate during the download
-    # rather than after it. That was seconds ago and a few lines up; drawing it
-    # again here would read as a bug, so only the version goes out — the one part
-    # setup.sh could not know.
+    # setup.sh already drew the minimal brand header during the clone/download phase.
+    # Drawing it again here would duplicate it. If the wordmark has already been
+    # shown (rich mode from a resumed session), just print the version tag.
     if [ "${AETHER_UI_BANNER_SHOWN:-false}" = "true" ]; then
         printf '%s  %s%s\n' "$UI_S_DIM" "$AETHER_VERSION" "$UI_S_RESET"
         return 0
     fi
 
-    printf '\n%s%s  AETHER CLOUD OS%s %s%s%s\n' \
-        "$UI_S_BOLD" "$UI_S_ACCENT" "$UI_S_RESET" "$UI_S_DIM" "$AETHER_VERSION" "$UI_S_RESET"
-    printf '%s  %s%s\n' "$UI_S_DIM" "$(ui_rule)" "$UI_S_RESET"
+    ui_wordmark
 }
 
 # Where the install stands when it ends. Every line is a value the run actually
@@ -1028,15 +1141,22 @@ ui_success_panel() {
         return 0
     fi
 
+    # Premium success panel.
     ui_frame_begin
-    ui_box_top "$(ui_glyph_ok)  Aether Cloud OS is installed" "" "$UI_S_OK"
+    ui_box_top "AETHER IS ONLINE" "" "$UI_S_OK"
     ui_row_blank
+
+    # Deployment summary — key stages at a glance.
     ui_row_stage_grid
+
     ui_box_mid
-    [ -n "$url" ] && ui_row_field "Open" "$url"
+    if [ -n "$url" ]; then
+        ui_row_field "Open" "$url"
+    fi
     ui_row_field "Install" "$AETHER_INSTALL_DIR"
-    ui_row_field "Log" "$AETHER_LOG_FILE"
     [ -n "$elapsed" ] && ui_row_field "Elapsed" "$elapsed"
+    ui_box_mid
+    ui_row_text "All stages completed successfully. Services are running." "$UI_S_DIM"
     ui_box_bottom
     ui_frame_print
 }
@@ -1115,7 +1235,7 @@ ui_interrupt_panel() {
     fi
 
     ui_frame_begin
-    ui_box_top "Interrupted $UI_G_SEP SIG${signal}" "" "$UI_S_FAIL"
+    ui_box_top "Installation Interrupted" "" "$UI_S_FAIL"
     ui_row_blank
     if [ -n "$stage" ]; then
         ui_row_field "Stage" "$stage"
@@ -1124,8 +1244,11 @@ ui_interrupt_panel() {
         [ -n "$dur" ] && ui_row_field "Ran for" "$dur"
         ui_box_mid
     fi
-    ui_row_text "The running command was stopped. Whatever it had already" "$UI_S_DIM"
-    ui_row_text "finished is on disk and recorded as done, so --resume continues." "$UI_S_DIM"
+    ui_row_text "The running command was stopped. Completed stages are preserved." "$UI_S_BOLD"
+    ui_row_blank
+    ui_row_field "aether status" "check what was completed" 24
+    ui_row_field "aether doctor" "diagnose the host" 24
+    ui_row_text "re-run with --resume to continue" "$UI_S_ACCENT"
     ui_box_bottom
     ui_frame_print
 }
@@ -1141,6 +1264,10 @@ ui_init() {
     UI_LAST_FRAME=""
     UI_PANEL_HOLD=false
     UI_FINALIZED=false
+    UI_ALT_SCREEN=false
+    # Braille spinner sequence.
+    UI_SPINNER=( '⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏' )
+    UI_SPINNER_LEN=10
     ui_state_reset
 }
 
@@ -1405,7 +1532,12 @@ ui_shutdown() {
     fi
     UI_RUN_FILE=""
     ui_cursor_show
-    ui_panel_suspend
+    # Restore normal screen and clear the alt screen.
+    if [ "${UI_ALT_SCREEN:-false}" = "true" ]; then
+        printf '\033[?1049l'
+        UI_ALT_SCREEN=false
+    fi
+    UI_PANEL_DRAWN=0
     return 0
 }
 

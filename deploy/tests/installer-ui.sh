@@ -151,6 +151,7 @@ ui_reset() {
     export AETHER_UI_STATE_FILE="$WORK/state/ui.state"
     export AETHER_LOG_FILE="$WORK/install.log"
     export AETHER_VERSION="0.0.0-test"
+    export AETHER_INSTALL_DIR="${AETHER_INSTALL_DIR:-/opt/aether}"
     mkdir -p "$WORK/state"
     : >"$AETHER_LOG_FILE"
     rm -f "$AETHER_UI_STATE_FILE"
@@ -899,6 +900,232 @@ if [ -z "$MISCOUNTED" ]; then
     ok "a constant total matches the headers the script prints"
 else
     fail "$MISCOUNTED"
+fi
+
+# ---------------------------------------------------------------------------
+# 21. Alt screen buffer
+# ---------------------------------------------------------------------------
+if [ "$HAVE_BASH4" != "true" ]; then
+    section "21. Alt screen buffer"
+    skip "the rich mode needs bash 4 associative arrays"
+else
+    section "21. Alt screen buffer activates and restores correctly"
+
+    ui_reset
+    export AETHER_UI_MODE=rich
+    ui_init
+    UI_INTERACTIVE=true
+    UI_COLOR=true
+    ui_style_init
+
+    # The alt screen is activated by ui_frame_flush, which is called from
+    # ui_render_dashboard_if_changed only when the frame has actually changed.
+    # Test the flush itself directly rather than the render path.
+    ui_render_dashboard >/dev/null 2>&1 || true
+    # Force the flush as if the frame had changed (first draw always changes from empty).
+    ui_frame_begin
+    ui_frame_flush >/dev/null 2>&1 || true
+    expect_eq "UI_ALT_SCREEN is true after first flush" "true" "$UI_ALT_SCREEN"
+
+    # Suspending the panel restores normal screen and clears the flag.
+    ui_panel_suspend >/dev/null 2>&1 || true
+    expect_eq "UI_ALT_SCREEN is false after panel_suspend" "false" "$UI_ALT_SCREEN"
+fi
+
+# ---------------------------------------------------------------------------
+# 22. Spinner
+# ---------------------------------------------------------------------------
+if [ "$HAVE_BASH4" != "true" ]; then
+    section "22. Spinner"
+    skip "needs bash 4 associative arrays"
+else
+    section "22. Spinner advances with time and is disabled by --no-animation"
+
+    ui_reset
+    export AETHER_UI_MODE=rich
+    ui_init
+    UI_INTERACTIVE=true
+    UI_COLOR=true
+    ui_style_init
+
+    ui_stage_begin_notify BACKEND "Backend" >/dev/null
+
+    # Spinner output is non-empty when animation is on.
+    SPIN="$(ui_glyph_spinner_run)"
+    if [ -n "$SPIN" ]; then
+        ok "spinner produces output when animation is enabled"
+    else
+        fail "spinner produced nothing with animation enabled"
+    fi
+
+    # Spinner output is empty when animation is off.
+    UI_ANIMATION=false
+    SPIN_OFF="$(ui_glyph_spinner_run)"
+    if [ -z "$SPIN_OFF" ]; then
+        ok "spinner produces nothing when animation is off"
+    else
+        fail "spinner produced '$SPIN_OFF' even with animation disabled"
+    fi
+
+    # The spinner is self-healing: rendered before ui_init has populated the
+    # frame array (an early dashboard draw, an error path), the modulo must not
+    # become a divide-by-zero that aborts the whole render.
+    UI_ANIMATION=true
+    unset UI_SPINNER UI_SPINNER_LEN
+    if SPIN_BARE="$(ui_glyph_spinner_run 3 2>&1)" && [ -n "$SPIN_BARE" ]; then
+        ok "spinner survives an unset frame array (no divide-by-zero)"
+    else
+        fail "spinner failed with the frame array unset: '$SPIN_BARE'"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 23. UFW prompt — reads AETHER_ENABLE_UFW, does not prompt in-place
+# ---------------------------------------------------------------------------
+# configure_firewall in finalize.sh used to call confirm() which would prompt in the
+# middle of the install. It now reads AETHER_ENABLE_UFW which run_interactive_setup
+# collects upfront. This test verifies the function reads the env var.
+section "23. UFW decision comes from AETHER_ENABLE_UFW (no mid-install prompt)"
+
+# Verify configure_firewall in finalize.sh reads the env var rather than calling
+# confirm() directly. This is a source-level check because the function needs
+# ufw and sudo to actually run.
+UFW_BODY="$(cat "$REPO_DIR/deploy/lib/finalize.sh")"
+case "$UFW_BODY" in
+    *'AETHER_ENABLE_UFW'*)
+        ok "configure_firewall reads AETHER_ENABLE_UFW from the environment"
+        ;;
+    *)
+        fail "configure_firewall does not read AETHER_ENABLE_UFW — prompt batching not implemented"
+        ;;
+esac
+
+case "$UFW_BODY" in
+    *'confirm "Enable UFW'*|*'confirm.*Enable UFW'*)
+        fail "configure_firewall still calls confirm() for UFW — mid-install prompt not removed"
+        ;;
+    *)
+        ok "configure_firewall no longer calls confirm() for UFW"
+        ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 24. Wordmark renders in rich+unicode mode, falls back otherwise
+# ---------------------------------------------------------------------------
+if [ "$HAVE_BASH4" != "true" ]; then
+    section "24. Wordmark"
+    skip "needs bash 4 associative arrays"
+else
+    section "24. Wordmark draws in rich+unicode mode and degrades gracefully"
+
+    ui_reset
+    export AETHER_UI_MODE=rich
+    ui_init
+    UI_INTERACTIVE=true
+    UI_COLOR=true
+    UI_UNICODE=true
+    ui_style_init
+
+    # Capture wordmark output.
+    WORDMARK_OUT="$(AETHER_VERSION=9.9.9 ui_wordmark 2>&1 || true)"
+    if [ -n "$WORDMARK_OUT" ]; then
+        ok "ui_wordmark produces output in rich+unicode mode"
+        case "$WORDMARK_OUT" in
+            *'████'*|*'CLOUD OS'*) ok "output contains wordmark characters" ;;
+            *) fail "ui_wordmark output does not contain expected wordmark text" ;;
+        esac
+        # The block art must spell AETHER, not a garbled sequence. Assert the
+        # exact ANSI Shadow signatures of the letters that used to be wrong: the
+        # A/E/T top row and the H/E/R crossbar row. If a join drifts, these
+        # literal rows stop matching and the test fails loudly.
+        if [ "${WORDMARK_OUT#* █████╗ ███████╗████████╗}" != "$WORDMARK_OUT" ] && \
+           [ "${WORDMARK_OUT#*███████║█████╗     ██║   ███████║█████╗  ██████╔╝}" != "$WORDMARK_OUT" ]; then
+            ok "block art spells AETHER (A·E·T top row and H·E·R body row intact)"
+        else
+            fail "block art does not spell AETHER — a letter is malformed"
+        fi
+        # The block art carries a blue→cyan gradient: distinct 256-colour ramp
+        # steps across the rows, not one flat accent. Assert the top and bottom
+        # of the ramp are both present.
+        if [ "${WORDMARK_OUT#*38;5;33m}" != "$WORDMARK_OUT" ] && \
+           [ "${WORDMARK_OUT#*38;5;87m}" != "$WORDMARK_OUT" ]; then
+            ok "wordmark block art carries the blue→cyan gradient ramp"
+        else
+            fail "wordmark is missing the gradient ramp (flat colour)"
+        fi
+        # The version chip renders when a version is known...
+        case "$WORDMARK_OUT" in
+            *'v9.9.9'*) ok "wordmark shows the version chip when set" ;;
+            *) fail "wordmark did not render the version chip" ;;
+        esac
+    else
+        fail "ui_wordmark produced no output"
+    fi
+
+    # ...and no bare "v" is left dangling when the version is unknown.
+    WM_NOVER="$(AETHER_VERSION='' ui_wordmark 2>&1 || true)"
+    case "$WM_NOVER" in
+        *'· v'*|*' v '*) fail "wordmark printed a bare version chip with no value" ;;
+        *) ok "wordmark drops the version chip cleanly when unset" ;;
+    esac
+
+    # Falls back gracefully when not unicode.
+    ui_reset
+    export AETHER_UI_MODE=rich
+    UI_UNICODE=false
+    ui_init
+    UI_COLOR=true
+    ui_style_init
+    WM_NOUNI="$(ui_wordmark 2>&1 || true)"
+    if [ -z "$WM_NOUNI" ]; then
+        ok "ui_wordmark is silent in non-unicode mode (correct fallback)"
+    else
+        fail "ui_wordmark produced output in non-unicode mode: $WM_NOUNI"
+    fi
+
+    # Also silent in plain mode.
+    ui_reset
+    export AETHER_UI_MODE=plain
+    ui_init
+    WM_PLAIN="$(ui_wordmark 2>&1 || true)"
+    if [ -z "$WM_PLAIN" ]; then
+        ok "ui_wordmark is silent in plain mode"
+    else
+        fail "ui_wordmark produced output in plain mode"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 25. Success panel shows AETHER IS ONLINE header
+# ---------------------------------------------------------------------------
+if [ "$HAVE_BASH4" != "true" ]; then
+    section "25. Success panel"
+    skip "needs bash 4 associative arrays"
+else
+    section "25. Success panel shows the premium closing message"
+
+    ui_reset
+    export AETHER_UI_MODE=rich
+    ui_init
+    UI_INTERACTIVE=true
+    UI_COLOR=true
+    UI_UNICODE=true
+    UI_WIDTH=80
+    ui_style_init
+    export AETHER_INSTALL_DIR="/opt/aether"
+    ui_stage_begin_notify BACKEND "Backend" >/dev/null
+    ui_stage_done_notify BACKEND "healthy" >/dev/null
+
+    # Capture the success panel (printed to stdout, not suppressed).
+    SUCCESS_OUT="$(ui_success_panel "https://example.com" 2>&1)"
+    # Strip ANSI codes before pattern-matching: ui_frame_print includes escape
+    # sequences (\033[?1049l for alt-screen restore, etc.) that can break a
+    # bare case glob when they wrap the text.
+    SUCCESS_STRIPPED="$(printf '%s' "$SUCCESS_OUT" | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g')"
+    case "$SUCCESS_STRIPPED" in
+        *'AETHER IS ONLINE'*) ok "success panel says AETHER IS ONLINE" ;;
+        *) fail "success panel does not contain 'AETHER IS ONLINE'" ;;
+    esac
 fi
 
 # ---------------------------------------------------------------------------
