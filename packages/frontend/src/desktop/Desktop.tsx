@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react';
 
 import { DesktopIcons } from './DesktopIcons.js';
 import { Launcher } from './Launcher.js';
+import { NotificationCentre } from './NotificationCentre.js';
 import { Shell } from './Shell.js';
+import { Toaster } from './Toaster.js';
 import { useDesktopLayout } from './useDesktopLayout.js';
 import { useTerminalRecovery } from './useTerminalRecovery.js';
 import { Window } from './Window.js';
@@ -109,6 +111,13 @@ export function Desktop() {
         })}
 
         <Launcher />
+
+        {/* Notifications live in the window area so they sit above apps but
+            below nothing else, and are positioned against the desktop rather
+            than the shell bars. Toaster is transient; the centre is the
+            history opened from the tray bell. */}
+        <Toaster />
+        <NotificationCentre />
       </div>
 
       <Shell position="bottom" onLogout={() => void logout()} />

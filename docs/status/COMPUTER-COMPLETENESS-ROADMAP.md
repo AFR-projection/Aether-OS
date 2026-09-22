@@ -92,7 +92,10 @@ Measured against §3 of the brief. Verified absent:
   icons, or window chrome.
 - **System tray is decorative.** The Wi-Fi, volume and battery glyphs in all three shells
   (`desktop/Shell.tsx:119,171,303`) have no handler.
-- **No notification system at all.** Zero hits for `notification`/`toast` in the frontend.
+- ~~**No notification system at all.**~~ **DONE.** A real notification store
+  (`stores/notification.store.ts`) with a transient `Toaster` and a persistent `NotificationCentre`
+  opened from the tray bell, wired to a real event (a transport failure raises a deduped "Connection
+  lost" warning from the API client). See P2 #13.
 - **No window persistence across reload.** `desktop.store.ts` has no persistence; only auth
   (`lib/api-client.ts:68`) and theme (`stores/theme.store.ts:29`) survive. Window layout is lost.
 - **No file associations, no Open With, no recent files.** The launcher searches app names only
@@ -186,10 +189,13 @@ there are no applications.
 
 ### 2.8 Testing (`P9`)
 
-23 test files, all in `backend`, `host-agent` and `shared`. **Zero frontend tests** —
-`packages/frontend` has no `*.test.tsx` and its `test` script is `vitest run --passWithNoTests`. The
-`vps-harness.sh` end-to-end suite exists but is documented as never having been run end to end
-(`KNOWN-LIMITATIONS.md:275`).
+Backend, `host-agent` and `shared` are well covered. The frontend **now has a real test harness**
+(jsdom + Testing Library, `packages/frontend/vitest.config.ts`) where it had none: `test` is
+`vitest run`, and the first suites cover the `Button` contract, the notification store, and the
+`Toaster`/`NotificationCentre` components. See P2 #18. Coverage is still thin — the window manager
+store has a test but its components (Window, Shell, drag/resize) do not yet — and that is the next
+frontend-test work, not a missing harness. The `vps-harness.sh` end-to-end suite exists but is
+documented as never having been run end to end (`KNOWN-LIMITATIONS.md:275`).
 
 ### 2.9 Performance (`P9`)
 
@@ -298,14 +304,22 @@ revocation-closes-the-socket with its E2E harness); the P2/P3 rows remain design
 10. A shortcut registry, then bindings: window management, app switching, launcher, close.
 11. Drag and drop: desktop icons, taskbar reordering, file drag onto app windows.
 12. A shared clipboard across apps, and copy/cut/paste in Files.
-13. A notification service with a real notification centre, wired to real events (agent disconnect,
-    deployment finished, long command exited) — never to invented ones.
+13. ~~A notification service with a real notification centre, wired to real events~~ **DONE
+    (foundation).** `stores/notification.store.ts` (newest-first, capped, dedupe, read-state), a
+    transient `Toaster` and a persistent `NotificationCentre` opened from a tray bell present in all
+    three shells. The store's `notify()` is callable from non-React code so a notification is born at
+    the real event: today a transport failure raises a deduped "Connection lost" warning from the API
+    client. Remaining real event sources to wire as their producers land: agent disconnect,
+    deployment finished, a long-running unit exiting (the units WS stream now emits the exit event —
+    a frontend consumer is the follow-up). No invented events. Tested: store logic + both components.
 14. Context menus on desktop, icon, window and taskbar.
 15. File associations and Open With, backed by a real MIME map.
 16. Multiple workspaces.
 17. Make the tray glyphs real or remove them.
-18. Frontend test infrastructure — required _before_ the above, not after. Parity work with no tests
-    on a window manager is how a desktop becomes subtly broken.
+18. ~~Frontend test infrastructure — required _before_ the above, not after.~~ **DONE.** jsdom +
+    Testing Library under a dedicated `vitest.config.ts`, a setup file with jest-dom matchers and the
+    jsdom-omitted stubs (matchMedia/ResizeObserver), and `test` promoted from `--passWithNoTests` to
+    `vitest run`. The remaining parity items (8–17) are now built test-first on it.
 
 ### P3 — Application runtime
 

@@ -22,6 +22,8 @@
  *   httpOnly cookie plus a CSRF token, which requires backend changes.
  */
 
+import { notify } from '../stores/notification.store.js';
+
 import type { ApiErrorResponse, LoginResponse, TokenPair } from '@aether/shared';
 
 const REFRESH_STORAGE_KEY = 'aether.refreshToken';
@@ -236,6 +238,18 @@ async function requestWithAuth<T>(path: string, options: RequestOptions): Promis
     // A transport failure is reported as statusCode 0 so callers can tell it
     // apart from a server-side rejection.
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+    // A transport failure is a real system event the user should see — the
+    // backend or the network is down, not just this one request. Deduped so a
+    // burst of failing requests collapses to one standing warning rather than a
+    // storm, and cleared by the next success only in the user's eyes (reading
+    // it) — the client does not fabricate a recovery it has not observed.
+    notify({
+      level: 'warning',
+      title: 'Connection lost',
+      body: 'Could not reach the Aether backend. Retrying automatically.',
+      source: 'Connection',
+      dedupeKey: 'network-error',
+    });
     throw new ApiRequestError({
       code: 'NETWORK_ERROR',
       message: 'Could not reach the Aether backend. Check your connection and try again.',

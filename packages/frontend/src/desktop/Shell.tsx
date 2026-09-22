@@ -1,6 +1,7 @@
 import { Grid3x3, Power, Search, Wifi, Volume2, BatteryFull } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { NotificationBell } from './NotificationCentre.js';
 import { findApp } from '../apps/registry.js';
 import { useDesktopStore } from '../stores/desktop.store.js';
 import { useActiveTheme } from '../stores/theme.store.js';
@@ -117,6 +118,7 @@ function Win11Taskbar() {
       {/* Right system tray. Real Windows 11 has no power control here — sign-out
           lives in the Start menu (see Launcher). The tray carries status + clock. */}
       <div className="ml-auto flex items-center gap-3 pr-2">
+        <NotificationBell />
         <div className="flex items-center gap-2 rounded-md px-2 py-1 text-slate-300 hover:bg-white/10">
           <Wifi size={15} aria-hidden="true" />
           <Volume2 size={15} aria-hidden="true" />
@@ -169,6 +171,7 @@ function MacMenuBar({ onLogout }: { onLogout: () => void }) {
       <span className="hidden text-slate-300 sm:inline">Window</span>
 
       <div className="ml-auto flex items-center gap-3 text-slate-200">
+        <NotificationBell />
         <BatteryFull size={16} aria-hidden="true" />
         <Wifi size={15} aria-hidden="true" />
         <Search size={14} aria-hidden="true" />
@@ -301,6 +304,7 @@ function GnomeTopBar({ onLogout }: { onLogout: () => void }) {
       </button>
 
       <div className="ml-auto flex items-center gap-2">
+        <NotificationBell />
         <div className="flex items-center gap-2 rounded px-2 py-0.5 text-slate-200 hover:bg-white/10">
           <Wifi size={14} aria-hidden="true" />
           <Volume2 size={14} aria-hidden="true" />

@@ -19,8 +19,9 @@ Everything below is implemented and covered by the test suite. If it is not list
 is not built — see [Known limitations](docs/status/KNOWN-LIMITATIONS.md).
 
 **Desktop shell** — window manager (drag, resize, minimize, maximise), taskbar and launcher,
-light/dark themes. Live terminal sessions reattach after a browser reload; window layout itself is
-not yet persisted.
+light/dark themes, and a notification centre (transient toasts plus a persistent history in the
+tray), raised from real events rather than decorative ones. Live terminal sessions reattach after a
+browser reload, and the window layout is persisted per user and restored on load.
 
 **Terminal** — a real PTY (`node-pty`) running `bash`/`sh` on the host as a **login shell**,
 streamed over a WebSocket with a short-lived ticket rather than the access token in the URL. Because
