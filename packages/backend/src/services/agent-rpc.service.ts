@@ -55,6 +55,16 @@ interface AgentChannel {
   pending: Map<string, PendingRequest>;
   /** sessionId → callback for streamed terminal events (Terminal host-scope). */
   terminalSubscribers: Map<string, (event: unknown) => void>;
+  /**
+   * unitId → callback for streamed unit events.
+   *
+   * Separate from `terminalSubscribers` even though sessions and units are the
+   * same table on the agent: the two channels stream differently-shaped frames,
+   * and one client may watch a unit as a unit while another watches the same
+   * process as a session. Sharing one map would make the second subscriber
+   * silently replace the first.
+   */
+  unitSubscribers: Map<string, (event: unknown) => void>;
 }
 
 const channels = new Map<string, AgentChannel>();
@@ -69,6 +79,19 @@ function drainPending(channel: AgentChannel, reason: string): void {
 }
 
 /**
+ * Drops every stream subscriber on a channel, for a reason the caller states.
+ *
+ * Both channels go together, because the socket underneath them is what died:
+ * a `unit.event` can no more arrive on a closed socket than a `terminal.event`
+ * can. Leaving one map populated would keep a callback alive that can never
+ * fire, and (worse) make a later re-subscribe look like it was already covered.
+ */
+function dropSubscribers(channel: AgentChannel): void {
+  channel.terminalSubscribers.clear();
+  channel.unitSubscribers.clear();
+}
+
+/**
  * Records the live socket for an agent so requests can be sent to it.
  *
  * A reconnecting agent replaces the previous channel: any request still waiting
@@ -79,9 +102,14 @@ export function registerAgentSocket(agentId: string, socket: AgentSocket): void 
   const existing = channels.get(agentId);
   if (existing) {
     drainPending(existing, 'Agent reconnected before the request completed');
-    existing.terminalSubscribers.clear();
+    dropSubscribers(existing);
   }
-  channels.set(agentId, { socket, pending: new Map(), terminalSubscribers: new Map() });
+  channels.set(agentId, {
+    socket,
+    pending: new Map(),
+    terminalSubscribers: new Map(),
+    unitSubscribers: new Map(),
+  });
   log.debug({ agentId }, 'agent rpc channel registered');
 }
 
@@ -90,7 +118,7 @@ export function unregisterAgentSocket(agentId: string, socket: AgentSocket): voi
   const channel = channels.get(agentId);
   if (!channel || channel.socket !== socket) return;
   drainPending(channel, 'Agent disconnected');
-  channel.terminalSubscribers.clear();
+  dropSubscribers(channel);
   channels.delete(agentId);
   log.debug({ agentId }, 'agent rpc channel removed');
 }
@@ -139,7 +167,7 @@ export function closeAgentSocket(agentId: string, code: number, reason: string):
   if (!channel) return false;
 
   drainPending(channel, reason);
-  channel.terminalSubscribers.clear();
+  dropSubscribers(channel);
   // Delete before the async close event so a request racing the close is
   // refused rather than sent into a socket that is going away.
   channels.delete(agentId);
@@ -318,6 +346,57 @@ export function setTerminalSubscriber(
 }
 
 /**
+ * Subscribes to an execution unit's event stream.
+ *
+ * The agent replays the unit's retained output and then streams live events, so
+ * a client that attaches late still sees what the process already printed —
+ * the property a browser refresh depends on. Returns an unsubscribe function
+ * that stops routing *and* tells the agent to stop streaming; a stream nobody
+ * reads should not keep a socket busy.
+ *
+ * `ownerUserId` is required, exactly as on the terminal path: the agent checks
+ * it against the unit's owner before streaming, and a subscribe that named
+ * nobody would silently succeed as the paired owner — on an instance-scoped
+ * local agent that is one identity shared by every user of the instance.
+ */
+export async function subscribeAgentUnit(
+  agentId: string,
+  unitId: string,
+  ownerUserId: string,
+  onEvent: (event: unknown) => void
+): Promise<() => void> {
+  const stopRouting = setUnitSubscriber(agentId, unitId, onEvent);
+  try {
+    // The unit channel names `unitId`; the terminal channel predates the unit
+    // vocabulary and names `sessionId`. The agent reads the field its channel
+    // uses, so sending the wrong one fails the subscribe rather than silently
+    // streaming the wrong thing.
+    await dispatch(agentId, { type: 'units.subscribe', unitId, ownerUserId });
+  } catch (error) {
+    stopRouting();
+    throw error;
+  }
+  return () => {
+    stopRouting();
+    void dispatch(agentId, { type: 'units.unsubscribe', unitId }).catch(() => undefined);
+  };
+}
+
+/** Registers a callback for a unit's streamed events; returns an unsubscribe fn. */
+export function setUnitSubscriber(
+  agentId: string,
+  unitId: string,
+  onEvent: (event: unknown) => void
+): () => void {
+  const channel = channels.get(agentId);
+  if (!channel) return () => undefined;
+  channel.unitSubscribers.set(unitId, onEvent);
+  return () => {
+    channels.get(agentId)?.unitSubscribers.delete(unitId);
+  };
+}
+
+/**
  * Inspects an inbound agent frame. Returns `true` when the frame was a reply to
  * a backend-originated request or a terminal event we routed — in which case the
  * caller must NOT hand it to the (agent → backend) gateway. Returns `false` for
@@ -347,6 +426,15 @@ export function handleAgentFrame(agentId: string, frame: Record<string, unknown>
   if (frame.type === 'terminal.event' && typeof frame.sessionId === 'string') {
     const channel = channels.get(agentId);
     channel?.terminalSubscribers.get(frame.sessionId)?.(frame.event);
+    return true;
+  }
+
+  // Streamed events for a subscribed unit. Consumed here for the same reason as
+  // the terminal frames: this is backend-bound traffic, and handing it to the
+  // agent → backend gateway would have the gateway parse it as a new request.
+  if (frame.type === 'unit.event' && typeof frame.unitId === 'string') {
+    const channel = channels.get(agentId);
+    channel?.unitSubscribers.get(frame.unitId)?.(frame.event);
     return true;
   }
 

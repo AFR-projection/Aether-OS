@@ -28,6 +28,7 @@ import { isAppError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
 import { registerAgentWebSocket } from './ws/agent.ws.js';
 import { registerTerminalWebSocket } from './ws/terminal.ws.js';
+import { registerUnitWebSocket } from './ws/units.ws.js';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -159,6 +160,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   registerPortsRoutes(app);
   registerAgentRoutes(app);
   registerTerminalWebSocket(app);
+  registerUnitWebSocket(app);
   registerAgentWebSocket(app);
 
   const servingFrontend = await registerStaticFrontend(app);

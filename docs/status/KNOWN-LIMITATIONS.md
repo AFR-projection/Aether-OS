@@ -280,13 +280,15 @@ What it does **not** yet do, and does not pretend to:
   process dies with the agent that owns it. The backend keeps no unit bookkeeping, so a backend
   restart is invisible to a still-running unit, but an agent restart genuinely ends it and the
   registry reports it gone.
-- **No resource limits, restart policies, log files, `runAs`, or DB persistence.** All P2. A unit's
-  output lives in memory and its history is not recorded. `maxOutputBytes` and a restart _ceiling_
-  above the instance default are gated by `execution:limits:raise`, but cgroup enforcement and the
-  restart _policies_ themselves are not built.
-- **No interactive input/resize or streaming on the units REST surface.** Driving a `tty` unit
-  interactively still goes through the terminal API and its WebSocket; the units API is
-  lifecycle-only (create/list/get/signal/restart/kill/log-by-offset).
+- **No restart policies, log files, `runAs`, or DB persistence.** All P2. A unit's output lives in
+  memory and its history is not recorded. Resource limits _are_ enforced: rlimits are applied before
+  exec and audited (`unit.limits-applied`), and `maxOutputBytes` plus a restart _ceiling_ above the
+  instance default are gated by `execution:limits:raise` — but cgroup enforcement and the restart
+  _policies_ themselves are not built.
+- **No interactive input/resize on the units surface.** Live _output/state_ streaming now exists —
+  the read-only `/ws/units/:id` WebSocket (EXECUTION-PRIMITIVE §33) — but driving a `tty` unit
+  interactively (keystrokes, resize) still goes through the terminal API and its WebSocket; the
+  units REST API is lifecycle-only (create/list/get/signal/restart/kill/log-by-offset).
 
 ### 18d. Agent revocation closes the live socket on the replica that holds it, not across replicas
 

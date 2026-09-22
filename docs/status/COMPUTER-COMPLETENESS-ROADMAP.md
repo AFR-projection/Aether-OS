@@ -269,9 +269,12 @@ revocation-closes-the-socket with its E2E harness); the P2/P3 rows remain design
    _view_ over it rather than a second table, and a backend REST API (`/api/units`) with
    `execution:*` permissions. It runs `tty` and `command` for real with per-unit ownership, honest
    exit codes, a `stale` state, process-group signalling, and audit events; `service`/`worker` are
-   refused with `NOT_IMPLEMENTED` rather than faked. Still design: the systemd path, rlimits,
-   restart policies, log files, the `execution_units` table, `runAs`, the units WS stream — all
-   P2/P3. **Shipped — revocation closes the live socket + the E2E harness**
+   refused with `NOT_IMPLEMENTED` rather than faked. Since shipped on top of it: **real rlimits**
+   enforced before exec with an honest `unit.limits-applied` audit, and the **units WS stream**
+   ([EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §33) — read-only
+   `/ws/units/:id` live output/state over the reused browser ticket, one agent subscription fanned
+   out to every viewer. Still design: the systemd path, restart policies, log files, the
+   `execution_units` table, `runAs` — all P2/P3. **Shipped — revocation closes the live socket + the E2E harness**
    ([EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §31): revoking an agent now
    closes the socket this replica holds — failing in-flight requests, dropping terminal streams,
    refusing later requests — rather than only stamping the database, keyed by agent id so no other

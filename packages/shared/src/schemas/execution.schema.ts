@@ -170,6 +170,21 @@ export const unitSignalBodySchema = z.object({
 });
 export type UnitSignalBody = z.infer<typeof unitSignalBodySchema>;
 
+/**
+ * Frames the browser may send over `/ws/units/:id`.
+ *
+ * One member, and that is the point: the unit stream is a read channel, so the
+ * only thing a client can say on it is "are you still there". Every frame that
+ * would change the unit is refused here and names the REST verb to use instead,
+ * because those calls carry the permission check and the audit record this
+ * channel has neither of. Widening this union is how a second control surface
+ * would be introduced by accident.
+ */
+export const unitClientMessageSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('ping') }),
+]);
+export type UnitClientMessageInput = z.infer<typeof unitClientMessageSchema>;
+
 export const unitsQuerySchema = z.object({
   agentId: uuidSchema,
   /**

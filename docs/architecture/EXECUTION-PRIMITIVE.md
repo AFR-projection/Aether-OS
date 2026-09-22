@@ -985,11 +985,13 @@ its records for them. Live shells from before the upgrade therefore become unadd
 new session is correct. This is the price of removing the ambiguity; there is no way to migrate a
 key the agent never told the backend it was using.
 
-**Shipped in the second slice** — the unit registry itself; see §30 for the change table.
+**Shipped in the second slice** — the unit registry itself; see §30 for the change table. **Since
+then:** real rlimits enforced before exec with an honest `unit.limits-applied` audit (§10, §19), and
+the units WebSocket stream (§20, §33).
 
-**Not shipped, and not claimed:** the systemd path for `service`/`worker`, rlimits, restart
-policies, log files, the `execution_units` table, `runAs`, secrets, port reservations, and the units
-WebSocket stream — all P2/P3. §30 lists what the registry does and does not yet do.
+**Not shipped, and not claimed:** the systemd path for `service`/`worker`, restart
+policies, log files, the `execution_units` table, `runAs`, secrets, and port reservations — all
+P2/P3. §30 lists what the registry does and does not yet do.
 
 ---
 
@@ -1037,7 +1039,8 @@ cannot quietly grow its own environment. A future spawn path that improvises fai
   client is told "not built" rather than "try again".
 - **No `units.input` / `units.resize` on the REST surface.** Interactive I/O for a `tty` unit still
   runs over the terminal API and its WebSocket; the units REST API is lifecycle-only in this slice.
-  The units WS stream (§20) is not built — log reads are by offset.
+  The units WS stream is read-only output/state, shipped in a later slice (§20, §33); log reads
+  remain by offset.
 - **No rlimits, no restart policies, no log files, no `runAs`, no DB table.** All P2 (§9, §10, §19).
   A unit still does not survive its agent restarting, and nothing here claims it does.
 
@@ -1184,3 +1187,59 @@ no frame on the wire — the process is never spawned.
 
 **No one-time cost.** No state is re-keyed; the check is a read of the same agent list the caller
 can already see.
+
+---
+
+## 33. What shipped next — the units WebSocket stream
+
+The lifecycle REST surface (§30) can say what a unit _is_ and what it has printed so far; it cannot
+say what it is doing _now_. This slice adds the live half — `/ws/units/:id` — so a browser sees
+output as it arrives, the state change when the process ends, and a restart attempt, without polling
+the log by offset. It is the §20 design built as designed: the browser ticket mechanism reused
+unchanged, and the stream **read-only** on purpose.
+
+### The path, end to end
+
+`POST /api/units/:id/ticket` (gated `execution:read`) mints a single-use ticket. The browser opens
+`/ws/units/:id?agentId=…&ticket=…`; the bridge redeems the ticket, reads the unit through
+`units.get` (the agent's own ownership check, run on **every** attach), then `units.subscribe`s to
+the agent and forwards each `unit.event` as one frame. Every hop is the real one — the process is on
+the host, the events come from the agent that owns it, and nothing invents a state the agent did not
+report.
+
+### Three things it gets right, each because getting it wrong is a silent lie
+
+- **`ready` precedes every event, including the replay.** The agent writes the retained output
+  _before_ it answers the subscribe, so events can beat the reply back. The bridge holds them in a
+  backlog until it has sent `ready` — the frame that tells the client _which_ unit it is looking at —
+  rather than putting output on the wire first. Proven by a stub agent that replays in that order.
+- **The channel cannot control the unit.** The client schema admits `ping` and nothing else; a
+  control frame is refused with `UNSUPPORTED_MESSAGE` naming the REST route that _can_ do it, and the
+  test asserts **no** `units.signal` reached the agent — because an error reply alone would not prove
+  the act did not also happen. Signal/kill/restart stay on REST, where they carry a permission check
+  and write an audit event; a frame that performed one would make the audit log a record of what was
+  done over HTTP rather than what was done.
+- **One agent subscription per unit, fanned out to every viewer.** The agent keeps a single
+  subscription per unit and _replaces_ it on each `units.subscribe`, replaying again — so a second
+  browser that simply sent its own subscribe would double-stream the first viewer and stop both when
+  either left. `subscribeHostUnit` holds one live stream keyed `${agentId}:${unitId}` and fans it
+  out; the agent is subscribed once and released only when the last viewer leaves. The narrowing at
+  the boundary (`toUnitServerMessage`) drops any event shape the browser is not meant to receive
+  rather than forwarding it on faith.
+
+Closing the browser socket **detaches** the stream; it does not end the unit — a reload re-attaches
+to a process that is still running. A backend restart loses only the streams themselves, which the
+browsers re-open (the registry holds no unit state; see `host-units.service`).
+
+### The change table
+
+| Change                                                                                                                            | Where                                                     | Why                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `UnitClientMessage` / `UnitServerMessage` types + `unitClientMessageSchema`                                                       | `packages/shared/src/{types,schemas}/execution*`          | One wire vocabulary for the stream, validated at the boundary                   |
+| `toUnitServerMessage` (narrow agent events) + fan-out `subscribeHostUnit` (one agent subscription per unit, shared)               | `packages/backend/src/services/host-units.service.ts`     | The browser gets only checked shapes; multiple viewers cannot double-stream     |
+| `/ws/units/:id` bridge — ticket redeem, backlog-until-`ready`, read-only guard, rate limit, heartbeat                             | `packages/backend/src/ws/units.ws.ts`                     | §20's live half, read-only on purpose                                           |
+| `POST /api/units/:id/ticket` (gated `execution:read`) + registration                                                             | `packages/backend/src/routes/units.routes.ts`, `server.ts`| A browser cannot set an auth header on a WS upgrade; the ticket is how it authenticates |
+| Tests: RPC-boundary narrowing; fan-out sharing (one subscribe, every viewer, release on last); real-socket E2E over `app.listen` | `host-units.service.test.ts`, `ws/units.ws.test.ts`       | The ordering, the read-only refusal, and the shared subscription each under test |
+
+**No one-time cost.** Purely additive: a new route, a new socket, and shared types. The terminal
+stream, the lifecycle REST surface, and the ticket store are untouched.

@@ -13,6 +13,7 @@ import {
 } from '@aether/shared';
 
 import { authenticate, requirePermission, requirePrincipal } from '../middleware/auth.js';
+import { issueTicket } from '../security/ws-ticket.js';
 import { recordAuditEvent } from '../services/audit.service.js';
 import {
   assertMayUseRequestedLimits,
@@ -269,6 +270,36 @@ export function registerUnitRoutes(app: FastifyInstance): void {
       });
 
       return reply.status(204).send();
+    },
+  });
+
+  /**
+   * Issues a single-use ticket for the unit stream's WebSocket handshake.
+   *
+   * A browser cannot set an `Authorization` header during a WebSocket upgrade,
+   * so the ticket is fetched over an authenticated request — the same mechanism,
+   * and the same `security/ws-ticket.ts`, the terminal stream uses.
+   *
+   * Gated by `execution:read` rather than by a permission of its own: the ticket
+   * grants nothing except the right to redeem it once for this unit as this
+   * user, and the frame schema on the stream admits no control verb. What the
+   * caller may do with the unit is decided by the same permission the read
+   * routes require and by the agent's own ownership check, so a ticket cannot
+   * get anyone further than a `GET /api/units/:id` already could.
+   *
+   * The unit is deliberately *not* read here. The backend holds no unit
+   * bookkeeping, so proving the unit exists would mean a round trip to the agent
+   * to answer a question the handshake asks again a moment later — and the agent
+   * is the authority on it either way. A ticket for a unit that is gone, or is
+   * someone else's, is issued and then refused at the handshake.
+   */
+  app.post('/api/units/:id/ticket', {
+    preHandler: [authenticate, requirePermission('execution:read')],
+    handler: async (request) => {
+      const principal = requirePrincipal(request);
+      const params = parseOrThrow(unitIdParamSchema, request.params, 'unit id');
+
+      return { data: await issueTicket(params.id, principal.user.id) };
     },
   });
 }

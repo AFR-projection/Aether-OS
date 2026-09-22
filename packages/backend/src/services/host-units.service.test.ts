@@ -15,6 +15,9 @@ import {
   readHostUnitLog,
   restartHostUnit,
   signalHostUnit,
+  subscribeHostUnit,
+  toUnitServerMessage,
+  resetUnitStreamsForTests,
 } from './host-units.service.js';
 
 import type { CreateUnitBody } from '@aether/shared';
@@ -81,6 +84,14 @@ interface SentFrame {
   type: string;
   ownerUserId?: string;
   params?: Record<string, unknown>;
+  /**
+   * The subscribe/unsubscribe channels name their target at the top level, not
+   * under `params` — `units.subscribe` puts `unitId` there and the terminal
+   * channel predates it and puts `sessionId` there. The agent reads the field
+   * its channel uses, so a test that looked under `params` would pass while the
+   * real agent refused the frame.
+   */
+  unitId?: string;
 }
 
 const sent: SentFrame[] = [];
@@ -172,6 +183,7 @@ function baseCreateBody(overrides: Partial<CreateUnitBody> = {}): CreateUnitBody
 
 beforeEach(() => {
   sent.length = 0;
+  resetUnitStreamsForTests();
   connectAgent(AGENT_ID);
   // Every user in the existing suite is allowed both agents, so the DoD-#5 gate
   // passes and each test exercises what it was written to — the disconnected
@@ -384,5 +396,249 @@ describe('the execution:limits:raise gate', () => {
         true
       )
     ).not.toThrow();
+  });
+});
+
+describe('the unit stream is narrowed at the RPC boundary', () => {
+  // The agent is a separate process reached over a socket. These are the four
+  // event shapes it emits, and everything else — a shape this build does not
+  // model, a field of the wrong type — must not reach a browser on faith.
+
+  it('forwards output with the stream it came from', () => {
+    expect(toUnitServerMessage({ type: 'output', data: 'hi\n', stream: 'stderr' })).toEqual({
+      type: 'output',
+      data: 'hi\n',
+      stream: 'stderr',
+    });
+  });
+
+  it('treats an unstated stream as stdout rather than dropping the output', () => {
+    // Losing output because a selector was missing would be worse than naming
+    // the default: the bytes are real either way.
+    expect(toUnitServerMessage({ type: 'output', data: 'x' })).toEqual({
+      type: 'output',
+      data: 'x',
+      stream: 'stdout',
+    });
+  });
+
+  it('forwards an exit with the normalized status a shell would report', () => {
+    expect(
+      toUnitServerMessage({
+        type: 'exit',
+        exitCode: null,
+        signal: 15,
+        normalized: 143,
+        state: 'failed',
+      })
+    ).toEqual({ type: 'exit', exitCode: null, signal: 15, normalized: 143, state: 'failed' });
+  });
+
+  it('forwards a state change and a restart attempt', () => {
+    expect(toUnitServerMessage({ type: 'state', state: 'stale' })).toEqual({
+      type: 'state',
+      state: 'stale',
+    });
+    expect(toUnitServerMessage({ type: 'restart', attempt: 2 })).toEqual({
+      type: 'restart',
+      attempt: 2,
+    });
+  });
+
+  it('drops an event shape this build does not model', () => {
+    // The point of the guard: a future agent event is invisible until it is
+    // deliberately carried, instead of arriving in browsers that cannot read it.
+    expect(toUnitServerMessage({ type: 'metrics', cpu: 0.9 })).toBeNull();
+  });
+
+  it('drops a malformed event instead of forwarding half of it', () => {
+    expect(toUnitServerMessage({ type: 'output', data: 42 })).toBeNull();
+    expect(toUnitServerMessage({ type: 'state', state: 'melted' })).toBeNull();
+    expect(toUnitServerMessage({ type: 'exit', state: 'exited' })).toBeNull();
+    expect(toUnitServerMessage(null)).toBeNull();
+    expect(toUnitServerMessage('state')).toBeNull();
+  });
+});
+
+describe('subscribing to a unit stream', () => {
+  it('reads the unit before subscribing, and names the owner on both', async () => {
+    const subscription = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, () => undefined);
+
+    expect(subscription.unit.id).toBe(UNIT_ID);
+    // The principal goes on the subscribe as well as the read: the agent checks
+    // it against the unit's owner, so a subscribe that named nobody would
+    // silently succeed as the agent's paired owner.
+    expect(sent.map((frame) => frame.type)).toEqual(['units.get', 'units.subscribe']);
+    expect(lastFrameOfType('units.subscribe')?.ownerUserId).toBe(USER_GET);
+    expect(lastFrameOfType('units.subscribe')?.unitId).toBe(UNIT_ID);
+
+    // Live streams outlive a single call, so a test that opens one closes it.
+    subscription.unsubscribe();
+  });
+
+  it('routes a live agent event to the caller', async () => {
+    const seen: unknown[] = [];
+    const subscription = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, (message) =>
+      seen.push(message)
+    );
+
+    handleAgentFrame(AGENT_ID, {
+      type: 'unit.event',
+      unitId: UNIT_ID,
+      event: { type: 'output', data: 'live\n', stream: 'pty' },
+    });
+
+    expect(seen).toEqual([{ type: 'output', data: 'live\n', stream: 'pty' }]);
+    subscription.unsubscribe();
+  });
+
+  it('drops an event for a unit nobody subscribed to', async () => {
+    const seen: unknown[] = [];
+    const subscription = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, (message) =>
+      seen.push(message)
+    );
+
+    handleAgentFrame(AGENT_ID, {
+      type: 'unit.event',
+      unitId: '00000000-0000-4000-8000-0000000000d9',
+      event: { type: 'output', data: 'other\n', stream: 'stdout' },
+    });
+
+    expect(seen).toEqual([]);
+    subscription.unsubscribe();
+  });
+
+  it('tells the agent to stop streaming when the subscriber detaches', async () => {
+    const subscription = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, () => undefined);
+    subscription.unsubscribe();
+
+    expect(lastFrameOfType('units.unsubscribe')?.unitId).toBe(UNIT_ID);
+  });
+
+  it('does not subscribe at all when the unit is not the caller\'s to stream', async () => {
+    registerAgentSocket(OTHER_AGENT, {
+      readyState: 1,
+      OPEN: 1,
+      send(raw: string): void {
+        const frame = JSON.parse(raw) as SentFrame;
+        sent.push(frame);
+        handleAgentFrame(OTHER_AGENT, {
+          id: frame.id,
+          ok: false,
+          error: { code: 'NOT_FOUND', message: 'Unit not found' },
+        });
+      },
+    });
+
+    await expect(
+      subscribeHostUnit(OTHER_AGENT, UNIT_ID, USER_GET, () => undefined)
+    ).rejects.toThrowError(/not found/i);
+
+    // The refusal happens on the read, so no stream was ever opened: a caller
+    // who may not see a unit must not be left holding part of its output.
+    expect(lastFrameOfType('units.subscribe')).toBeUndefined();
+  });
+});
+
+describe('several viewers of one unit share a single agent subscription', () => {
+  // The agent keeps one subscription per unit and replaces it on each
+  // `units.subscribe`, replaying the output again as it does. So a second attach
+  // that simply asked again would hand the first viewer the whole stream twice
+  // and, when either viewer left, stop the stream for both — a viewer that
+  // believes it is attached and receives nothing.
+
+  it('subscribes once, however many viewers attach', async () => {
+    const first: unknown[] = [];
+    const second: unknown[] = [];
+
+    const a = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, (m) => first.push(m));
+    const b = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, (m) => second.push(m));
+
+    expect(sent.filter((frame) => frame.type === 'units.subscribe')).toHaveLength(1);
+    // Both watched the same unit, so both were told what they attached to.
+    expect(a.unit.id).toBe(UNIT_ID);
+    expect(b.unit.id).toBe(UNIT_ID);
+
+    a.unsubscribe();
+    b.unsubscribe();
+  });
+
+  it('delivers an event to every viewer', async () => {
+    const first: unknown[] = [];
+    const second: unknown[] = [];
+    const a = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, (m) => first.push(m));
+    const b = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, (m) => second.push(m));
+
+    handleAgentFrame(AGENT_ID, {
+      type: 'unit.event',
+      unitId: UNIT_ID,
+      event: { type: 'output', data: 'shared\n', stream: 'stdout' },
+    });
+
+    expect(first).toEqual([{ type: 'output', data: 'shared\n', stream: 'stdout' }]);
+    expect(second).toEqual([{ type: 'output', data: 'shared\n', stream: 'stdout' }]);
+
+    a.unsubscribe();
+    b.unsubscribe();
+  });
+
+  it('keeps streaming to a viewer when another viewer detaches', async () => {
+    const first: unknown[] = [];
+    const second: unknown[] = [];
+    const a = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, (m) => first.push(m));
+    const b = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, (m) => second.push(m));
+
+    a.unsubscribe();
+
+    // The agent is not told to stop: someone is still watching.
+    expect(lastFrameOfType('units.unsubscribe')).toBeUndefined();
+
+    handleAgentFrame(AGENT_ID, {
+      type: 'unit.event',
+      unitId: UNIT_ID,
+      event: { type: 'state', state: 'exited' },
+    });
+    expect(second).toEqual([{ type: 'state', state: 'exited' }]);
+    expect(first).toEqual([]);
+
+    b.unsubscribe();
+  });
+
+  it('releases the agent subscription when the last viewer detaches', async () => {
+    const a = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, () => undefined);
+    const b = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, () => undefined);
+
+    a.unsubscribe();
+    expect(lastFrameOfType('units.unsubscribe')).toBeUndefined();
+
+    b.unsubscribe();
+    expect(lastFrameOfType('units.unsubscribe')?.unitId).toBe(UNIT_ID);
+  });
+
+  it('subscribes afresh for a viewer who arrives after everyone left', async () => {
+    const a = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, () => undefined);
+    a.unsubscribe();
+
+    const b = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, () => undefined);
+    expect(sent.filter((frame) => frame.type === 'units.subscribe')).toHaveLength(2);
+
+    b.unsubscribe();
+    expect(lastFrameOfType('units.unsubscribe')?.unitId).toBe(UNIT_ID);
+  });
+
+  it('ignores a second detach from the same viewer', async () => {
+    // The socket's close and error handlers both release; the second call must
+    // not stop a stream that a later viewer now holds.
+    const a = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, () => undefined);
+    a.unsubscribe();
+
+    const b = await subscribeHostUnit(AGENT_ID, UNIT_ID, USER_GET, () => undefined);
+    a.unsubscribe();
+
+    const unsubscribes = sent.filter((frame) => frame.type === 'units.unsubscribe');
+    expect(unsubscribes).toHaveLength(1);
+    expect(lastFrameOfType('units.subscribe')).toBeDefined();
+
+    b.unsubscribe();
   });
 });

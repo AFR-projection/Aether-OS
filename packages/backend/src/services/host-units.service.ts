@@ -1,14 +1,16 @@
 import {
   DEFAULT_EXECUTION_UNIT_LIMITS,
   LIMITS,
+  isExecutionUnitState,
   type CreateUnitBody,
   type ExecutionUnit,
   type UnitLogQuery,
+  type UnitServerMessage,
   type UnitSignal,
 } from '@aether/shared';
 
 import { listAgents } from './agent-pairing.service.js';
-import { isAgentRpcConnected, sendAgentRequest } from './agent-rpc.service.js';
+import { isAgentRpcConnected, sendAgentRequest, subscribeAgentUnit } from './agent-rpc.service.js';
 import { ForbiddenError, NotFoundError, ServiceUnavailableError } from '../utils/errors.js';
 import { subsystemLogger } from '../utils/logger.js';
 
@@ -23,7 +25,7 @@ const log = subsystemLogger('host-units');
  * originates the request against the agent that holds the process and returns
  * the agent's answer.
  *
- * ## Why this is stateless, unlike `host-terminal.service`
+ * ## Why the REST surface is stateless, unlike `host-terminal.service`
  *
  * The terminal service keeps a per-process map because it has to *bridge a live
  * stream*: output arrives as `terminal.event` frames and has to be routed to a
@@ -34,6 +36,13 @@ const log = subsystemLogger('host-units');
  * response include) and the principal, and the agent is the authority on its own
  * units: it reconciles them on every read (`reconcileAllUnits`), so a unit that
  * vanished is reported `stale` rather than running.
+ *
+ * The one piece of state here is the live-stream registry in
+ * `subscribeHostUnit`, and it is the same kind of state for the same reason:
+ * routing a stream needs somewhere to remember who is listening. It holds no
+ * unit state — only which browsers are watching a unit that the agent owns — so
+ * every argument above still holds, and a backend restart loses nothing but the
+ * streams themselves, which the browsers re-open.
  *
  * That statelessness is not a shortcut — it is the right answer to two of the
  * dimensions this foundation has to cover. **Backend restart recovery**: there
@@ -317,4 +326,198 @@ function expectRecord(value: unknown, context: string): Record<string, unknown> 
     throw new ServiceUnavailableError(`The host agent returned an unexpected ${context} reply`);
   }
   return value as Record<string, unknown>;
+}
+
+/** A stream selector the agent may report, or the pipe default when it does not. */
+function toOutputStream(value: unknown): 'pty' | 'stdout' | 'stderr' {
+  return value === 'pty' || value === 'stderr' ? value : 'stdout';
+}
+
+/**
+ * Narrows one agent `unit.event` into the frame the browser is sent, or `null`
+ * when it is not a frame this surface carries.
+ *
+ * The agent's `UnitEvent` union and `UnitServerMessage`'s event members are the
+ * same four shapes, so this looks like a formality — it is not. The agent is a
+ * separate process reached over a socket, and the backend's job at that boundary
+ * is to hand the browser only what it has actually checked. A frame that does
+ * not match is dropped rather than forwarded on faith, which is also what makes
+ * a future agent-side event *invisible* here until it is deliberately added,
+ * instead of arriving in browsers that do not know what it means.
+ */
+export function toUnitServerMessage(event: unknown): UnitServerMessage | null {
+  if (typeof event !== 'object' || event === null) return null;
+  const record = event as Record<string, unknown>;
+
+  switch (record.type) {
+    case 'output':
+      return typeof record.data === 'string'
+        ? { type: 'output', data: record.data, stream: toOutputStream(record.stream) }
+        : null;
+    case 'state':
+      return isExecutionUnitState(record.state) ? { type: 'state', state: record.state } : null;
+    case 'exit':
+      return isExecutionUnitState(record.state) && typeof record.normalized === 'number'
+        ? {
+            type: 'exit',
+            exitCode: typeof record.exitCode === 'number' ? record.exitCode : null,
+            signal: typeof record.signal === 'number' ? record.signal : null,
+            normalized: record.normalized,
+            state: record.state,
+          }
+        : null;
+    case 'restart':
+      return typeof record.attempt === 'number' ? { type: 'restart', attempt: record.attempt } : null;
+    default:
+      return null;
+  }
+}
+
+export interface HostUnitSubscription {
+  /** The unit as it was when the subscription was established. */
+  unit: ExecutionUnit;
+  unsubscribe: () => void;
+}
+
+/**
+ * One live agent subscription, shared by every browser watching that unit.
+ *
+ * The fan-out is not an optimisation. The agent keeps **one** subscription per
+ * unit and replaces it when a `units.subscribe` arrives, replaying the output
+ * again as it does — so a second attach that simply sent a second subscribe
+ * would hand the first viewer the whole stream twice and then, when either
+ * viewer left, stop the stream for both. A viewer that believes it is attached
+ * and receives nothing is exactly the failure this model exists to prevent, so
+ * the unit is subscribed once here and the browsers are fanned out from it.
+ */
+interface LiveUnitStream {
+  listeners: Set<(message: UnitServerMessage) => void>;
+  /** The agent's release, once the subscribe has answered. Null while attaching. */
+  release: (() => void) | null;
+  /** The in-flight attach, so two viewers arriving together share one subscribe. */
+  attaching: Promise<() => void> | null;
+}
+
+/** Keyed by agent *and* unit: a unit id is only unique within its own host. */
+const liveStreams = new Map<string, LiveUnitStream>();
+
+function streamKey(agentId: string, unitId: string): string {
+  return `${agentId}:${unitId}`;
+}
+
+/**
+ * Drops every live-stream entry. **Tests only** — never called in production.
+ *
+ * The registry is module state that outlives a single test, so two tests that
+ * attach to the same unit would have the second reuse the first's entry and skip
+ * its own `units.subscribe` — and with it the agent's replay. Clearing between
+ * tests (alongside re-registering the agent socket, which resets the agent-rpc
+ * channel) is what keeps each test attaching from a clean slate. It only forgets
+ * the map; a test re-registers its agent socket, which drops the matching
+ * subscribers, so nothing is left streaming into a released entry.
+ */
+export function resetUnitStreamsForTests(): void {
+  liveStreams.clear();
+}
+
+/**
+ * Attaches to a live unit's event stream.
+ *
+ * The unit is read *before* the subscribe is sent, so a caller can be told what
+ * it is attaching to — and be refused if there is nothing to attach to — without
+ * having already consumed part of a stream it may not be allowed to have. The
+ * read is also the ownership check: the agent answers a stranger's unit exactly
+ * as it answers one that does not exist, and it runs on *every* attach rather
+ * than only the first, so a later viewer cannot ride in on an open stream.
+ *
+ * The subscribe then replays everything the agent still retains, which is what
+ * makes a late attach (a page reload, a window reopened) show the output so far
+ * rather than starting from an empty screen. Events can therefore begin arriving
+ * before this function resolves — the agent writes its replay ahead of the
+ * subscribe reply — which is the caller's problem to order, not something
+ * silently dropped here. `ws/units.ws.ts` holds them until it has sent `ready`.
+ */
+export async function subscribeHostUnit(
+  agentId: string,
+  unitId: string,
+  ownerUserId: string,
+  onEvent: (message: UnitServerMessage) => void
+): Promise<HostUnitSubscription> {
+  requireConnected(agentId);
+  const unit = await getHostUnit(agentId, unitId, ownerUserId);
+
+  const key = streamKey(agentId, unitId);
+  const existing = liveStreams.get(key);
+  const stream: LiveUnitStream = existing ?? {
+    listeners: new Set(),
+    release: null,
+    attaching: null,
+  };
+  if (!existing) liveStreams.set(key, stream);
+  stream.listeners.add(onEvent);
+
+  if (stream.release === null) {
+    // One subscribe per unit, however many viewers. The callback fans out to
+    // whoever is listening *now*, so a viewer that joins mid-attach still
+    // receives the replay.
+    stream.attaching ??= subscribeAgentUnit(agentId, unitId, ownerUserId, (event) => {
+      const message = toUnitServerMessage(event);
+      if (message === null) return;
+      for (const listener of stream.listeners) listener(message);
+    });
+    try {
+      stream.release = await stream.attaching;
+      stream.attaching = null;
+    } catch (error) {
+      // Nothing was opened, so nothing is left holding the entry: the next
+      // caller starts a fresh attach rather than inheriting a dead one.
+      stream.attaching = null;
+      releaseListener(key, stream, onEvent);
+      throw error;
+    }
+  }
+
+  let detached = false;
+  return {
+    unit,
+    unsubscribe: () => {
+      // Idempotent: the socket's close and error handlers both call this, and a
+      // second call must not release a subscription someone else now holds.
+      if (detached) return;
+      detached = true;
+      releaseListener(key, stream, onEvent);
+    },
+  };
+}
+
+/**
+ * Removes one listener, and releases the agent subscription with the last one.
+ *
+ * The release is what makes this honest rather than merely tidy: a stream nobody
+ * reads should not keep the agent sending frames, and the agent's own replay
+ * means a later viewer loses nothing by it.
+ */
+function releaseListener(
+  key: string,
+  stream: LiveUnitStream,
+  listener: (message: UnitServerMessage) => void
+): void {
+  stream.listeners.delete(listener);
+  if (stream.listeners.size > 0) return;
+
+  liveStreams.delete(key);
+  const release = stream.release;
+  stream.release = null;
+  if (release !== null) {
+    release();
+    return;
+  }
+  // Still attaching: the last viewer left before the agent answered. The
+  // subscription is released the moment it exists, rather than being left to
+  // stream into a map that no longer holds it.
+  void stream.attaching
+    ?.then((releasePending) => {
+      if (stream.listeners.size === 0) releasePending();
+    })
+    .catch(() => undefined);
 }
