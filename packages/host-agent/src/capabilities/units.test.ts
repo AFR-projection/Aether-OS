@@ -18,6 +18,7 @@ import {
   listUnits,
   readUnitLog,
   resetUnitsForTests,
+  restartUnit,
   setBootIdForTests,
   resizeUnit,
   seedUnitForTests,
@@ -357,6 +358,206 @@ describe('unit creation guards', () => {
     // it would be running something other than what it described.
     expect(unitCountForTests()).toBe(0);
   });
+});
+
+/**
+ * Resource limits, and whether the host actually applied them.
+ *
+ * A limit Aether records but never sets is worse than no limit at all: the
+ * caller believes the process is bounded and it is not. So the tests here come
+ * in two layers — the record must say what was requested, and on a POSIX host a
+ * real process must actually be running under the ceiling, with the *hard*
+ * limit set so it cannot be raised back. The second layer is what keeps
+ * `enforced` from being a claim rather than a fact.
+ */
+describe('unit resource limits', () => {
+  const OWNER = '00000000-0000-4000-8000-0000000000f1';
+  let cfg: AgentConfig;
+  let workspace: string;
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(path.join(tmpdir(), 'aether-agent-unit-rlimit-'));
+    process.env.AETHER_WORKSPACE_ROOT = workspace;
+    resetWorkspaceRootCache();
+    resetUnitsForTests();
+    cfg = loadConfig();
+    createLogger(cfg);
+  });
+
+  afterEach(async () => {
+    await endAllUnits('test_teardown');
+    resetUnitsForTests();
+    resetWorkspaceRootCache();
+    await rm(workspace, { recursive: true, force: true });
+    delete process.env.AETHER_WORKSPACE_ROOT;
+  });
+
+  /** Waits for a unit to leave `running`, so its output is complete. */
+  async function waitForEnd(unitId: string, timeoutMs = 15_000): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    let state = getUnit(unitId, OWNER).state;
+    while (state === 'running' || state === 'starting') {
+      if (Date.now() > deadline) throw new Error(`unit ${unitId} never ended`);
+      await new Promise((r) => setTimeout(r, 25));
+      state = getUnit(unitId, OWNER).state;
+    }
+    return state;
+  }
+
+  it('records every requested bound on the unit, and reports it unenforced on a host that cannot', () => {
+    // Seeded, so this runs everywhere: the *record* of what was asked for is
+    // platform-independent, and `enforced` must be false here because a seeded
+    // unit ran no prologue.
+    const unit = seedUnitForTests(OWNER, {
+      limits: {
+        wallClockMs: null,
+        graceMs: 5_000,
+        maxOutputBytes: 256 * 1024,
+        addressSpaceBytes: 128 * 1024 * 1024,
+        cpuSeconds: 30,
+        maxOpenFiles: 256,
+        coreDumpBytes: 0,
+        enforced: false,
+        exceeded: null,
+      },
+    });
+
+    expect(unit.limits.addressSpaceBytes).toBe(128 * 1024 * 1024);
+    expect(unit.limits.cpuSeconds).toBe(30);
+    expect(unit.limits.maxOpenFiles).toBe(256);
+    expect(unit.limits.coreDumpBytes).toBe(0);
+    expect(unit.limits.enforced).toBe(false);
+  });
+
+  it('reports no bounds and unenforced when the caller asked for none', async () => {
+    if (!canSpawn()) return;
+
+    const unit = await createUnit(cfg, OWNER, { kind: 'tty', cols: 80, rows: 24 });
+
+    expect(unit.limits.addressSpaceBytes).toBeNull();
+    expect(unit.limits.cpuSeconds).toBeNull();
+    expect(unit.limits.maxOpenFiles).toBeNull();
+    expect(unit.limits.coreDumpBytes).toBeNull();
+    // Nothing was requested, so nothing was applied. `enforced: true` here
+    // would be Aether claiming credit for a bound nobody asked for.
+    expect(unit.limits.enforced).toBe(false);
+  });
+
+  it('runs the command under the requested hard limits — ulimit reports them, and -H matches -S', async () => {
+    if (!canSpawn()) return;
+
+    // The command prints the soft and hard ceilings the shell sees. If the
+    // prologue did not reach this process, these would be the host's own values
+    // (commonly 1048576 for files, "unlimited" for address space). The hard
+    // value matching the soft one is the guarantee that matters: a process
+    // cannot raise a limit whose hard ceiling is already at the value.
+    const unit = await createUnit(cfg, OWNER, {
+      kind: 'command',
+      command: 'echo "soft=$(ulimit -Sn) hard=$(ulimit -Hn)"; echo "vsoft=$(ulimit -Sv)"',
+      cols: 80,
+      rows: 24,
+      rlimits: { addressSpaceBytes: 256 * 1024 * 1024, cpuSeconds: null, maxOpenFiles: 128, coreDumpBytes: null },
+    });
+
+    await waitForEnd(unit.id);
+    const out = readUnitLog(unit.id, OWNER, { offset: 0, limit: 64 * 1024, stream: 'combined' })
+      .content;
+
+    expect(out).toContain('soft=128');
+    expect(out).toContain('hard=128');
+    // 256 MiB in the shell's 1024-byte units.
+    expect(out).toContain('vsoft=262144');
+
+    // And the record agrees with what the process actually saw.
+    const after = getUnit(unit.id, OWNER);
+    expect(after.limits.enforced).toBe(true);
+    expect(after.limits.maxOpenFiles).toBe(128);
+    expect(after.limits.addressSpaceBytes).toBe(256 * 1024 * 1024);
+  });
+
+  it('reports enforced as false even when a bound was requested, if the platform cannot apply it', async () => {
+    if (!canSpawn()) return;
+    if (process.platform === 'win32') {
+      // On Windows there is no `ulimit`; the honest answer is that the bound is
+      // recorded but not in force. This branch documents the expectation where
+      // it can actually be observed.
+      const unit = await createUnit(cfg, OWNER, {
+        kind: 'command',
+        command: 'echo hi',
+        cols: 80,
+        rows: 24,
+        rlimits: { addressSpaceBytes: 64 * 1024 * 1024, cpuSeconds: null, maxOpenFiles: null, coreDumpBytes: null },
+      });
+      expect(unit.limits.addressSpaceBytes).toBe(64 * 1024 * 1024);
+      expect(unit.limits.enforced).toBe(false);
+      return;
+    }
+    // On POSIX the mirror holds: the same request *is* enforced.
+    const unit = await createUnit(cfg, OWNER, {
+      kind: 'command',
+      command: 'echo hi',
+      cols: 80,
+      rows: 24,
+      rlimits: { addressSpaceBytes: 64 * 1024 * 1024, cpuSeconds: null, maxOpenFiles: null, coreDumpBytes: null },
+    });
+    expect(unit.limits.enforced).toBe(true);
+  });
+
+  it('carries the bounds forward across a restart', async () => {
+    if (!canSpawn()) return;
+
+    const unit = await createUnit(cfg, OWNER, {
+      kind: 'command',
+      command: 'echo "n=$(ulimit -Hn)"',
+      cols: 80,
+      rows: 24,
+      rlimits: { addressSpaceBytes: null, cpuSeconds: null, maxOpenFiles: 64, coreDumpBytes: null },
+    });
+    await waitForEnd(unit.id);
+
+    // A restart reproduces the spec, so the fresh process must run under the
+    // same ceiling rather than silently losing it.
+    const restarted = await restartUnit(cfg, unit.id, OWNER);
+    expect(restarted.limits.maxOpenFiles).toBe(64);
+    expect(restarted.limits.enforced).toBe(true);
+
+    await waitForEnd(restarted.id);
+    const out = readUnitLog(restarted.id, OWNER, {
+      offset: 0,
+      limit: 64 * 1024,
+      stream: 'combined',
+    }).content;
+    expect(out).toContain('n=64');
+  });
+
+  it('applies the bounds to an interactive tty, which the user then types into', async () => {
+    if (!canSpawn()) return;
+
+    // An interactive unit has no command, so the prologue has to exec the login
+    // shell itself — the user's keystrokes must land in a shell that already
+    // carries the ceiling.
+    const unit = await createUnit(cfg, OWNER, {
+      kind: 'tty',
+      cols: 80,
+      rows: 24,
+      rlimits: { addressSpaceBytes: null, cpuSeconds: null, maxOpenFiles: 96, coreDumpBytes: null },
+    });
+
+    expect(unit.limits.maxOpenFiles).toBe(96);
+    expect(unit.limits.enforced).toBe(true);
+
+    // Typed into the live shell, which is the case the prologue's `exec` shape
+    // exists for.
+    writeUnitInput(unit.id, OWNER, 'echo "n=$(ulimit -Hn)"\n');
+    const deadline = Date.now() + 15_000;
+    let out = '';
+    while (Date.now() < deadline) {
+      out = readUnitLog(unit.id, OWNER, { offset: 0, limit: 64 * 1024, stream: 'combined' }).content;
+      if (out.includes('n=96')) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(out).toContain('n=96');
+  }, 20_000);
 });
 
 /**

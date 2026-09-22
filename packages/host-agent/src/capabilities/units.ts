@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   DEFAULT_TERM,
   LIMITS,
+  buildRlimitPrologue,
   buildShellArgv,
   buildShellEnvironment,
   deriveUnitState,
@@ -17,6 +18,7 @@ import {
   type ExecutionUnitLiveness,
   type ExecutionUnitLogMode,
   type ExecutionUnitProcessIdentity,
+  type ExecutionUnitRlimits,
   type ExecutionUnitState,
   type ExecutionUnitExit,
   type RestartPolicy,
@@ -476,7 +478,53 @@ export interface CreateUnitOptions {
   graceMs?: number | undefined;
   maxOutputBytes?: number | undefined;
   restart?: UnitRestartOptions | undefined;
+  /**
+   * Resource ceilings applied with `ulimit` before the unit's command runs.
+   * Each is a bound, not a grant; a null field leaves that resource at whatever
+   * the host login already set. Bytes here, converted to the shell's own units
+   * by `buildRlimitPrologue`.
+   */
+  rlimits?: ExecutionUnitRlimits | undefined;
   requestId?: string | null | undefined;
+}
+
+/** The rlimit request carried on `options`, with every field defaulted to unset. */
+function rlimitsFromOptions(options: CreateUnitOptions): ExecutionUnitRlimits {
+  return {
+    addressSpaceBytes: options.rlimits?.addressSpaceBytes ?? null,
+    cpuSeconds: options.rlimits?.cpuSeconds ?? null,
+    maxOpenFiles: options.rlimits?.maxOpenFiles ?? null,
+    coreDumpBytes: options.rlimits?.coreDumpBytes ?? null,
+  };
+}
+
+/** POSIX single-quoting, so a shell path with a space or quote survives `-c`. */
+function singleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command string the shell actually runs, once the rlimit prologue is
+ * folded in.
+ *
+ * When no prologue applies this is the caller's command unchanged (and
+ * `undefined` stays `undefined`, i.e. a bare interactive login shell). When a
+ * prologue applies:
+ * - a `command` unit runs `<ulimits>; <command>` — the limits are set in the
+ *   same shell, before the target runs, and cannot be raised by it;
+ * - an interactive `tty` with no command runs `<ulimits>; exec <shell> -il`, so
+ *   the limits are set and then `exec` replaces the process with the
+ *   interactive login shell the user types into — which inherits them, with no
+ *   extra shell left in the process tree.
+ */
+function buildEffectiveCommand(
+  shell: string,
+  command: string | undefined,
+  prologue: string
+): string | undefined {
+  if (prologue === '') return command;
+  if (command !== undefined && command !== '') return `${prologue} ${command}`;
+  return `${prologue} exec ${singleQuote(shell)} -il`;
 }
 
 function countLiveUnits(ownerUserId?: string): number {
@@ -572,6 +620,10 @@ export async function createUnit(
         wallClockMs: options.wallClockMs ?? null,
         graceMs: options.graceMs ?? cfg.EXECUTION_GRACE_MS,
         maxOutputBytes: options.maxOutputBytes ?? cfg.EXECUTION_LOG_MAX_BYTES,
+        ...rlimitsFromOptions(options),
+        // `spawnInto` is the only writer that knows whether the platform could
+        // actually apply the ulimits; it flips this to true when it does.
+        enforced: false,
         exceeded: null,
       },
       log: { mode: 'pty', retainedBytes: 0, droppedBytes: 0, totalBytes: 0 },
@@ -746,6 +798,26 @@ async function spawnInto(
     runtime.resolveEnded = resolve;
   });
 
+  // The rlimit prologue runs in the same shell, before any user code, so the
+  // hard limits are in force by the time the target exec happens and the child
+  // cannot raise them. It is applied only where the shell honours `ulimit`:
+  // Windows has none, so a bound requested there is reported as *not* enforced
+  // rather than silently dropped — `enforced` states what happened, not what
+  // was asked for.
+  const rlimits = rlimitsFromOptions(options);
+  const prologue = buildRlimitPrologue(rlimits);
+  const enforced = prologue !== '' && process.platform !== 'win32';
+  runtime.unit.limits.addressSpaceBytes = rlimits.addressSpaceBytes;
+  runtime.unit.limits.cpuSeconds = rlimits.cpuSeconds;
+  runtime.unit.limits.maxOpenFiles = rlimits.maxOpenFiles;
+  runtime.unit.limits.coreDumpBytes = rlimits.coreDumpBytes;
+  runtime.unit.limits.enforced = enforced;
+  const effectiveCommand = buildEffectiveCommand(
+    shell,
+    options.command,
+    enforced ? prologue : ''
+  );
+
   if (mode === 'pty') {
     const pty = await loadPty();
     // Both spawn sites below name `buildShellArgv` and `buildShellEnvironment`
@@ -758,7 +830,7 @@ async function spawnInto(
     // The allowlist matters most here: the agent's pairing token lives in this
     // process's environment, and a shell running as the same user could read it
     // with a single `env`.
-    const child = pty.spawn(shell, buildShellArgv(options.command), {
+    const child = pty.spawn(shell, buildShellArgv(effectiveCommand), {
       name: options.term ?? DEFAULT_TERM,
       cols: runtime.unit.spec.cols ?? 80,
       rows: runtime.unit.spec.rows ?? 24,
@@ -808,7 +880,7 @@ async function spawnInto(
     return;
   }
 
-  const child = spawnProcess(shell, buildShellArgv(options.command), {
+  const child = spawnProcess(shell, buildShellArgv(effectiveCommand), {
     cwd,
     env: {
       ...buildShellEnvironment({ ...identity, shell }, { cwd, ambient: process.env }),
@@ -1136,6 +1208,14 @@ async function respawn(
       wallClockMs: unit.limits.wallClockMs,
       graceMs: unit.limits.graceMs,
       maxOutputBytes: unit.limits.maxOutputBytes,
+      // A restart reproduces the same bounds, so the fresh process runs under
+      // the rlimits the original was given rather than none.
+      rlimits: {
+        addressSpaceBytes: unit.limits.addressSpaceBytes,
+        cpuSeconds: unit.limits.cpuSeconds,
+        maxOpenFiles: unit.limits.maxOpenFiles,
+        coreDumpBytes: unit.limits.coreDumpBytes,
+      },
       ...(unit.spec.command !== undefined ? { command: unit.spec.command } : {}),
     },
     true
@@ -1791,6 +1871,11 @@ export function seedUnitForTests(
       wallClockMs: null,
       graceMs: 5_000,
       maxOutputBytes: maxBytes,
+      addressSpaceBytes: null,
+      cpuSeconds: null,
+      maxOpenFiles: null,
+      coreDumpBytes: null,
+      enforced: false,
       exceeded: null,
     },
     log: { mode: 'pty', retainedBytes: 0, droppedBytes: 0, totalBytes: 0 },

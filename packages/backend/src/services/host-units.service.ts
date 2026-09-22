@@ -182,6 +182,7 @@ export async function createHostUnit(
       graceMs: body.graceMs,
       maxOutputBytes: body.maxOutputBytes,
       ...(body.restart !== undefined ? { restart: body.restart } : {}),
+      ...(body.rlimits !== undefined ? { rlimits: body.rlimits } : {}),
       ...(body.requestId !== undefined ? { requestId: body.requestId } : {}),
     },
     ownerUserId

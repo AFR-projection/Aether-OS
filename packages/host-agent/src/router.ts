@@ -162,6 +162,12 @@ interface UnitsCreateParams {
   graceMs: number;
   maxOutputBytes: number;
   restart?: { policy: 'never' | 'on-failure' | 'always'; maxAttempts: number; backoffMs: number };
+  rlimits?: {
+    addressSpaceBytes: number | null;
+    cpuSeconds: number | null;
+    maxOpenFiles: number | null;
+    coreDumpBytes: number | null;
+  };
   requestId?: string;
 }
 
@@ -391,6 +397,7 @@ async function route(
         graceMs: params.graceMs,
         maxOutputBytes: params.maxOutputBytes,
         restart: params.restart,
+        rlimits: params.rlimits,
         requestId: params.requestId,
       });
     }

@@ -67,6 +67,36 @@ export const createUnitBodySchema = z.object({
     })
     .optional(),
   /**
+   * Optional resource ceilings applied with `ulimit` before the unit's command
+   * runs. Every one is a *bound*, not a grant: it is set as a hard limit so the
+   * process cannot raise it, and omitting a field leaves that resource at
+   * whatever the host's login already sets. Bytes are the unit of currency here;
+   * the agent converts to the shell's own units. See `buildRlimitPrologue`.
+   *
+   * `addressSpaceBytes` (RLIMIT_AS) is a virtual-memory bound and is explicitly
+   * NOT a cgroup `memory.max`; a real memory cage is the P2 supervisor.
+   */
+  rlimits: z
+    .object({
+      addressSpaceBytes: z
+        .number()
+        .int()
+        .min(16 * 1024 * 1024)
+        .max(1024 * 1024 * 1024 * 1024)
+        .nullable()
+        .default(null),
+      cpuSeconds: z.number().int().min(1).max(86_400).nullable().default(null),
+      maxOpenFiles: z.number().int().min(16).max(1_048_576).nullable().default(null),
+      coreDumpBytes: z
+        .number()
+        .int()
+        .min(0)
+        .max(4 * 1024 * 1024 * 1024)
+        .nullable()
+        .default(null),
+    })
+    .optional(),
+  /**
    * Idempotency token. Two creates with the same token and owner describe one
    * unit, so a retry cannot leave two shells behind.
    */

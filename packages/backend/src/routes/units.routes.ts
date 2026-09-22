@@ -1,5 +1,7 @@
 import {
+  DEFAULT_EXECUTION_UNIT_LIMITS,
   createUnitBodySchema,
+  hasRequestedRlimits,
   unitIdParamSchema,
   unitLogQuerySchema,
   unitScopedQuerySchema,
@@ -134,12 +136,65 @@ export function registerUnitRoutes(app: FastifyInstance): void {
 
       const unit = await createHostUnit(principal.user.id, body);
 
-      await recordUnitAudit(request, 'unit.created', unit.id, {
+      void recordUnitAudit(request, 'unit.created', unit.id, {
         agentId: body.agentId,
         kind: unit.kind,
         pid: unit.process.pid,
         requestId: body.requestId ?? null,
       });
+
+      const hasNonDefaultWallClock = body.wallClockMs !== null;
+      const hasNonDefaultOutput =
+        body.maxOutputBytes !== DEFAULT_EXECUTION_UNIT_LIMITS.maxOutputBytes;
+      const hasNonDefaultRestart =
+        (body.restart?.policy ?? 'never') !== 'never' ||
+        (body.restart?.maxAttempts ?? 0) > 0;
+      const requestedRlimits = {
+        addressSpaceBytes: body.rlimits?.addressSpaceBytes ?? null,
+        cpuSeconds: body.rlimits?.cpuSeconds ?? null,
+        maxOpenFiles: body.rlimits?.maxOpenFiles ?? null,
+        coreDumpBytes: body.rlimits?.coreDumpBytes ?? null,
+      };
+      const hasNonDefaultRlimits = hasRequestedRlimits(requestedRlimits);
+      const hasNonDefaultLimit =
+        hasNonDefaultWallClock ||
+        hasNonDefaultOutput ||
+        hasNonDefaultRestart ||
+        hasNonDefaultRlimits;
+
+      // Audit limit application when non-default limits were requested and applied.
+      // "limit-change" means a limit that was explicitly set, not merely the
+      // defaults — and it fires even when the caller held `limits:raise`,
+      // because the permission being used is part of what the audit records.
+      // `effective.rlimits.enforced` records whether the host actually applied
+      // the ulimits (false on Windows, or when none were requested), so the log
+      // never claims a bound is in force when the platform could not set it.
+      if (hasNonDefaultLimit) {
+        void recordUnitAudit(request, 'unit.limits-applied', unit.id, {
+          agentId: body.agentId,
+          requested: {
+            wallClockMs: body.wallClockMs,
+            maxOutputBytes: body.maxOutputBytes,
+            restartPolicy: body.restart?.policy ?? 'never',
+            restartMaxAttempts: body.restart?.maxAttempts ?? 0,
+            rlimits: requestedRlimits,
+          },
+          effective: {
+            wallClockMs: unit.limits.wallClockMs,
+            maxOutputBytes: unit.limits.maxOutputBytes,
+            graceMs: unit.limits.graceMs,
+            rlimits: {
+              addressSpaceBytes: unit.limits.addressSpaceBytes,
+              cpuSeconds: unit.limits.cpuSeconds,
+              maxOpenFiles: unit.limits.maxOpenFiles,
+              coreDumpBytes: unit.limits.coreDumpBytes,
+              enforced: unit.limits.enforced,
+            },
+          },
+          usedRaisePermission:
+            principal.user.permissions.includes('execution:limits:raise'),
+        });
+      }
 
       const payload: UnitResponse = { unit };
       return reply.status(201).send({ data: payload });
@@ -221,7 +276,12 @@ export function registerUnitRoutes(app: FastifyInstance): void {
 /** Writes a unit lifecycle audit event, carrying the acting principal and request context. */
 async function recordUnitAudit(
   request: FastifyRequest,
-  action: 'unit.created' | 'unit.signalled' | 'unit.restarted' | 'unit.killed',
+  action:
+    | 'unit.created'
+    | 'unit.signalled'
+    | 'unit.restarted'
+    | 'unit.killed'
+    | 'unit.limits-applied',
   unitId: string,
   metadata: Record<string, unknown>
 ): Promise<void> {

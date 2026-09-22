@@ -120,6 +120,33 @@ export interface ExecutionUnitLimits {
   graceMs: number;
   /** Output bytes retained in the agent's in-memory ring. */
   maxOutputBytes: number;
+  /**
+   * Virtual-address-space ceiling (`RLIMIT_AS`), in bytes. Null means unset.
+   *
+   * This is *not* a substitute for a cgroup `memory.max`. `RLIMIT_AS` bounds the
+   * process's virtual address space, which a program can exceed in ways that
+   * matter (mmapped files, overcommit) and which does not account shared pages
+   * the way a memory controller does. It is the honest, no-privilege-required
+   * bound the shell can set on itself; a real memory cage is the systemd/cgroup
+   * supervisor, which is P2 and deliberately not built here.
+   */
+  addressSpaceBytes: number | null;
+  /** CPU-time ceiling (`RLIMIT_CPU`), in seconds. Null means unset. */
+  cpuSeconds: number | null;
+  /** Open-file-descriptor ceiling (`RLIMIT_NOFILE`), a count. Null means unset. */
+  maxOpenFiles: number | null;
+  /** Core-dump-size ceiling (`RLIMIT_CORE`), in bytes; 0 disables cores. Null means unset. */
+  coreDumpBytes: number | null;
+  /**
+   * Whether the host actually applied the requested rlimits.
+   *
+   * True only when at least one rlimit above was requested *and* the platform
+   * could enforce it (a POSIX shell that honours `ulimit`). On Windows, or when
+   * no rlimit was requested, this is `false` — the field reports what happened,
+   * never what was hoped, so a caller is never told a bound is in force when it
+   * is not.
+   */
+  enforced: boolean;
   /** Which bound fired, if one did. */
   exceeded: 'wall_clock' | 'output' | null;
 }
@@ -233,8 +260,64 @@ export const DEFAULT_EXECUTION_UNIT_LIMITS: ExecutionUnitLimits = {
   wallClockMs: null,
   graceMs: 5_000,
   maxOutputBytes: 256 * 1024,
+  addressSpaceBytes: null,
+  cpuSeconds: null,
+  maxOpenFiles: null,
+  coreDumpBytes: null,
+  enforced: false,
   exceeded: null,
 };
+
+/** The rlimit subset a caller may request on a unit. All optional; null means unset. */
+export interface ExecutionUnitRlimits {
+  addressSpaceBytes: number | null;
+  cpuSeconds: number | null;
+  maxOpenFiles: number | null;
+  coreDumpBytes: number | null;
+}
+
+/** True when at least one rlimit is actually requested (not all null). */
+export function hasRequestedRlimits(rlimits: ExecutionUnitRlimits): boolean {
+  return (
+    rlimits.addressSpaceBytes !== null ||
+    rlimits.cpuSeconds !== null ||
+    rlimits.maxOpenFiles !== null ||
+    rlimits.coreDumpBytes !== null
+  );
+}
+
+/**
+ * A shell prologue that applies the requested rlimits, or `''` when none are.
+ *
+ * Every limit is set with no `-H`/`-S` flag, which sets *both* the soft and the
+ * hard limit — so the value is the ceiling and the child cannot raise it again,
+ * which is the "not raisable by the command" guarantee. Lowering a hard limit
+ * needs no privilege, so this works whether the agent runs as root or not.
+ *
+ * The prologue ends with a separator so the caller appends the real command (or
+ * an `exec` into an interactive shell) after it, in the same shell, before any
+ * user code runs — the "hard limit applied before target exec" requirement.
+ *
+ * `ulimit -v` and `-c` take units of 1024 bytes; `-t` seconds; `-n` a count.
+ * Byte inputs are converted here so the model speaks bytes and the shell speaks
+ * its own units in exactly one place.
+ */
+export function buildRlimitPrologue(rlimits: ExecutionUnitRlimits): string {
+  const parts: string[] = [];
+  if (rlimits.coreDumpBytes !== null) {
+    parts.push(`ulimit -c ${Math.ceil(rlimits.coreDumpBytes / 1024)}`);
+  }
+  if (rlimits.maxOpenFiles !== null) {
+    parts.push(`ulimit -n ${rlimits.maxOpenFiles}`);
+  }
+  if (rlimits.addressSpaceBytes !== null) {
+    parts.push(`ulimit -v ${Math.ceil(rlimits.addressSpaceBytes / 1024)}`);
+  }
+  if (rlimits.cpuSeconds !== null) {
+    parts.push(`ulimit -t ${rlimits.cpuSeconds}`);
+  }
+  return parts.length === 0 ? '' : `${parts.join('; ')};`;
+}
 
 /**
  * Collapses an exit status and a signal into one number, the way a shell does.

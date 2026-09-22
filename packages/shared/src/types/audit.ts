@@ -14,6 +14,7 @@ export const AUDIT_ACTIONS = [
   'unit.signalled',
   'unit.restarted',
   'unit.killed',
+  'unit.limits-applied',
   'file.read',
   'file.written',
   'file.deleted',
