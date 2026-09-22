@@ -388,3 +388,60 @@ describe('setSnapPreview', () => {
     expect(useDesktopStore.getState().snapPreview).toBeNull();
   });
 });
+
+/**
+ * Window cycling (the keyboard "app switch"). Cycling must walk *every* visible
+ * window in a stable order rather than toggling the top two, and it must skip
+ * minimised windows. Focusing raises z-order, so the walk keys off creation
+ * order instead — that invariant is what these assert.
+ */
+describe('cycleFocus', () => {
+  beforeEach(() => {
+    useDesktopStore.setState({
+      windows: [
+        windowFixture({ id: 'a', appId: 'files', zIndex: 11 }),
+        windowFixture({ id: 'b', appId: 'terminal', zIndex: 12 }),
+        windowFixture({ id: 'c', appId: 'settings', zIndex: 13 }),
+      ],
+      focusedId: 'a',
+      topZIndex: 13,
+    });
+  });
+
+  it('walks every window forward in creation order, wrapping', () => {
+    const seen: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      useDesktopStore.getState().cycleFocus(1);
+      seen.push(useDesktopStore.getState().focusedId!);
+    }
+    // a → b → c → a: all three visited, not a two-window toggle.
+    expect(seen).toEqual(['b', 'c', 'a']);
+  });
+
+  it('walks backward, wrapping past the start', () => {
+    useDesktopStore.getState().cycleFocus(-1);
+    expect(useDesktopStore.getState().focusedId).toBe('c');
+  });
+
+  it('skips minimised windows', () => {
+    useDesktopStore.setState({
+      windows: [
+        windowFixture({ id: 'a', zIndex: 11 }),
+        windowFixture({ id: 'b', zIndex: 12, minimized: true }),
+        windowFixture({ id: 'c', zIndex: 13 }),
+      ],
+      focusedId: 'a',
+    });
+    useDesktopStore.getState().cycleFocus(1);
+    expect(useDesktopStore.getState().focusedId).toBe('c');
+  });
+
+  it('is a no-op with fewer than two visible windows', () => {
+    useDesktopStore.setState({
+      windows: [windowFixture({ id: 'a', zIndex: 11 })],
+      focusedId: 'a',
+    });
+    useDesktopStore.getState().cycleFocus(1);
+    expect(useDesktopStore.getState().focusedId).toBe('a');
+  });
+});

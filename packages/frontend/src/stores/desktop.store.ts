@@ -71,6 +71,13 @@ interface DesktopState {
   closeWindow: (id: string) => void;
   closeAll: () => void;
   focusWindow: (id: string) => void;
+  /**
+   * Moves focus to the next (`1`) or previous (`-1`) window, cycling through the
+   * non-minimised windows in creation order — the stable order the taskbar shows
+   * — so repeated presses walk every window rather than toggling two. A no-op
+   * with fewer than two visible windows.
+   */
+  cycleFocus: (direction: 1 | -1) => void;
   minimizeWindow: (id: string) => void;
   restoreWindow: (id: string) => void;
   toggleMinimize: (id: string) => void;
@@ -381,6 +388,20 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         window.id === id ? { ...window, zIndex, minimized: false } : window
       ),
     });
+  },
+
+  cycleFocus: (direction) => {
+    const state = get();
+    // Creation order (the array order) is stable while cycling; z-order is not,
+    // because focusing raises the target, which would collapse the walk into a
+    // two-window toggle.
+    const visible = state.windows.filter((window) => !window.minimized);
+    if (visible.length < 2) return;
+
+    const current = visible.findIndex((window) => window.id === state.focusedId);
+    const from = current < 0 ? 0 : current;
+    const next = (from + direction + visible.length) % visible.length;
+    get().focusWindow(visible[next]!.id);
   },
 
   minimizeWindow: (id) => {

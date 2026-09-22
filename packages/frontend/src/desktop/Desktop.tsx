@@ -6,6 +6,7 @@ import { NotificationCentre } from './NotificationCentre.js';
 import { Shell } from './Shell.js';
 import { Toaster } from './Toaster.js';
 import { useDesktopLayout } from './useDesktopLayout.js';
+import { useGlobalShortcuts } from './useGlobalShortcuts.js';
 import { useTerminalRecovery } from './useTerminalRecovery.js';
 import { Window } from './Window.js';
 import { APP_REGISTRY } from '../apps/registry.js';
@@ -77,6 +78,9 @@ export function Desktop() {
   // Restore and persist the per-user window layout. Runs for any signed-in
   // user; gated on `user` only so it does nothing on the login screen.
   useDesktopLayout(user !== null);
+
+  // Global keyboard shortcuts: window snapping, cycling, and the launcher.
+  useGlobalShortcuts();
 
   if (user === null) return null;
 

@@ -180,6 +180,31 @@ There is no service worker and no web app manifest. The frontend requires a live
 
 `packages/host-agent` uses `/proc`, `systemd`, and POSIX PTYs. There is no Windows or macOS agent.
 
+### 13b. Keyboard shortcuts cannot capture chords the host OS or browser reserve
+
+**→ referenced by `packages/frontend/src/lib/shortcuts.ts`**
+
+The desktop has a keyboard-shortcut registry (`lib/shortcuts.ts`) with a single global listener
+(`desktop/useGlobalShortcuts.ts`): window snapping (`Ctrl+Alt+←/→/↑/↓`), window cycling
+(`Ctrl+` and `Ctrl+Shift+` backquote), and the launcher (`Ctrl+Space`). It is a real registry, not a
+scatter of `onKeyDown` handlers, and the chords are chosen to be _delivered and cancelable_ inside a
+browser tab.
+
+What a web desktop **cannot** do is what a native window manager does: grab a chord before the
+focused control or the host sees it. Two consequences are deliberate, not bugs:
+
+- **`Super`/`Meta` combos are unavailable.** Windows and GNOME bind `Super+←/→/↑` to their _own_
+  window snapping, and the browser never receives the event. So Aether's window management is on
+  `Ctrl+Alt+<arrow>` instead. (`Ctrl+Alt+<letter>` is avoided too: on many European keyboard layouts
+  `Ctrl+Alt` is `AltGr` and would type a character.)
+- **Shortcuts do not fire while a text field, editor, or terminal has focus.** Monaco and xterm own
+  the keyboard through a real `<textarea>`, and the listener yields to any focused editable element
+  rather than stealing keys mid-type. Click the desktop or a window's chrome first, then snap. There
+  is no `Alt+Tab`, because the host OS consumes it before the tab does.
+
+The registry is extensible and the chords are data, so a user-facing rebinding UI is a later
+addition, not an architectural change.
+
 ---
 
 ## Operational
