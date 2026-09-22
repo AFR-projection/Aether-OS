@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  RLIMIT_UNHONOURED_EXIT,
   buildRlimitPrologue,
   hasRequestedRlimits,
   type ExecutionUnitRlimits,
@@ -55,15 +56,24 @@ describe('buildRlimitPrologue', () => {
     expect(buildRlimitPrologue(NONE)).not.toContain('ulimit');
   });
 
-  it('sets both the soft and the hard limit — no -S and no -H flag', () => {
+  it('sets both the soft and the hard limit — the setting command carries no -S or -H', () => {
     // This is the whole point: `ulimit -v <n>` with no flag sets both, so the
     // value is a ceiling the process cannot raise again. A `-S` would set only
     // the soft limit, which the child could raise back to the (unset) hard one.
     const prologue = buildRlimitPrologue(
       rlimits({ addressSpaceBytes: 256 * 1024 * 1024, cpuSeconds: 10 })
     );
-    expect(prologue).not.toContain('-S');
-    expect(prologue).not.toContain('-H');
+    // Split into statements so the assertion is about the *setting* commands,
+    // not about the read-back that follows each one and does name `-H`.
+    const setters = prologue
+      .split(';')
+      .map((part) => part.trim())
+      .filter((part) => part.startsWith('ulimit '));
+    expect(setters.length).toBeGreaterThan(0);
+    for (const setter of setters) {
+      expect(setter).not.toContain('-S');
+      expect(setter).not.toContain('-H');
+    }
     expect(prologue).toContain('ulimit -v ');
     expect(prologue).toContain('ulimit -t ');
   });
@@ -127,5 +137,59 @@ describe('buildRlimitPrologue', () => {
     expect(prologue).not.toContain('ulimit -v');
     expect(prologue).not.toContain('ulimit -n');
     expect(prologue).not.toContain('ulimit -c');
+  });
+
+  describe('a bound that cannot be applied ends the unit instead of running unbounded', () => {
+    // This is the difference between a bound and a belief. A shell that cannot
+    // set a limit may report an error — or, as Cygwin's `ulimit -n` does, report
+    // success and change nothing. So each limit is set, then read back and
+    // compared; a check that only trusted the exit status would miss the second
+    // case entirely.
+
+    it('sets and then verifies every limit — two guards each, not one for the group', () => {
+      const prologue = buildRlimitPrologue(
+        rlimits({
+          addressSpaceBytes: 1024 * 1024,
+          cpuSeconds: 60,
+          maxOpenFiles: 128,
+          coreDumpBytes: 0,
+        })
+      );
+      const guards = prologue.match(/\|\| exit \d+/g) ?? [];
+      // Four limits × (set, verify). One guard for the whole group would let
+      // three of four failures pass unnoticed.
+      expect(guards).toHaveLength(8);
+    });
+
+    it('compares the hard limit that was actually set, after setting it', () => {
+      const prologue = buildRlimitPrologue(rlimits({ maxOpenFiles: 128 }));
+      // The read-back must come after the set, and must read the *hard* limit —
+      // a soft-limit check would pass for a process that can raise it back.
+      const setAt = prologue.indexOf('ulimit -n 128');
+      const readAt = prologue.indexOf('ulimit -Hn');
+      expect(setAt).toBeGreaterThanOrEqual(0);
+      expect(readAt).toBeGreaterThan(setAt);
+    });
+
+    it('fails only when the host ends up more permissive than asked for', () => {
+      // `-le`, not `-eq`: a host whose own hard limit is lower gives a tighter
+      // ceiling, which still honours a request for "no more than N".
+      const prologue = buildRlimitPrologue(rlimits({ cpuSeconds: 7 }));
+      expect(prologue).toContain('-le 7');
+    });
+
+    it('uses the reserved status for "Aether could not honour the request"', () => {
+      const prologue = buildRlimitPrologue(rlimits({ cpuSeconds: 5 }));
+      expect(prologue).toContain(`|| exit ${RLIMIT_UNHONOURED_EXIT}`);
+      // 125 is the conventional "the command could not be executed" status, so
+      // it is distinguishable from the command's own failure codes.
+      expect(RLIMIT_UNHONOURED_EXIT).toBe(125);
+    });
+
+    it('still emits nothing at all when no bound was requested', () => {
+      // The guard must not appear for a unit that asked for no limits, or every
+      // unit would gain a failure mode it never opted into.
+      expect(buildRlimitPrologue(NONE)).toBe('');
+    });
   });
 });

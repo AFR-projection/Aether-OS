@@ -145,6 +145,11 @@ export interface ExecutionUnitLimits {
    * no rlimit was requested, this is `false` — the field reports what happened,
    * never what was hoped, so a caller is never told a bound is in force when it
    * is not.
+   *
+   * This is the answer at *spawn* time. A host that claims to be able to set
+   * the limit but cannot is caught by the prologue itself, which ends the unit
+   * with `RLIMIT_UNHONOURED_EXIT` (125) rather than running it unbounded — see
+   * `buildRlimitPrologue`.
    */
   enforced: boolean;
   /** Which bound fired, if one did. */
@@ -287,12 +292,43 @@ export function hasRequestedRlimits(rlimits: ExecutionUnitRlimits): boolean {
 }
 
 /**
+ * The exit status a unit ends with when a requested bound could not be applied.
+ *
+ * Not an arbitrary number: 125 is the conventional "the command could not be
+ * executed" status (`timeout` and `xargs` both use it for a failure that
+ * precedes the command). Here it means exactly that — Aether was asked to run
+ * the command under a ceiling, could not set the ceiling, and therefore did not
+ * run the command at all.
+ */
+export const RLIMIT_UNHONOURED_EXIT = 125;
+
+/**
  * A shell prologue that applies the requested rlimits, or `''` when none are.
  *
  * Every limit is set with no `-H`/`-S` flag, which sets *both* the soft and the
  * hard limit — so the value is the ceiling and the child cannot raise it again,
  * which is the "not raisable by the command" guarantee. Lowering a hard limit
  * needs no privilege, so this works whether the agent runs as root or not.
+ *
+ * ## Why each limit is guarded twice
+ *
+ * A bound Aether records but does not apply is worse than no bound: the caller
+ * believes the process is capped and it is not. So each `ulimit` is both
+ * *guarded* (`|| exit 125`, for a shell that refuses outright) and *verified*
+ * (read the hard limit back and compare). The verification is not paranoia:
+ * Cygwin's `ulimit -n` reports success while leaving the limit untouched, which
+ * an exit-status check cannot see.
+ *
+ * The comparison is `-le`, not `-eq`, and that is deliberate. A host whose own
+ * hard limit is *lower* than the request gives the process a tighter ceiling
+ * than asked for, which still honours a request for "no more than N" — failing
+ * the unit there would be wrong. Only a host that ends up more permissive than
+ * requested fails, which is exactly the case where the guarantee was not met.
+ *
+ * When either check fails the unit ends with `RLIMIT_UNHONOURED_EXIT` before
+ * the target runs. The caller is told the command did not run under the ceiling
+ * it asked for, rather than being handed an unbounded process and a record
+ * claiming otherwise. A host that honours `ulimit` never takes this path.
  *
  * The prologue ends with a separator so the caller appends the real command (or
  * an `exec` into an interactive shell) after it, in the same shell, before any
@@ -303,20 +339,34 @@ export function hasRequestedRlimits(rlimits: ExecutionUnitRlimits): boolean {
  * its own units in exactly one place.
  */
 export function buildRlimitPrologue(rlimits: ExecutionUnitRlimits): string {
+  /**
+   * One limit: set it, then confirm the hard ceiling landed.
+   *
+   * `resourceFlag` is the `ulimit` letter (`c`, `n`, `v`, `t`); `value` is
+   * already in the shell's own unit for that resource.
+   */
+  function apply(resourceFlag: string, value: number): string {
+    return (
+      `ulimit -${resourceFlag} ${value} || exit ${RLIMIT_UNHONOURED_EXIT}; ` +
+      `[ "$(ulimit -H${resourceFlag})" -le ${value} ] 2>/dev/null || exit ${RLIMIT_UNHONOURED_EXIT}`
+    );
+  }
+
   const parts: string[] = [];
   if (rlimits.coreDumpBytes !== null) {
-    parts.push(`ulimit -c ${Math.ceil(rlimits.coreDumpBytes / 1024)}`);
+    parts.push(apply('c', Math.ceil(rlimits.coreDumpBytes / 1024)));
   }
   if (rlimits.maxOpenFiles !== null) {
-    parts.push(`ulimit -n ${rlimits.maxOpenFiles}`);
+    parts.push(apply('n', rlimits.maxOpenFiles));
   }
   if (rlimits.addressSpaceBytes !== null) {
-    parts.push(`ulimit -v ${Math.ceil(rlimits.addressSpaceBytes / 1024)}`);
+    parts.push(apply('v', Math.ceil(rlimits.addressSpaceBytes / 1024)));
   }
   if (rlimits.cpuSeconds !== null) {
-    parts.push(`ulimit -t ${rlimits.cpuSeconds}`);
+    parts.push(apply('t', rlimits.cpuSeconds));
   }
-  return parts.length === 0 ? '' : `${parts.join('; ')};`;
+  if (parts.length === 0) return '';
+  return `${parts.join('; ')};`;
 }
 
 /**

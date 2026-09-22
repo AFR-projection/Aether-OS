@@ -561,6 +561,197 @@ describe('unit resource limits', () => {
 });
 
 /**
+ * Killing a whole process tree, and the escalation that makes it stick.
+ *
+ * A unit is not one process: it is a shell and everything the shell started.
+ * A kill that reaches only the shell leaves the children orphaned and running —
+ * the failure mode where a build's compiler keeps burning CPU after the build
+ * "stopped". The agent makes the child a process-group leader for exactly this
+ * reason, and these tests hold it to that with real processes: a grandchild is
+ * started, and its own liveness is asserted before and after the kill.
+ *
+ * The escalation tests are the other half. A polite signal a process can trap
+ * is not a guarantee, so `escalateAfterMs` is how a caller says it would rather
+ * the process were gone than graceful. The mirror case matters just as much: a
+ * process that exits politely must *not* be reported as escalated, or the flag
+ * means nothing.
+ *
+ * All of this is POSIX process-group semantics. There are no groups to signal
+ * on Windows, which the implementation says outright, so a Windows dev box
+ * skips rather than reporting a pass it did not earn.
+ */
+describe('unit process-tree signalling (real processes)', () => {
+  const OWNER = '00000000-0000-4000-8000-000000000101';
+  let cfg: AgentConfig;
+  let workspace: string;
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(path.join(tmpdir(), 'aether-agent-unit-tree-'));
+    process.env.AETHER_WORKSPACE_ROOT = workspace;
+    resetWorkspaceRootCache();
+    resetUnitsForTests();
+    cfg = loadConfig();
+    createLogger(cfg);
+  });
+
+  afterEach(async () => {
+    await endAllUnits('test_teardown');
+    resetUnitsForTests();
+    resetWorkspaceRootCache();
+    await rm(workspace, { recursive: true, force: true });
+    delete process.env.AETHER_WORKSPACE_ROOT;
+  });
+
+  /** True when the kernel still has this pid. Signal 0 asks without touching it. */
+  function isAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Polls until the unit's own state leaves `running`/`starting`. */
+  async function waitForEnd(unitId: string, timeoutMs = 15_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const { state } = getUnit(unitId, OWNER);
+      if (state !== 'running' && state !== 'starting') return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error(`unit ${unitId} never ended`);
+  }
+
+  /** Waits until the unit prints `needle`, and returns everything it printed. */
+  async function waitForOutput(unitId: string, needle: string, timeoutMs = 15_000): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    let out = '';
+    while (Date.now() < deadline) {
+      out = readUnitLog(unitId, OWNER, { offset: 0, limit: 64 * 1024, stream: 'combined' }).content;
+      if (out.includes(needle)) return out;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`unit ${unitId} never printed ${needle}; saw: ${out}`);
+  }
+
+  it('kills the whole process group, not just the shell', async () => {
+    if (!canSpawn()) return;
+
+    // The shell backgrounds a grandchild and writes down its pid, then waits.
+    // `wait` keeps the shell itself alive, so this is a genuine two-level tree:
+    // shell → sh → sleep.
+    const unit = await createUnit(cfg, OWNER, {
+      kind: 'command',
+      command: 'sh -c "sleep 300" & echo "GRANDCHILD=$!"; wait',
+      cols: 80,
+      rows: 24,
+    });
+
+    const out = await waitForOutput(unit.id, 'GRANDCHILD=');
+    const match = /GRANDCHILD=(\d+)/.exec(out);
+    expect(match).not.toBeNull();
+    const grandchild = Number(match?.[1]);
+
+    const before = getUnit(unit.id, OWNER);
+    const shellPid = before.process.pid;
+    expect(shellPid).not.toBeNull();
+    // Both are real and running: the test would be vacuous otherwise.
+    expect(isAlive(grandchild)).toBe(true);
+    expect(isAlive(shellPid as number)).toBe(true);
+
+    await signalUnit(unit.id, OWNER, 'SIGTERM', null);
+    await waitForEnd(unit.id);
+
+    // The shell is gone *and* so is what it started. A group kill is the only
+    // thing that reaches the second one.
+    expect(isAlive(shellPid as number)).toBe(false);
+    const deadline = Date.now() + 5_000;
+    while (isAlive(grandchild) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(isAlive(grandchild)).toBe(false);
+  }, 30_000);
+
+  it('escalates to SIGKILL when a process refuses to die on the polite signal', async () => {
+    if (!canSpawn()) return;
+
+    // The shell ignores SIGTERM outright, so the polite signal cannot work and
+    // only the escalation can end it. This is the honest test of the escape
+    // hatch: without it, the unit would run forever.
+    const unit = await createUnit(cfg, OWNER, {
+      kind: 'command',
+      command: 'trap "" TERM; echo "READY"; while true; do sleep 1; done',
+      cols: 80,
+      rows: 24,
+    });
+
+    await waitForOutput(unit.id, 'READY');
+    const pid = getUnit(unit.id, OWNER).process.pid;
+    expect(pid).not.toBeNull();
+    expect(isAlive(pid as number)).toBe(true);
+
+    const result = await signalUnit(unit.id, OWNER, 'SIGTERM', 500);
+
+    expect(result.delivered).toBe(true);
+    // The flag is the point: the caller is told the polite signal did not work
+    // and a forced one followed, rather than being left to guess.
+    expect(result.escalated).toBe(true);
+
+    await waitForEnd(unit.id);
+    const deadline = Date.now() + 5_000;
+    while (isAlive(pid as number) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(isAlive(pid as number)).toBe(false);
+  }, 30_000);
+
+  it('does not report an escalation when the process exits politely', async () => {
+    if (!canSpawn()) return;
+
+    // `sleep` dies on SIGTERM, so the escalation timer must never fire. A
+    // `true` here would be a lie that makes the flag useless in the other
+    // direction — a caller could not tell a forced kill from a clean one.
+    const unit = await createUnit(cfg, OWNER, {
+      kind: 'command',
+      command: 'sleep 300',
+      cols: 80,
+      rows: 24,
+    });
+
+    // Give the shell time to exec into `sleep` and become signalable.
+    const deadline = Date.now() + 5_000;
+    while (getUnit(unit.id, OWNER).process.pid === null && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const result = await signalUnit(unit.id, OWNER, 'SIGTERM', 5_000);
+
+    expect(result.delivered).toBe(true);
+    expect(result.escalated).toBe(false);
+    await waitForEnd(unit.id);
+  }, 30_000);
+
+  it('reports not-delivered for a unit that has already ended', async () => {
+    if (!canSpawn()) return;
+
+    const unit = await createUnit(cfg, OWNER, {
+      kind: 'command',
+      command: 'true',
+      cols: 80,
+      rows: 24,
+    });
+    await waitForEnd(unit.id);
+
+    const result = await signalUnit(unit.id, OWNER, 'SIGTERM', 500);
+    // The goal state is already reached, so this is not an error — but nothing
+    // was delivered, and saying otherwise would report a signal that went
+    // nowhere.
+    expect(result).toEqual({ delivered: false, escalated: false });
+  }, 20_000);
+});
+
+/**
  * The log ring: absolute offsets, and the dropped-byte accounting that tells a
  * reader its stream is incomplete rather than showing a silent gap.
  */

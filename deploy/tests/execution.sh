@@ -26,6 +26,13 @@
 #                               are re-adopted — same as scenario 3.
 #   6. VPS reboot               the whole host reboots; every unit is GONE and
 #                               reported gone; a new unit afterwards is correct.
+#   7. Resource limits          a unit's own shell reports the `ulimit` ceilings
+#                               it is running under — the host's answer, not
+#                               Aether's — and `enforced` is checked against it.
+#   8. Process tree + escalation  a grandchild is started and confirmed alive by
+#                               the host, then must die with its unit; and a
+#                               SIGTERM a process ignores must be reported as
+#                               escalated, while a polite exit must not be.
 #
 # P1 solves 1, 2, 3 and 5. It does NOT make units survive an agent restart (4)
 # or a reboot (6): a PTY dies with the process that owns its master fd, and P1
@@ -35,7 +42,9 @@
 # ── Two capability tiers ─────────────────────────────────────────────────────
 #
 #   API tier      Needs AETHER_URL + credentials + a connected agent. Runs
-#                 scenario 1 fully and the verification half of 2/3/5/6.
+#                 scenario 1 fully, scenarios 7 and 8 fully (they ask the host
+#                 to report on itself through new units, so they need no shell
+#                 on the VPS), and the verification half of 2/3/5/6.
 #   Host tier     The restart/reboot ORCHESTRATION (scenarios 3-6) mutates a
 #                 live host: it must run ON the VPS, as root, with systemctl and
 #                 docker, and it is OPT-IN per action. Absent that, the scenario
@@ -98,7 +107,7 @@ SKIP=0
 # Per-scenario verdicts, printed in the final matrix.
 declare -A VERDICT
 declare -A VERDICT_NOTE
-SCENARIOS=(1 2 3 4 5 6)
+SCENARIOS=(1 2 3 4 5 6 7 8)
 declare -A SCENARIO_TITLE=(
     [1]="Normal execution"
     [2]="Backend/browser reconnect"
@@ -106,6 +115,8 @@ declare -A SCENARIO_TITLE=(
     [4]="Agent restart behaviour"
     [5]="Aether restart behaviour"
     [6]="VPS reboot behaviour"
+    [7]="Resource limits enforced"
+    [8]="Process-tree kill + escalation"
 )
 
 # Units created during the run, torn down on exit.
@@ -255,6 +266,56 @@ wait_for_state() {
         sleep 0.5
     done
     printf '%s' "$(unit_state "$id")"
+}
+
+# Creates a unit from a raw JSON body (sans agentId, which is filled in here).
+# Echoes the new unit id, or empty on error, and leaves the full response body
+# in LAST_CREATE_BODY so a caller can assert on the returned unit record without
+# a second request. Used by the scenarios that need fields
+# `create_command_unit` does not carry — rlimits, in particular.
+LAST_CREATE_BODY=""
+create_unit_raw() {
+    local body="$1" resp status id
+    resp="$(http POST /api/units \
+        "$(jq -c --arg a "$AETHER_AGENT_ID" '. + {agentId:$a}' <<<"$body")")"
+    status="$(http_status "$resp")"
+    if [ "$status" != "201" ]; then
+        note "create returned HTTP ${status:-none}: $(http_body "$resp" | head -c 300)"
+        return 1
+    fi
+    LAST_CREATE_BODY="$(http_body "$resp")"
+    id="$(jqf "$LAST_CREATE_BODY" '.data.unit.id')"
+    [ -n "$id" ] && [ "$id" != "null" ] || return 1
+    CREATED_UNITS+=("$id")
+    printf '%s' "$id"
+}
+
+# Reads a unit's combined log as decoded text. Empty on any error.
+read_unit_log() {
+    local id="$1" resp status
+    resp="$(http GET "/api/units/$id/log?agentId=$AETHER_AGENT_ID")"
+    status="$(http_status "$resp")"
+    [ "$status" = "200" ] || return 1
+    jqf "$(http_body "$resp")" '.contentBase64' | base64 -d 2>/dev/null
+}
+
+# Polls a unit's log until it contains $2, up to $3 seconds. Echoes the log.
+wait_for_log() {
+    local id="$1" needle="$2" secs="${3:-15}" i out
+    for ((i = 0; i < secs * 2; i++)); do
+        out="$(read_unit_log "$id")"
+        grep -q -- "$needle" <<<"$out" && { printf '%s' "$out"; return 0; }
+        sleep 0.5
+    done
+    printf '%s' "$out"
+    return 1
+}
+
+# Reads one field out of a unit fetched fresh from the API.
+unit_field() {
+    local id="$1" path="$2" resp
+    resp="$(http GET "/api/units/$id?agentId=$AETHER_AGENT_ID")"
+    jqf "$(http_body "$resp")" "$path"
 }
 
 kill_unit() {
@@ -586,6 +647,183 @@ scenario_6() {
 }
 
 # ---------------------------------------------------------------------------
+# Scenario 7 — resource limits are really enforced on the host (API tier)
+# ---------------------------------------------------------------------------
+scenario_7() {
+    section "Scenario 7 — resource limits enforced on the host"
+    # A limit recorded but not applied is worse than no limit: the caller
+    # believes the process is bounded and it is not. So this scenario does not
+    # stop at reading back what it sent. It has the *unit's own shell* report the
+    # ceilings it is running under, which is the host's answer, not Aether's.
+    local before_fail_local="$FAIL" id out
+
+    # `ulimit -Sn`/`-Hn` are the soft and hard file-descriptor ceilings, `-Sv`
+    # the soft address space. The hard value matching the soft one is what makes
+    # the bound unraisable by the process itself.
+    local base='{"kind":"command","command":"echo \"soft=$(ulimit -Sn) hard=$(ulimit -Hn) v=$(ulimit -Sv)\""'
+    local with_rlimits="${base}"',"rlimits":{"maxOpenFiles":128,"addressSpaceBytes":268435456}}'
+
+    id="$(create_unit_raw "$with_rlimits")" || {
+        fail "create a unit with rlimits"
+        verdict 7 FAIL "create failed"
+        return
+    }
+    ok "created a unit asking for maxOpenFiles=128, addressSpaceBytes=256MiB ($id)"
+
+    # The create response carries what the agent says it did.
+    local enforced
+    enforced="$(jqf "$LAST_CREATE_BODY" '.data.unit.limits.enforced')"
+    [ "$enforced" = "true" ] \
+        && ok "the agent reports the limits as enforced" \
+        || fail "the agent reported enforced='$enforced' for a POSIX host"
+
+    out="$(wait_for_log "$id" 'soft=' 15)" || {
+        fail "the unit produced no output to read"
+        verdict 7 FAIL "no log output"
+        return
+    }
+
+    # What the process itself saw. This is the enforcement proof.
+    if grep -q 'soft=128' <<<"$out"; then
+        ok "the shell inside the unit sees a soft limit of 128 file descriptors"
+    else
+        fail "the unit's shell did not see the requested soft limit"
+        note "got: $(tr -d '\r' <<<"$out" | head -c 200)"
+    fi
+    if grep -q 'hard=128' <<<"$out"; then
+        ok "the hard limit is 128 too — the process cannot raise it back"
+    else
+        fail "the hard limit was not set, so the bound is raisable"
+        note "got: $(tr -d '\r' <<<"$out" | head -c 200)"
+    fi
+    if grep -q 'v=262144' <<<"$out"; then
+        ok "the address-space limit reached the process (256 MiB in the shell's units)"
+    else
+        fail "the address-space limit did not reach the process"
+        note "got: $(tr -d '\r' <<<"$out" | head -c 200)"
+    fi
+
+    # The mirror: a unit that asks for nothing must not have its limits changed,
+    # and must not be reported as enforced. Otherwise `enforced` is decoration.
+    local plain
+    plain="$(create_command_unit 'echo "hard=$(ulimit -Hn)"')" || {
+        fail "create a unit with no rlimits"
+        verdict 7 FAIL "control create failed"
+        return
+    }
+    local plain_enforced
+    plain_enforced="$(unit_field "$plain" '.data.unit.limits.enforced')"
+    [ "$plain_enforced" = "false" ] \
+        && ok "a unit that asked for no rlimits is reported unenforced" \
+        || fail "a unit with no limits reported enforced='$plain_enforced'"
+
+    if [ "$FAIL" -eq "$before_fail_local" ]; then
+        verdict 7 PASS "ulimit reached the real process; enforced reports the truth"
+    else
+        verdict 7 FAIL "one or more checks failed"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 8 — the whole process tree dies, and escalation is honest
+# ---------------------------------------------------------------------------
+scenario_8() {
+    section "Scenario 8 — process-tree kill and SIGTERM→SIGKILL escalation"
+    # A unit is a shell *and everything it started*. A kill that reaches only
+    # the shell leaves children burning CPU — the failure mode where a build
+    # "stops" and its compiler keeps running. The grandchild's liveness is
+    # checked by asking the host itself, through a fresh unit, so this holds
+    # from the API tier without assuming the harness is on the VPS.
+    local before_fail_local="$FAIL" id out grandchild
+
+    id="$(create_command_unit 'sh -c "sleep 300" & echo "GRANDCHILD=$!"; wait')" || {
+        fail "create a unit that starts a grandchild"
+        verdict 8 FAIL "create failed"
+        return
+    }
+    out="$(wait_for_log "$id" 'GRANDCHILD=' 15)" || {
+        fail "the unit never reported its grandchild pid"
+        verdict 8 FAIL "no grandchild"
+        return
+    }
+    grandchild="$(sed -n 's/.*GRANDCHILD=\([0-9]\+\).*/\1/p' <<<"$out" | head -1)"
+    if [ -z "$grandchild" ]; then
+        fail "could not parse the grandchild pid"
+        verdict 8 FAIL "parse failed"
+        return
+    fi
+    ok "the unit started a grandchild process (pid $grandchild)"
+
+    # Before: the host confirms the grandchild exists.
+    local probe_before
+    probe_before="$(create_command_unit "kill -0 $grandchild 2>/dev/null && echo ALIVE || echo GONE")"
+    out="$(wait_for_log "$probe_before" 'ALIVE\|GONE' 10)"
+    if grep -q 'ALIVE' <<<"$out"; then
+        ok "the host confirms the grandchild is running before the kill"
+    else
+        fail "the grandchild was not running before the kill — the test would prove nothing"
+        verdict 8 FAIL "grandchild not alive before kill"
+        return
+    fi
+
+    # Killing the unit must take the grandchild with it.
+    kill_unit "$id"
+    wait_for_state "$id" killed 8 >/dev/null
+
+    local probe_after
+    probe_after="$(create_command_unit "kill -0 $grandchild 2>/dev/null && echo ALIVE || echo GONE")"
+    out="$(wait_for_log "$probe_after" 'ALIVE\|GONE' 10)"
+    if grep -q 'GONE' <<<"$out"; then
+        ok "the grandchild is gone too — the kill reached the whole process group"
+    else
+        fail "the grandchild survived the kill of its unit (orphaned process)"
+        note "grandchild pid $grandchild is still running on the host"
+    fi
+
+    # --- escalation ---
+    # A shell that ignores SIGTERM cannot be ended politely. The caller is told
+    # so, rather than left to guess why nothing happened.
+    local stubborn sigresp escalated
+    stubborn="$(create_command_unit 'trap "" TERM; echo READY; while true; do sleep 1; done')" || {
+        fail "create a unit that ignores SIGTERM"
+        verdict 8 FAIL "stubborn create failed"
+        return
+    }
+    wait_for_log "$stubborn" 'READY' 15 >/dev/null
+
+    sigresp="$(http POST "/api/units/$stubborn/signal?agentId=$AETHER_AGENT_ID" \
+        '{"signal":"SIGTERM","escalateAfterMs":500}')"
+    escalated="$(jqf "$(http_body "$sigresp")" '.data.escalated')"
+    [ "$escalated" = "true" ] \
+        && ok "the API reports escalated=true when SIGTERM could not end the unit" \
+        || fail "escalation not reported for a process that ignores SIGTERM (got '$escalated')"
+
+    local sstate
+    sstate="$(wait_for_state "$stubborn" killed 8)"
+    case "$sstate" in
+        killed | failed | exited) ok "the escalated unit is actually gone ('$sstate')" ;;
+        *) fail "the unit survived the escalation, is '$sstate'" ;;
+    esac
+
+    # The mirror: a process that exits politely must NOT be reported escalated.
+    local polite sigresp2 escalated2
+    polite="$(create_command_unit 'sleep 300')" || { fail "create a polite unit"; verdict 8 FAIL "polite create failed"; return; }
+    wait_for_state "$polite" running 5 >/dev/null
+    sigresp2="$(http POST "/api/units/$polite/signal?agentId=$AETHER_AGENT_ID" \
+        '{"signal":"SIGTERM","escalateAfterMs":5000}')"
+    escalated2="$(jqf "$(http_body "$sigresp2")" '.data.escalated')"
+    [ "$escalated2" = "false" ] \
+        && ok "a unit that exits on SIGTERM is not falsely reported as escalated" \
+        || fail "escalated='$escalated2' for a unit that should have died politely"
+
+    if [ "$FAIL" -eq "$before_fail_local" ]; then
+        verdict 8 PASS "process group dies whole; escalation reported honestly"
+    else
+        verdict 8 FAIL "one or more checks failed"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 main() {
@@ -615,6 +853,8 @@ main() {
     scenario_4
     scenario_5
     scenario_6
+    scenario_7
+    scenario_8
 
     # --- matrix ---
     section "Scenario matrix"
