@@ -1141,6 +1141,16 @@ ui_success_panel() {
         return 0
     fi
 
+    # Premium success panel: the standing "Thousand Demon Daggers" katana with
+    # the master credentials set beside its blade. ui_sword_finale plays the
+    # bounded animation when the terminal allows and prints the persistent panel.
+    # It is optional — an installation whose lib dir predates ui-sword.sh keeps
+    # the plain box below, which is why the fallback is not deleted.
+    if declare -F ui_sword_finale >/dev/null 2>&1; then
+        ui_sword_finale "$url"
+        return 0
+    fi
+
     # Premium success panel.
     ui_frame_begin
     ui_box_top "AETHER IS ONLINE" "" "$UI_S_OK"

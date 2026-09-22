@@ -124,6 +124,20 @@ else
     ui_prompt_prepare() { :; }
 fi
 
+# ui-sword.sh is a newer, self-contained module: the install-completion sword
+# finale and the per-command CLI intros. It runs its own capability probe (the
+# standalone CLI never calls ui_init), so it is sourced on its own rather than
+# gated on the ui-state.sh/ui.sh pair. When it is absent — an installation whose
+# lib directory predates it, updated in place — define a no-op ui_cmd_anim so the
+# CLI's per-command intro call still resolves under `set -u`/`set -e`. The finale
+# is guarded at its one call site with `declare -F`, so it needs no shim.
+if [ -f "$AETHER_LIB_DIR/ui-sword.sh" ]; then
+    # shellcheck source=./ui-sword.sh
+    source "$AETHER_LIB_DIR/ui-sword.sh"
+else
+    ui_cmd_anim() { :; }
+fi
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------

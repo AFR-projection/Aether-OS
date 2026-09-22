@@ -180,7 +180,7 @@ install_cli() {
     # whole CLI refresh — leaving the operator with the old CLI because of a
     # cosmetic file. core.sh already handles the files being absent.
     local ui_file
-    for ui_file in ui-state.sh ui.sh; do
+    for ui_file in ui-state.sh ui.sh ui-sword.sh; do
         if [ -f "${AETHER_INSTALL_DIR}/src/deploy/lib/${ui_file}" ]; then
             install_script_file "${AETHER_INSTALL_DIR}/src/deploy/lib/${ui_file}" "$lib_dir/${ui_file}" 644
         fi
@@ -464,25 +464,34 @@ print_summary() {
     printf '═══════════════════════════════════════════════════════════════\n'
     printf '\n'
 
-    # Domain/URL
-    if [ -n "${AETHER_DOMAIN:-}" ]; then
-        printf '  Domain:           %s\n' "$AETHER_DOMAIN"
-    else
-        printf '  Access URL:       %s\n' "$url"
-    fi
+    # The sword finale (rich mode) has already shown the domain and the master
+    # credentials, and set this flag. Suppress the duplicate block here so the
+    # password is displayed exactly once — never twice, never in the log — while
+    # the rest of the summary (next steps, commands, system info) still prints.
+    local show_creds=true
+    [ "${AETHER_CREDENTIALS_ON_SCREEN:-0}" = "1" ] && show_creds=false
 
-    printf '\n'
+    if [ "$show_creds" = true ]; then
+        # Domain/URL
+        if [ -n "${AETHER_DOMAIN:-}" ]; then
+            printf '  Domain:           %s\n' "$AETHER_DOMAIN"
+        else
+            printf '  Access URL:       %s\n' "$url"
+        fi
 
-    # Master Account
-    if [ -n "${AETHER_MASTER_USERNAME:-}" ]; then
-        printf '  MASTER ACCOUNT\n'
-        printf '  ─────────────────────────────────────────────────────────────\n'
-        printf '  Username:         %s\n' "$AETHER_MASTER_USERNAME"
-        printf '  Password:         %s\n' "$AETHER_MASTER_PASSWORD"
         printf '\n'
-        printf '  ⚠  IMPORTANT: Save these credentials securely!\n'
-        printf '     This is the only time the password will be displayed.\n'
-        printf '\n'
+
+        # Master Account
+        if [ -n "${AETHER_MASTER_USERNAME:-}" ]; then
+            printf '  MASTER ACCOUNT\n'
+            printf '  ─────────────────────────────────────────────────────────────\n'
+            printf '  Username:         %s\n' "$AETHER_MASTER_USERNAME"
+            printf '  Password:         %s\n' "$AETHER_MASTER_PASSWORD"
+            printf '\n'
+            printf '  ⚠  IMPORTANT: Save these credentials securely!\n'
+            printf '     This is the only time the password will be displayed.\n'
+            printf '\n'
+        fi
     fi
 
     printf '  NEXT STEPS\n'

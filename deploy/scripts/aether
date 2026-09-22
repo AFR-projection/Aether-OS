@@ -24,6 +24,9 @@ else
     warn() { printf '[WARN] %s\n' "$*" >&2; }
     error() { printf '[ERROR] %s\n' "$*" >&2; }
     fatal() { error "$@"; exit 1; }
+    # No core.sh (a broken or pre-UI layout): the per-command intro is cosmetic,
+    # so a no-op keeps the CLI working under `set -u`/`set -e`.
+    ui_cmd_anim() { :; }
     compose_cmd() { docker compose "$@"; }
     docker_cmd() { docker "$@"; }
     env_value() {
@@ -537,15 +540,16 @@ main() {
             local installer="$INSTALL_DIR/src/deploy/lib/install.sh"
             [ -f "$installer" ] || fatal "Installer not found at $installer. The installation looks incomplete; re-run the one-line installer."
             exec bash "$installer" --resume "$@" ;;
-        update)   exec bash "$SCRIPT_DIR/update.sh" "$@" ;;
-        status)   cmd_status ;;
-        logs)     cmd_logs "$@" ;;
+        update)   ui_cmd_anim update; exec bash "$SCRIPT_DIR/update.sh" "$@" ;;
+        status)   ui_cmd_anim status; cmd_status ;;
+        logs)     ui_cmd_anim logs; cmd_logs "$@" ;;
         start)    require_deployment; compose up -d ;;
         stop)     require_deployment; compose stop ;;
-        restart)  require_deployment; compose restart ;;
+        restart)  ui_cmd_anim restart; require_deployment; compose restart ;;
         version)  cmd_version ;;
-        doctor)   cmd_doctor ;;
+        doctor)   ui_cmd_anim doctor; cmd_doctor ;;
         backup)
+            ui_cmd_anim backup
             if [ "$sub" = "list" ]; then
                 cmd_backup_list
             else
@@ -554,6 +558,7 @@ main() {
             ;;
         restore)
             [ -n "$sub" ] || fatal "restore requires a backup archive path. Usage: aether restore <archive>"
+            ui_cmd_anim restore
             exec bash "$SCRIPT_DIR/restore.sh" "$sub"
             ;;
         repair)    cmd_repair ;;

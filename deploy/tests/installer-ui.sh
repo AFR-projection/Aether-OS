@@ -1129,6 +1129,126 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 26. The sword finale and the per-command intros are pure presentation, but
+# they carry the master password on screen and draw multibyte art, so the
+# guarantees that matter are: no emoji ever, every art row the same width so the
+# blade can never look crooked, the credentials shown in rich mode, nothing at
+# all in quiet mode, and a per-command intro that is a strict no-op off a TTY
+# (so `aether status | grep` stays clean). The module runs in the standalone CLI
+# too, which never calls ui_init, so it must also source cleanly on its own.
+# ---------------------------------------------------------------------------
+section "26. Sword finale and per-command intros"
+
+SWORD_LIB="$REPO_DIR/deploy/lib/ui-sword.sh"
+
+# Char-counting (${#s}) and codepoint decoding both need a UTF-8 locale; the CI
+# runner may have none. Pick the first that makes a known 3-byte glyph measure
+# one cell, and gate the multibyte checks on it rather than reporting a false
+# failure (a byte count) as a crooked blade.
+SWORD_UTF8=""
+for _loc in C.UTF-8 en_US.UTF-8 en_US.utf8 en_GB.UTF-8; do
+    if LC_ALL="$_loc" bash -c 'x="▒"; [ "${#x}" -eq 1 ]' 2>/dev/null; then
+        SWORD_UTF8="$_loc"; break
+    fi
+done
+
+# 26a: sources cleanly under the installer's own strict flags.
+if ( set -euo pipefail; source "$SWORD_LIB" ) >/dev/null 2>&1; then
+    ok "ui-sword.sh sources cleanly under set -euo pipefail"
+else
+    fail "ui-sword.sh does not source cleanly under set -euo pipefail"
+fi
+
+# shellcheck disable=SC1090
+source "$SWORD_LIB"
+
+# 26b: both faces are 16 rows; the ASCII face is pure 7-byte rows, so its width
+# is checkable in any locale.
+expect_eq "unicode sword face has 16 rows" 16 "${#UI_SWORD_U[@]}"
+expect_eq "ASCII sword face has 16 rows" 16 "${#UI_SWORD_A[@]}"
+_asc_ok=true
+for _r in "${UI_SWORD_A[@]}"; do [ "${#_r}" -eq "$SWORD_CELL" ] || _asc_ok=false; done
+expect_eq "every ASCII sword row is $SWORD_CELL cells wide" true "$_asc_ok"
+
+# 26c/26d: the unicode-face width and the no-emoji scan both need char counting,
+# so they run under the picked UTF-8 locale or skip honestly.
+if [ -n "$SWORD_UTF8" ]; then
+    (
+        export LC_ALL="$SWORD_UTF8"
+        uni_ok=true
+        for r in "${UI_SWORD_U[@]}"; do [ "${#r}" -eq "$SWORD_CELL" ] || uni_ok=false; done
+        [ "$uni_ok" = true ] && echo "WIDTH ok" || echo "WIDTH fail"
+
+        # Codepoint scan across every glyph the module can draw — the two faces
+        # plus the per-command intro set. The art is Block Elements, box-drawing
+        # and geometric shapes only, all in the BMP below U+2600; anything in a
+        # symbol/pictograph block, a variation selector, or (on a host that
+        # surfaces astral chars as UTF-16 halves) a surrogate is a pasted emoji
+        # and a failure.
+        blob="${UI_SWORD_U[*]}${UI_SWORD_A[*]}◆▲•◐◓◑◒·╱╲"
+        bad=""
+        for ((i = 0; i < ${#blob}; i++)); do
+            c="${blob:i:1}"
+            cp=$(printf '%d' "'$c" 2>/dev/null || echo 0)
+            if { [ "$cp" -ge 9728 ] && [ "$cp" -le 10175 ]; } ||
+                { [ "$cp" -ge 11008 ] && [ "$cp" -le 11263 ]; } ||
+                { [ "$cp" -ge 55296 ] && [ "$cp" -le 57343 ]; } ||
+                { [ "$cp" -ge 126976 ] && [ "$cp" -le 131071 ]; } ||
+                [ "$cp" -eq 65039 ]; then
+                bad="$bad $cp"
+            fi
+        done
+        [ -z "$bad" ] && echo "EMOJI none" || echo "EMOJI$bad"
+    ) >"$WORK/sec26mb.txt" 2>&1
+    if grep -q '^WIDTH ok' "$WORK/sec26mb.txt"; then
+        ok "every unicode sword row is $SWORD_CELL cells wide (blade stays centred)"
+    else
+        fail "a unicode sword row is not $SWORD_CELL cells wide"
+    fi
+    if grep -q '^EMOJI none' "$WORK/sec26mb.txt"; then
+        ok "the sword art and intro glyphs contain no emoji"
+    else
+        fail "an art glyph is in an emoji block: $(grep '^EMOJI' "$WORK/sec26mb.txt")"
+    fi
+else
+    skip_n 2 "no UTF-8 locale to count art columns or scan codepoints"
+fi
+
+# 26e: in rich mode the finale carries the domain and the master credentials.
+# Captured in $(...), so [ -t 1 ] is false and the animation auto-skips — the
+# still panel is what a scrollback keeps anyway.
+CRED_OUT="$(
+    AETHER_UI_QUIET=false
+    AETHER_MASTER_USERNAME=aetheradmin
+    AETHER_MASTER_PASSWORD='Sw0rd-Secret-42'
+    AETHER_DOMAIN=dataku.id
+    AETHER_INSTALL_DIR=/opt/aether
+    ui_sword_finale 'https://dataku.id' 2>&1
+)"
+CRED_STRIPPED="$(printf '%s' "$CRED_OUT" | sed $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g')"
+expect_has "finale says AETHER IS ONLINE" 'AETHER IS ONLINE' "$CRED_STRIPPED"
+expect_has "finale shows the master username" 'aetheradmin' "$CRED_STRIPPED"
+expect_has "finale shows the master password" 'Sw0rd-Secret-42' "$CRED_STRIPPED"
+
+# 26f: quiet mode prints nothing at all, and never the password.
+QUIET_OUT="$(
+    AETHER_UI_QUIET=true
+    AETHER_MASTER_USERNAME=aetheradmin
+    AETHER_MASTER_PASSWORD='Sw0rd-Secret-42'
+    ui_sword_finale 'https://dataku.id' 2>&1
+)"
+expect_eq "finale prints nothing in quiet mode" "" "$QUIET_OUT"
+expect_lacks "quiet finale never prints the password" 'Sw0rd-Secret-42' "$QUIET_OUT"
+
+# 26g: the per-command intro is a strict no-op off a TTY (each capture is a pipe,
+# so `aether status | grep` sees no escape codes and no stray glyphs).
+CMD_NONTTY=""
+for _c in status logs update backup restore restart doctor bogus; do
+    CMD_NONTTY="$CMD_NONTTY$(ui_cmd_anim "$_c" 2>&1)"
+done
+expect_eq "ui_cmd_anim writes nothing without a TTY" "" "$CMD_NONTTY"
+
+# ---------------------------------------------------------------------------
 printf '\n\033[1m== Summary\033[0m\n'
 printf '  %d passed, %d failed, %d skipped\n\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" -eq 0 ]
