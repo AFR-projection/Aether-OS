@@ -58,6 +58,12 @@ interface DesktopState {
   /** Offset applied to each successive window so they do not stack exactly. */
   cascadeIndex: number;
   topZIndex: number;
+  /**
+   * The snap zone a title-bar drag is currently hovering, or null. Transient UI
+   * state — never persisted — that lets the desktop paint a preview of where the
+   * window will land before the pointer is released.
+   */
+  snapPreview: SnapZone | null;
 
   setLauncherOpen: (open: boolean) => void;
   setDesktopSize: (width: number, height: number) => void;
@@ -78,6 +84,14 @@ interface DesktopState {
    */
   setWindowBounds: (id: string, bounds: WindowBounds) => void;
   toggleMaximize: (id: string) => void;
+  /**
+   * Snaps a window to a half, quarter, or maximise. `maximize` goes through the
+   * maximise path (records `restoreBounds` so it can be un-maximised); the
+   * halves and quarters become ordinary floating windows at the zone.
+   */
+  snapWindow: (id: string, zone: SnapZone) => void;
+  /** Sets (or clears, with null) the live snap-preview zone during a drag. */
+  setSnapPreview: (zone: SnapZone | null) => void;
   setWindowTitle: (id: string, title: string) => void;
   setWindowProps: (id: string, props: Record<string, unknown>) => void;
   /**
@@ -123,6 +137,88 @@ function clampPosition(
 
 /** The edge or corner a resize drag is anchored to. */
 export type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+/**
+ * A snap target: the halves and quarters every desktop offers, plus maximise.
+ * `maximize` is handled through the existing maximise path (it records
+ * `restoreBounds`); the halves and quarters are ordinary floating windows placed
+ * at the zone, so they can then be resized or dragged away freely.
+ */
+export type SnapZone =
+  | 'left'
+  | 'right'
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right'
+  | 'maximize';
+
+/**
+ * The bounds a snap zone occupies in the desktop area.
+ *
+ * Halves split on the floor so the two sides meet with no seam and no overlap:
+ * the right half starts exactly where the left half ends. Pure, so the split is
+ * asserted rather than eyeballed.
+ */
+export function snapZoneBounds(
+  zone: SnapZone,
+  desktop: { width: number; height: number }
+): WindowBounds {
+  const leftW = Math.floor(desktop.width / 2);
+  const rightW = desktop.width - leftW;
+  const topH = Math.floor(desktop.height / 2);
+  const bottomH = desktop.height - topH;
+
+  switch (zone) {
+    case 'maximize':
+      return { x: 0, y: 0, width: desktop.width, height: desktop.height };
+    case 'left':
+      return { x: 0, y: 0, width: leftW, height: desktop.height };
+    case 'right':
+      return { x: leftW, y: 0, width: rightW, height: desktop.height };
+    case 'top-left':
+      return { x: 0, y: 0, width: leftW, height: topH };
+    case 'top-right':
+      return { x: leftW, y: 0, width: rightW, height: topH };
+    case 'bottom-left':
+      return { x: 0, y: topH, width: leftW, height: bottomH };
+    case 'bottom-right':
+      return { x: leftW, y: topH, width: rightW, height: bottomH };
+  }
+}
+
+/** How close (px) a drag must be to an edge before that edge's zone arms. */
+export const SNAP_EDGE_THRESHOLD = 32;
+
+/**
+ * The snap zone a title-bar drag at `(px, py)` — coordinates relative to the
+ * desktop area — is hovering, or null when it is not near an edge.
+ *
+ * Pure so the region maths is asserted rather than eyeballed. Corners win over
+ * edges (a drag into the top-left corner quarters rather than maximising), and
+ * the bottom edge alone arms nothing: on every OS the bottom edge is where the
+ * taskbar lives, so dragging onto it must not snap.
+ */
+export function snapZoneForPointer(
+  px: number,
+  py: number,
+  desktop: { width: number; height: number },
+  threshold = SNAP_EDGE_THRESHOLD
+): SnapZone | null {
+  const nearLeft = px <= threshold;
+  const nearRight = px >= desktop.width - threshold;
+  const nearTop = py <= threshold;
+  const nearBottom = py >= desktop.height - threshold;
+
+  if (nearTop && nearLeft) return 'top-left';
+  if (nearTop && nearRight) return 'top-right';
+  if (nearBottom && nearLeft) return 'bottom-left';
+  if (nearBottom && nearRight) return 'bottom-right';
+  if (nearTop) return 'maximize';
+  if (nearLeft) return 'left';
+  if (nearRight) return 'right';
+  return null;
+}
 
 /**
  * New bounds when dragging `edge` by `(dx, dy)` from a captured `origin`.
@@ -189,6 +285,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   desktopSize: { width: 1280, height: 720 },
   cascadeIndex: 0,
   topZIndex: 10,
+  snapPreview: null,
 
   setLauncherOpen: (open) => set({ launcherOpen: open }),
 
@@ -370,6 +467,46 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         };
       }),
     }));
+  },
+
+  snapWindow: (id, zone) => {
+    if (zone === 'maximize') {
+      set((state) => ({
+        windows: state.windows.map((window) => {
+          if (window.id !== id) return window;
+          // Already maximised: leave it. Otherwise record the floating bounds so
+          // the window can be restored, matching `toggleMaximize`.
+          if (window.restoreBounds !== null) return window;
+          return {
+            ...window,
+            restoreBounds: window.bounds,
+            bounds: { x: 0, y: 0, width: state.desktopSize.width, height: state.desktopSize.height },
+          };
+        }),
+      }));
+      return;
+    }
+
+    set((state) => ({
+      windows: state.windows.map((window) =>
+        window.id === id
+          ? {
+              ...window,
+              // A half/quarter is a normal floating window at the zone, so a
+              // previously-maximised window drops its restore bounds here.
+              restoreBounds: null,
+              bounds: clampSize(snapZoneBounds(zone, state.desktopSize), state.desktopSize),
+            }
+          : window
+      ),
+    }));
+  },
+
+  setSnapPreview: (zone) => {
+    // Avoid a re-render when the armed zone has not actually changed — the drag
+    // handler calls this on every pointer move.
+    if (get().snapPreview === zone) return;
+    set({ snapPreview: zone });
   },
 
   setWindowTitle: (id, title) => {

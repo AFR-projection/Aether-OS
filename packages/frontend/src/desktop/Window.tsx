@@ -3,8 +3,10 @@ import { useRef, type ReactNode } from 'react';
 import { WindowControls } from './WindowControls.js';
 import {
   resizeBounds,
+  snapZoneForPointer,
   useDesktopStore,
   type ResizeEdge,
+  type SnapZone,
   type WindowBounds,
   type WindowInstance,
 } from '../stores/desktop.store.js';
@@ -16,7 +18,10 @@ import { useActiveTheme } from '../stores/theme.store.js';
  * Dragging and resizing are pointer-based so touch and mouse behave the same.
  * The title bar is the drag handle; every edge and corner resizes, so a window
  * can grow in any direction like a native one rather than only from the
- * bottom-right. Double-clicking the title bar toggles maximisation.
+ * bottom-right. Dragging the title bar to a screen edge arms a snap zone (a
+ * preview is painted by the desktop) and releasing there snaps the window to a
+ * half, quarter, or maximise. Double-clicking the title bar toggles
+ * maximisation.
  *
  * The title-bar layout follows the active OS theme: where the controls sit
  * (left for macOS traffic lights, right for Windows/GNOME), how the title is
@@ -51,13 +56,21 @@ export function Window({
   const moveWindow = useDesktopStore((state) => state.moveWindow);
   const setWindowBounds = useDesktopStore((state) => state.setWindowBounds);
   const toggleMaximize = useDesktopStore((state) => state.toggleMaximize);
+  const snapWindow = useDesktopStore((state) => state.snapWindow);
+  const setSnapPreview = useDesktopStore((state) => state.setSnapPreview);
   const { chrome } = useActiveTheme();
 
+  const windowRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{
     startX: number;
     startY: number;
     originX: number;
     originY: number;
+    /** The desktop area's viewport rect, captured at drag start (it does not
+     *  move while a window is dragged), used to resolve snap zones. */
+    desktop: { left: number; top: number; width: number; height: number };
+    /** The snap zone currently armed by proximity to an edge, or null. */
+    zone: SnapZone | null;
   } | null>(null);
   const resizeRef = useRef<{
     edge: ResizeEdge;
@@ -98,6 +111,7 @@ export function Window({
 
   return (
     <div
+      ref={windowRef}
       className={[
         'absolute flex flex-col overflow-hidden bg-surface-800 shadow-2xl',
         focused ? 'border border-accent/50' : 'border border-white/10',
@@ -124,11 +138,22 @@ export function Window({
         onPointerDown={(event) => {
           if (maximised || event.button !== 0) return;
           (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
+          // The desktop area is the window's positioned parent; its rect maps a
+          // viewport pointer to desktop-relative coordinates for snap detection.
+          const parent = windowRef.current?.offsetParent as HTMLElement | null;
+          const rect = parent?.getBoundingClientRect();
           dragRef.current = {
             startX: event.clientX,
             startY: event.clientY,
             originX: instance.bounds.x,
             originY: instance.bounds.y,
+            desktop: {
+              left: rect?.left ?? 0,
+              top: rect?.top ?? 0,
+              width: rect?.width ?? 0,
+              height: rect?.height ?? 0,
+            },
+            zone: null,
           };
         }}
         onPointerMove={(event) => {
@@ -139,9 +164,23 @@ export function Window({
             drag.originX + (event.clientX - drag.startX),
             drag.originY + (event.clientY - drag.startY)
           );
+          // Arm a snap zone when the pointer nears an edge, and let the desktop
+          // paint the preview. Only meaningful once the parent rect is known.
+          if (drag.desktop.width > 0) {
+            const zone = snapZoneForPointer(
+              event.clientX - drag.desktop.left,
+              event.clientY - drag.desktop.top,
+              drag.desktop
+            );
+            drag.zone = zone;
+            setSnapPreview(zone);
+          }
         }}
         onPointerUp={() => {
+          const drag = dragRef.current;
           dragRef.current = null;
+          setSnapPreview(null);
+          if (drag?.zone != null) snapWindow(instance.id, drag.zone);
         }}
         onDoubleClick={() => toggleMaximize(instance.id)}
       >

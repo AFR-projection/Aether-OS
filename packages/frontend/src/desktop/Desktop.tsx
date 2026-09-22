@@ -11,7 +11,7 @@ import { Window } from './Window.js';
 import { APP_REGISTRY } from '../apps/registry.js';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary.js';
 import { useAuthStore, useCurrentUser } from '../stores/auth.store.js';
-import { useDesktopStore } from '../stores/desktop.store.js';
+import { snapZoneBounds, useDesktopStore } from '../stores/desktop.store.js';
 import { useActiveTheme } from '../stores/theme.store.js';
 
 import type { ThemeId } from '../lib/themes.js';
@@ -42,6 +42,8 @@ export function Desktop() {
   const windows = useDesktopStore((state) => state.windows);
   const focusedId = useDesktopStore((state) => state.focusedId);
   const setDesktopSize = useDesktopStore((state) => state.setDesktopSize);
+  const snapPreview = useDesktopStore((state) => state.snapPreview);
+  const desktopSize = useDesktopStore((state) => state.desktopSize);
   const desktopRef = useRef<HTMLDivElement | null>(null);
   const { id: themeId } = useActiveTheme();
 
@@ -89,6 +91,26 @@ export function Desktop() {
           windows may occupy, never the shell bars. */}
       <div ref={desktopRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         <DesktopIcons />
+
+        {/* Snap preview: a ghost of where a title-bar drag will land, painted
+            behind the window being dragged (which carries the top z-index). */}
+        {snapPreview !== null
+          ? (() => {
+              const bounds = snapZoneBounds(snapPreview, desktopSize);
+              return (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute z-0 rounded-lg border-2 border-accent/70 bg-accent/20 transition-all duration-75"
+                  style={{
+                    left: bounds.x,
+                    top: bounds.y,
+                    width: bounds.width,
+                    height: bounds.height,
+                  }}
+                />
+              );
+            })()
+          : null}
 
         {windows.map((window) => {
           const app = registry.get(window.appId);
