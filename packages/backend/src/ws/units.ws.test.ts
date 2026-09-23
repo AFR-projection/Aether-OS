@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WebSocket } from 'ws';
 
 import { buildServer } from '../server.js';
 import { handleAgentFrame, registerAgentSocket } from '../services/agent-rpc.service.js';
