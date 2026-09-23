@@ -205,6 +205,21 @@ focused control or the host sees it. Two consequences are deliberate, not bugs:
 The registry is extensible and the chords are data, so a user-facing rebinding UI is a later
 addition, not an architectural change.
 
+### 13c. The system tray shows network status only — no volume or battery
+
+**→ referenced by `packages/frontend/src/desktop/TrayStatus.tsx`**
+
+The tray's network glyph is real: it reflects live connectivity (`useOnlineStatus`, from
+`navigator.onLine` and the browser's `online`/`offline` events) and opens a status popover on click.
+Its honest limit is that it knows whether the _browser_ has a network, not whether the Aether backend
+is reachable — a dead backend on a live network still reads as connected; the API client's
+transport-failure notification is the sharper signal.
+
+The volume and battery glyphs that OS trays carry were **removed** rather than faked. A headless
+cloud host has no audio sink to set a level on and no battery to report, so either control would
+govern nothing — and a slider or gauge that changes no real state is exactly the decoration this
+project refuses. This is the "make it real or remove it" rule (roadmap P2 §17) resolving to _remove_.
+
 ---
 
 ## Operational

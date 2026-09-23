@@ -1,7 +1,8 @@
-import { Grid3x3, Power, Search, Wifi, Volume2, BatteryFull } from 'lucide-react';
+import { Grid3x3, Power, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { NotificationBell } from './NotificationCentre.js';
+import { TrayStatus } from './TrayStatus.js';
 import { findApp } from '../apps/registry.js';
 import { useDesktopStore } from '../stores/desktop.store.js';
 import { useActiveTheme } from '../stores/theme.store.js';
@@ -119,10 +120,7 @@ function Win11Taskbar() {
           lives in the Start menu (see Launcher). The tray carries status + clock. */}
       <div className="ml-auto flex items-center gap-3 pr-2">
         <NotificationBell />
-        <div className="flex items-center gap-2 rounded-md px-2 py-1 text-slate-300 hover:bg-white/10">
-          <Wifi size={15} aria-hidden="true" />
-          <Volume2 size={15} aria-hidden="true" />
-        </div>
+        <TrayStatus placement="up" />
         <div className="flex flex-col items-end leading-tight text-slate-200">
           <span className="text-[11px] tabular-nums">
             {now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
@@ -172,8 +170,7 @@ function MacMenuBar({ onLogout }: { onLogout: () => void }) {
 
       <div className="ml-auto flex items-center gap-3 text-slate-200">
         <NotificationBell />
-        <BatteryFull size={16} aria-hidden="true" />
-        <Wifi size={15} aria-hidden="true" />
+        <TrayStatus placement="down" />
         <Search size={14} aria-hidden="true" />
         <button
           type="button"
@@ -305,11 +302,7 @@ function GnomeTopBar({ onLogout }: { onLogout: () => void }) {
 
       <div className="ml-auto flex items-center gap-2">
         <NotificationBell />
-        <div className="flex items-center gap-2 rounded px-2 py-0.5 text-slate-200 hover:bg-white/10">
-          <Wifi size={14} aria-hidden="true" />
-          <Volume2 size={14} aria-hidden="true" />
-          <BatteryFull size={15} aria-hidden="true" />
-        </div>
+        <TrayStatus placement="down" />
         <button
           type="button"
           aria-label="Sign out"
