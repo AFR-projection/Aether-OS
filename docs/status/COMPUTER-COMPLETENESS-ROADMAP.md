@@ -280,17 +280,17 @@ revocation-closes-the-socket with its E2E harness); the P2/P3 rows remain design
    ([EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §33) — read-only
    `/ws/units/:id` live output/state over the reused browser ticket, one agent subscription fanned
    out to every viewer. Still design: the systemd path, restart policies, log files, the
-   `execution_units` table, `runAs` — all P2/P3. **Shipped — revocation closes the live socket + the E2E harness**
-   ([EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §31): revoking an agent now
-   closes the socket this replica holds — failing in-flight requests, dropping terminal streams,
-   refusing later requests — rather than only stamping the database, keyed by agent id so no other
-   agent is touched and gated so a 404 revoke closes nothing (DoD #14). `deploy/tests/execution.sh`
-   drives the real `units.*` API through the six-scenario survival matrix with honest
-   PASS/PARTIAL/UNEXECUTED/ BLOCKED verdicts, no fake state, and VPS restart/reboot orchestration
-   opt-in per action (DoD #15). With these, **every P1 Definition-of-Done item that can be verified
-   on a developer machine is done**; the VPS-only scenarios (agent restart, `aether restart`,
-   reboot) are delivered runnable and reported UNEXECUTED until run on the instance. See
-   [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §18d.
+   `execution_units` table, `runAs` — all P2/P3. **Shipped — revocation closes the live socket + the
+   E2E harness** ([EXECUTION-PRIMITIVE.md](../architecture/EXECUTION-PRIMITIVE.md) §31): revoking an
+   agent now closes the socket this replica holds — failing in-flight requests, dropping terminal
+   streams, refusing later requests — rather than only stamping the database, keyed by agent id so
+   no other agent is touched and gated so a 404 revoke closes nothing (DoD #14).
+   `deploy/tests/execution.sh` drives the real `units.*` API through the six-scenario survival
+   matrix with honest PASS/PARTIAL/UNEXECUTED/ BLOCKED verdicts, no fake state, and VPS
+   restart/reboot orchestration opt-in per action (DoD #15). With these, **every P1
+   Definition-of-Done item that can be verified on a developer machine is done**; the VPS-only
+   scenarios (agent restart, `aether restart`, reboot) are delivered runnable and reported
+   UNEXECUTED until run on the instance. See [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §18d.
 6. Each new verb gets a Zod schema in `shared`, a capability module in the agent, a service and
    route in the backend, a permission string, and an audit event — the existing pattern, followed
    exactly rather than shortcut. **Done for `units.*`.**
@@ -301,41 +301,44 @@ revocation-closes-the-socket with its E2E harness); the P2/P3 rows remain design
 
 8. ~~Resize from all eight edges and corners.~~ **DONE (`47ab91f`).** Every edge and corner resizes
    via the pure `resizeBounds` (opposite edge pinned, minimum size held), tested directly.
-9. ~~Window snapping: drag-to-edge zones plus keyboard equivalents; produce snap layouts per theme.~~
-   **DONE.** Dragging a title bar to an edge arms a snap zone and the desktop paints a live preview;
-   release snaps to a half (left/right edge), quarter (corner), or maximise (top edge). The geometry
-   is pure and asserted — `snapZoneBounds` tiles with no seam, `snapZoneForPointer` resolves the zone
-   with corners winning over edges. Keyboard equivalents ship in §10. Zones are the universal
-   halves/quarters/maximise set, not yet theme-differentiated.
+9. ~~Window snapping: drag-to-edge zones plus keyboard equivalents; produce snap layouts per
+   theme.~~ **DONE.** Dragging a title bar to an edge arms a snap zone and the desktop paints a live
+   preview; release snaps to a half (left/right edge), quarter (corner), or maximise (top edge). The
+   geometry is pure and asserted — `snapZoneBounds` tiles with no seam, `snapZoneForPointer`
+   resolves the zone with corners winning over edges. Keyboard equivalents ship in §10. Zones are
+   the universal halves/quarters/maximise set, not yet theme-differentiated.
 10. ~~A shortcut registry, then bindings: window management, app switching, launcher, close.~~
     **DONE (registry + bindings).** A data-driven registry (`lib/shortcuts.ts`) and one global
     listener (`useGlobalShortcuts`): snap/maximise/minimise on `Ctrl+Alt+<arrow>`, window cycling on
     `Ctrl+`/`Ctrl+Shift+` backquote, launcher on `Ctrl+Space`. Chords chosen for the browser sandbox
     (no `Meta`, no `Ctrl+Alt+<letter>`), and the listener yields to a focused editor/terminal. A
     global "close" chord is intentionally omitted — the browser reserves the safe candidates — and
-    documented in [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §13b. Tested: chord matching, registry
-    invariants, `cycleFocus`.
+    documented in [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §13b. Tested: chord matching,
+    registry invariants, `cycleFocus`.
 11. Drag and drop: desktop icons, taskbar reordering, file drag onto app windows.
 12. A shared clipboard across apps, and copy/cut/paste in Files.
 13. ~~A notification service with a real notification centre, wired to real events~~ **DONE
     (foundation).** `stores/notification.store.ts` (newest-first, capped, dedupe, read-state), a
     transient `Toaster` and a persistent `NotificationCentre` opened from a tray bell present in all
-    three shells. The store's `notify()` is callable from non-React code so a notification is born at
-    the real event: today a transport failure raises a deduped "Connection lost" warning from the API
-    client. Remaining real event sources to wire as their producers land: agent disconnect,
+    three shells. The store's `notify()` is callable from non-React code so a notification is born
+    at the real event: today a transport failure raises a deduped "Connection lost" warning from the
+    API client. Remaining real event sources to wire as their producers land: agent disconnect,
     deployment finished, a long-running unit exiting (the units WS stream now emits the exit event —
-    a frontend consumer is the follow-up). No invented events. Tested: store logic + both components.
+    a frontend consumer is the follow-up). No invented events. Tested: store logic + both
+    components.
 14. Context menus on desktop, icon, window and taskbar.
 15. File associations and Open With, backed by a real MIME map.
 16. Multiple workspaces.
 17. ~~Make the tray glyphs real or remove them.~~ **DONE.** The network glyph is now a real control
     (`desktop/TrayStatus.tsx`): it reflects live connectivity (`useOnlineStatus`) and opens a status
-    popover. Volume and battery were **removed** — a headless cloud host has no audio sink or battery,
-    so either control would govern nothing. See [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §13c.
+    popover. Volume and battery were **removed** — a headless cloud host has no audio sink or
+    battery, so either control would govern nothing. See
+    [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) §13c.
 18. ~~Frontend test infrastructure — required _before_ the above, not after.~~ **DONE.** jsdom +
-    Testing Library under a dedicated `vitest.config.ts`, a setup file with jest-dom matchers and the
-    jsdom-omitted stubs (matchMedia/ResizeObserver), and `test` promoted from `--passWithNoTests` to
-    `vitest run`. The remaining parity items (8–17) are now built test-first on it.
+    Testing Library under a dedicated `vitest.config.ts`, a setup file with jest-dom matchers and
+    the jsdom-omitted stubs (matchMedia/ResizeObserver), and `test` promoted from
+    `--passWithNoTests` to `vitest run`. The remaining parity items (8–17) are now built test-first
+    on it.
 
 ### P3 — Application runtime
 

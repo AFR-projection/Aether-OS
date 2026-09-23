@@ -78,7 +78,7 @@ describe('buildRlimitPrologue', () => {
     expect(prologue).toContain('ulimit -t ');
   });
 
-  it('converts byte inputs to the shell\'s 1024-byte units', () => {
+  it("converts byte inputs to the shell's 1024-byte units", () => {
     // `ulimit -v` and `-c` take kibibytes; the model speaks bytes. The
     // conversion lives here and nowhere else.
     expect(buildRlimitPrologue(rlimits({ addressSpaceBytes: 512 * 1024 }))).toContain(
@@ -91,9 +91,7 @@ describe('buildRlimitPrologue', () => {
     // Rounding down would hand the process a *smaller* ceiling than requested;
     // rounding up is the conservative direction — the bound never becomes
     // tighter than what was asked for.
-    expect(buildRlimitPrologue(rlimits({ addressSpaceBytes: 1024 + 1 }))).toContain(
-      'ulimit -v 2'
-    );
+    expect(buildRlimitPrologue(rlimits({ addressSpaceBytes: 1024 + 1 }))).toContain('ulimit -v 2');
   });
 
   it('passes a file-descriptor count through unchanged', () => {

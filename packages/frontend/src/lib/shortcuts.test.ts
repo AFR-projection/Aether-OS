@@ -44,11 +44,13 @@ describe('chordMatches', () => {
   });
 
   it('does not match when a modifier is missing', () => {
-    expect(chordMatches(event({ key: 'ArrowLeft', ctrlKey: true }), {
-      key: 'ArrowLeft',
-      ctrl: true,
-      alt: true,
-    })).toBe(false);
+    expect(
+      chordMatches(event({ key: 'ArrowLeft', ctrlKey: true }), {
+        key: 'ArrowLeft',
+        ctrl: true,
+        alt: true,
+      })
+    ).toBe(false);
   });
 });
 

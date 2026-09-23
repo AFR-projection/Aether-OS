@@ -152,13 +152,7 @@ export type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
  * at the zone, so they can then be resized or dragged away freely.
  */
 export type SnapZone =
-  | 'left'
-  | 'right'
-  | 'top-left'
-  | 'top-right'
-  | 'bottom-left'
-  | 'bottom-right'
-  | 'maximize';
+  'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'maximize';
 
 /**
  * The bounds a snap zone occupies in the desktop area.
@@ -459,7 +453,10 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
     set((state) => ({
       windows: state.windows.map((window) =>
         window.id === id
-          ? { ...window, bounds: clampPosition(clampSize(bounds, state.desktopSize), state.desktopSize) }
+          ? {
+              ...window,
+              bounds: clampPosition(clampSize(bounds, state.desktopSize), state.desktopSize),
+            }
           : window
       ),
     }));
@@ -501,7 +498,12 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
           return {
             ...window,
             restoreBounds: window.bounds,
-            bounds: { x: 0, y: 0, width: state.desktopSize.width, height: state.desktopSize.height },
+            bounds: {
+              x: 0,
+              y: 0,
+              width: state.desktopSize.width,
+              height: state.desktopSize.height,
+            },
           };
         }),
       }));

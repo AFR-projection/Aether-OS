@@ -989,9 +989,9 @@ key the agent never told the backend it was using.
 then:** real rlimits enforced before exec with an honest `unit.limits-applied` audit (§10, §19), and
 the units WebSocket stream (§20, §33).
 
-**Not shipped, and not claimed:** the systemd path for `service`/`worker`, restart
-policies, log files, the `execution_units` table, `runAs`, secrets, and port reservations — all
-P2/P3. §30 lists what the registry does and does not yet do.
+**Not shipped, and not claimed:** the systemd path for `service`/`worker`, restart policies, log
+files, the `execution_units` table, `runAs`, secrets, and port reservations — all P2/P3. §30 lists
+what the registry does and does not yet do.
 
 ---
 
@@ -1211,14 +1211,14 @@ report.
 
 - **`ready` precedes every event, including the replay.** The agent writes the retained output
   _before_ it answers the subscribe, so events can beat the reply back. The bridge holds them in a
-  backlog until it has sent `ready` — the frame that tells the client _which_ unit it is looking at —
-  rather than putting output on the wire first. Proven by a stub agent that replays in that order.
+  backlog until it has sent `ready` — the frame that tells the client _which_ unit it is looking at
+  — rather than putting output on the wire first. Proven by a stub agent that replays in that order.
 - **The channel cannot control the unit.** The client schema admits `ping` and nothing else; a
-  control frame is refused with `UNSUPPORTED_MESSAGE` naming the REST route that _can_ do it, and the
-  test asserts **no** `units.signal` reached the agent — because an error reply alone would not prove
-  the act did not also happen. Signal/kill/restart stay on REST, where they carry a permission check
-  and write an audit event; a frame that performed one would make the audit log a record of what was
-  done over HTTP rather than what was done.
+  control frame is refused with `UNSUPPORTED_MESSAGE` naming the REST route that _can_ do it, and
+  the test asserts **no** `units.signal` reached the agent — because an error reply alone would not
+  prove the act did not also happen. Signal/kill/restart stay on REST, where they carry a permission
+  check and write an audit event; a frame that performed one would make the audit log a record of
+  what was done over HTTP rather than what was done.
 - **One agent subscription per unit, fanned out to every viewer.** The agent keeps a single
   subscription per unit and _replaces_ it on each `units.subscribe`, replaying again — so a second
   browser that simply sent its own subscribe would double-stream the first viewer and stop both when
@@ -1233,13 +1233,13 @@ browsers re-open (the registry holds no unit state; see `host-units.service`).
 
 ### The change table
 
-| Change                                                                                                                            | Where                                                     | Why                                                                             |
-| --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `UnitClientMessage` / `UnitServerMessage` types + `unitClientMessageSchema`                                                       | `packages/shared/src/{types,schemas}/execution*`          | One wire vocabulary for the stream, validated at the boundary                   |
-| `toUnitServerMessage` (narrow agent events) + fan-out `subscribeHostUnit` (one agent subscription per unit, shared)               | `packages/backend/src/services/host-units.service.ts`     | The browser gets only checked shapes; multiple viewers cannot double-stream     |
-| `/ws/units/:id` bridge — ticket redeem, backlog-until-`ready`, read-only guard, rate limit, heartbeat                             | `packages/backend/src/ws/units.ws.ts`                     | §20's live half, read-only on purpose                                           |
-| `POST /api/units/:id/ticket` (gated `execution:read`) + registration                                                             | `packages/backend/src/routes/units.routes.ts`, `server.ts`| A browser cannot set an auth header on a WS upgrade; the ticket is how it authenticates |
-| Tests: RPC-boundary narrowing; fan-out sharing (one subscribe, every viewer, release on last); real-socket E2E over `app.listen` | `host-units.service.test.ts`, `ws/units.ws.test.ts`       | The ordering, the read-only refusal, and the shared subscription each under test |
+| Change                                                                                                                           | Where                                                      | Why                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `UnitClientMessage` / `UnitServerMessage` types + `unitClientMessageSchema`                                                      | `packages/shared/src/{types,schemas}/execution*`           | One wire vocabulary for the stream, validated at the boundary                           |
+| `toUnitServerMessage` (narrow agent events) + fan-out `subscribeHostUnit` (one agent subscription per unit, shared)              | `packages/backend/src/services/host-units.service.ts`      | The browser gets only checked shapes; multiple viewers cannot double-stream             |
+| `/ws/units/:id` bridge — ticket redeem, backlog-until-`ready`, read-only guard, rate limit, heartbeat                            | `packages/backend/src/ws/units.ws.ts`                      | §20's live half, read-only on purpose                                                   |
+| `POST /api/units/:id/ticket` (gated `execution:read`) + registration                                                             | `packages/backend/src/routes/units.routes.ts`, `server.ts` | A browser cannot set an auth header on a WS upgrade; the ticket is how it authenticates |
+| Tests: RPC-boundary narrowing; fan-out sharing (one subscribe, every viewer, release on last); real-socket E2E over `app.listen` | `host-units.service.test.ts`, `ws/units.ws.test.ts`        | The ordering, the read-only refusal, and the shared subscription each under test        |
 
 **No one-time cost.** Purely additive: a new route, a new socket, and shared types. The terminal
 stream, the lifecycle REST surface, and the ticket store are untouched.

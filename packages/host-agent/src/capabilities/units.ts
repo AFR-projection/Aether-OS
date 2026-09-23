@@ -812,11 +812,7 @@ async function spawnInto(
   runtime.unit.limits.maxOpenFiles = rlimits.maxOpenFiles;
   runtime.unit.limits.coreDumpBytes = rlimits.coreDumpBytes;
   runtime.unit.limits.enforced = enforced;
-  const effectiveCommand = buildEffectiveCommand(
-    shell,
-    options.command,
-    enforced ? prologue : ''
-  );
+  const effectiveCommand = buildEffectiveCommand(shell, options.command, enforced ? prologue : '');
 
   if (mode === 'pty') {
     const pty = await loadPty();

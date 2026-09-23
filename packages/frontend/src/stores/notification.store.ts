@@ -90,14 +90,20 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     // timestamp refresh. A read one is left alone — the user has seen it, and a
     // fresh event deserves a fresh entry.
     if (input.dedupeKey !== undefined) {
-      const existing = get().notifications.find(
-        (n) => n.dedupeKey === input.dedupeKey && !n.read
-      );
+      const existing = get().notifications.find((n) => n.dedupeKey === input.dedupeKey && !n.read);
       if (existing) {
         set((state) => ({
           notifications: state.notifications.map((n) =>
             n.id === existing.id
-              ? { ...n, level, title: input.title, body: input.body, source: input.source, sticky, at }
+              ? {
+                  ...n,
+                  level,
+                  title: input.title,
+                  body: input.body,
+                  source: input.source,
+                  sticky,
+                  at,
+                }
               : n
           ),
         }));
@@ -140,7 +146,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     set((state) => ({
       centreOpen: open,
       // Opening the centre is the user acknowledging what is in it.
-      notifications: open ? state.notifications.map((n) => ({ ...n, read: true })) : state.notifications,
+      notifications: open
+        ? state.notifications.map((n) => ({ ...n, read: true }))
+        : state.notifications,
     })),
 
   toggleCentre: () => get().setCentreOpen(!get().centreOpen),

@@ -185,10 +185,10 @@ There is no service worker and no web app manifest. The frontend requires a live
 **→ referenced by `packages/frontend/src/lib/shortcuts.ts`**
 
 The desktop has a keyboard-shortcut registry (`lib/shortcuts.ts`) with a single global listener
-(`desktop/useGlobalShortcuts.ts`): window snapping (`Ctrl+Alt+←/→/↑/↓`), window cycling
-(`Ctrl+` and `Ctrl+Shift+` backquote), and the launcher (`Ctrl+Space`). It is a real registry, not a
-scatter of `onKeyDown` handlers, and the chords are chosen to be _delivered and cancelable_ inside a
-browser tab.
+(`desktop/useGlobalShortcuts.ts`): window snapping (`Ctrl+Alt+←/→/↑/↓`), window cycling (`Ctrl+` and
+`Ctrl+Shift+` backquote), and the launcher (`Ctrl+Space`). It is a real registry, not a scatter of
+`onKeyDown` handlers, and the chords are chosen to be _delivered and cancelable_ inside a browser
+tab.
 
 What a web desktop **cannot** do is what a native window manager does: grab a chord before the
 focused control or the host sees it. Two consequences are deliberate, not bugs:
@@ -211,14 +211,15 @@ addition, not an architectural change.
 
 The tray's network glyph is real: it reflects live connectivity (`useOnlineStatus`, from
 `navigator.onLine` and the browser's `online`/`offline` events) and opens a status popover on click.
-Its honest limit is that it knows whether the _browser_ has a network, not whether the Aether backend
-is reachable — a dead backend on a live network still reads as connected; the API client's
+Its honest limit is that it knows whether the _browser_ has a network, not whether the Aether
+backend is reachable — a dead backend on a live network still reads as connected; the API client's
 transport-failure notification is the sharper signal.
 
 The volume and battery glyphs that OS trays carry were **removed** rather than faked. A headless
 cloud host has no audio sink to set a level on and no battery to report, so either control would
 govern nothing — and a slider or gauge that changes no real state is exactly the decoration this
-project refuses. This is the "make it real or remove it" rule (roadmap P2 §17) resolving to _remove_.
+project refuses. This is the "make it real or remove it" rule (roadmap P2 §17) resolving to
+_remove_.
 
 ---
 

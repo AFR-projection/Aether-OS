@@ -69,10 +69,9 @@ export function TrayStatus({ placement = 'down' }: { placement?: 'up' | 'down' }
           <div className="flex items-center gap-2">
             <span
               aria-hidden="true"
-              className={[
-                'h-2 w-2 rounded-full',
-                online ? 'bg-emerald-400' : 'bg-amber-400',
-              ].join(' ')}
+              className={['h-2 w-2 rounded-full', online ? 'bg-emerald-400' : 'bg-amber-400'].join(
+                ' '
+              )}
             />
             <span className="text-sm font-medium">{online ? 'Connected' : 'Offline'}</span>
           </div>

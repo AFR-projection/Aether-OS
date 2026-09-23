@@ -515,7 +515,7 @@ describe('subscribing to a unit stream', () => {
     expect(lastFrameOfType('units.unsubscribe')?.unitId).toBe(UNIT_ID);
   });
 
-  it('does not subscribe at all when the unit is not the caller\'s to stream', async () => {
+  it("does not subscribe at all when the unit is not the caller's to stream", async () => {
     registerAgentSocket(OTHER_AGENT, {
       readyState: 1,
       OPEN: 1,

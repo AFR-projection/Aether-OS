@@ -1,10 +1,7 @@
 import { AlertTriangle, Bell, CheckCircle2, Info, Trash2, X, XCircle } from 'lucide-react';
 import { useEffect } from 'react';
 
-import {
-  useNotificationStore,
-  type NotificationLevel,
-} from '../stores/notification.store.js';
+import { useNotificationStore, type NotificationLevel } from '../stores/notification.store.js';
 
 /**
  * The persistent half of the notification system — the history the toasts fade

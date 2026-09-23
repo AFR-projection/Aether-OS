@@ -37,8 +37,15 @@ const { principal, recordedAuditEvents, ids, createUnitCalls } = vi.hoisted(() =
     },
     sessionId: '00000000-0000-4000-8000-0000000000e5',
   },
-  recordedAuditEvents: [] as Array<{ action: string; target: string; metadata: Record<string, unknown> }>,
-  ids: { AGENT_ID: '00000000-0000-4000-8000-0000000000a1', UNIT_ID: '00000000-0000-4000-8000-0000000000d1' },
+  recordedAuditEvents: [] as Array<{
+    action: string;
+    target: string;
+    metadata: Record<string, unknown>;
+  }>,
+  ids: {
+    AGENT_ID: '00000000-0000-4000-8000-0000000000a1',
+    UNIT_ID: '00000000-0000-4000-8000-0000000000d1',
+  },
   /**
    * Every `createHostUnit` the route made, in order.
    *
@@ -66,10 +73,16 @@ vi.mock('../middleware/auth.js', () => ({
 // audit trail (covered where the audit service is tested), so they are stubbed.
 // `recordedAuditEvents` is shared so individual tests can assert the calls.
 vi.mock('../services/audit.service.js', () => ({
-  recordAuditEvent: (
-    event: { action: string; target: string; metadata?: Record<string, unknown> }
-  ): Promise<void> => {
-    recordedAuditEvents.push({ action: event.action, target: event.target, metadata: event.metadata ?? {} });
+  recordAuditEvent: (event: {
+    action: string;
+    target: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> => {
+    recordedAuditEvents.push({
+      action: event.action,
+      target: event.target,
+      metadata: event.metadata ?? {},
+    });
     return Promise.resolve();
   },
 }));

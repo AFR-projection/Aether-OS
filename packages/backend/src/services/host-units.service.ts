@@ -367,7 +367,9 @@ export function toUnitServerMessage(event: unknown): UnitServerMessage | null {
           }
         : null;
     case 'restart':
-      return typeof record.attempt === 'number' ? { type: 'restart', attempt: record.attempt } : null;
+      return typeof record.attempt === 'number'
+        ? { type: 'restart', attempt: record.attempt }
+        : null;
     default:
       return null;
   }

@@ -406,10 +406,7 @@ describe('the stream cannot control the unit', () => {
 
     socket?.send(JSON.stringify({ type: 'ping' }));
 
-    await waitUntil(
-      () => received.some((frame) => frame.type === 'pong'),
-      'the pong'
-    );
+    await waitUntil(() => received.some((frame) => frame.type === 'pong'), 'the pong');
     socket?.close();
   });
 
@@ -419,10 +416,7 @@ describe('the stream cannot control the unit', () => {
 
     socket?.send(JSON.stringify({ type: 'signal', signal: 'SIGINT' }));
 
-    await waitUntil(
-      () => received.some((frame) => frame.type === 'error'),
-      'the refusal'
-    );
+    await waitUntil(() => received.some((frame) => frame.type === 'error'), 'the refusal');
     const error = received.find((frame) => frame.type === 'error');
     expect(error).toMatchObject({ code: 'UNSUPPORTED_MESSAGE' });
     expect((error as { message: string }).message).toContain('/api/units/:id/signal');

@@ -456,12 +456,20 @@ describe('unit resource limits', () => {
       command: 'echo "soft=$(ulimit -Sn) hard=$(ulimit -Hn)"; echo "vsoft=$(ulimit -Sv)"',
       cols: 80,
       rows: 24,
-      rlimits: { addressSpaceBytes: 256 * 1024 * 1024, cpuSeconds: null, maxOpenFiles: 128, coreDumpBytes: null },
+      rlimits: {
+        addressSpaceBytes: 256 * 1024 * 1024,
+        cpuSeconds: null,
+        maxOpenFiles: 128,
+        coreDumpBytes: null,
+      },
     });
 
     await waitForEnd(unit.id);
-    const out = readUnitLog(unit.id, OWNER, { offset: 0, limit: 64 * 1024, stream: 'combined' })
-      .content;
+    const out = readUnitLog(unit.id, OWNER, {
+      offset: 0,
+      limit: 64 * 1024,
+      stream: 'combined',
+    }).content;
 
     expect(out).toContain('soft=128');
     expect(out).toContain('hard=128');
@@ -486,7 +494,12 @@ describe('unit resource limits', () => {
         command: 'echo hi',
         cols: 80,
         rows: 24,
-        rlimits: { addressSpaceBytes: 64 * 1024 * 1024, cpuSeconds: null, maxOpenFiles: null, coreDumpBytes: null },
+        rlimits: {
+          addressSpaceBytes: 64 * 1024 * 1024,
+          cpuSeconds: null,
+          maxOpenFiles: null,
+          coreDumpBytes: null,
+        },
       });
       expect(unit.limits.addressSpaceBytes).toBe(64 * 1024 * 1024);
       expect(unit.limits.enforced).toBe(false);
@@ -498,7 +511,12 @@ describe('unit resource limits', () => {
       command: 'echo hi',
       cols: 80,
       rows: 24,
-      rlimits: { addressSpaceBytes: 64 * 1024 * 1024, cpuSeconds: null, maxOpenFiles: null, coreDumpBytes: null },
+      rlimits: {
+        addressSpaceBytes: 64 * 1024 * 1024,
+        cpuSeconds: null,
+        maxOpenFiles: null,
+        coreDumpBytes: null,
+      },
     });
     expect(unit.limits.enforced).toBe(true);
   });
@@ -552,7 +570,11 @@ describe('unit resource limits', () => {
     const deadline = Date.now() + 15_000;
     let out = '';
     while (Date.now() < deadline) {
-      out = readUnitLog(unit.id, OWNER, { offset: 0, limit: 64 * 1024, stream: 'combined' }).content;
+      out = readUnitLog(unit.id, OWNER, {
+        offset: 0,
+        limit: 64 * 1024,
+        stream: 'combined',
+      }).content;
       if (out.includes('n=96')) break;
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -624,7 +646,11 @@ describe('unit process-tree signalling (real processes)', () => {
   }
 
   /** Waits until the unit prints `needle`, and returns everything it printed. */
-  async function waitForOutput(unitId: string, needle: string, timeoutMs = 15_000): Promise<string> {
+  async function waitForOutput(
+    unitId: string,
+    needle: string,
+    timeoutMs = 15_000
+  ): Promise<string> {
     const deadline = Date.now() + timeoutMs;
     let out = '';
     while (Date.now() < deadline) {

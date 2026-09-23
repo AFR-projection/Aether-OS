@@ -148,8 +148,7 @@ export function registerUnitRoutes(app: FastifyInstance): void {
       const hasNonDefaultOutput =
         body.maxOutputBytes !== DEFAULT_EXECUTION_UNIT_LIMITS.maxOutputBytes;
       const hasNonDefaultRestart =
-        (body.restart?.policy ?? 'never') !== 'never' ||
-        (body.restart?.maxAttempts ?? 0) > 0;
+        (body.restart?.policy ?? 'never') !== 'never' || (body.restart?.maxAttempts ?? 0) > 0;
       const requestedRlimits = {
         addressSpaceBytes: body.rlimits?.addressSpaceBytes ?? null,
         cpuSeconds: body.rlimits?.cpuSeconds ?? null,
@@ -192,8 +191,7 @@ export function registerUnitRoutes(app: FastifyInstance): void {
               enforced: unit.limits.enforced,
             },
           },
-          usedRaisePermission:
-            principal.user.permissions.includes('execution:limits:raise'),
+          usedRaisePermission: principal.user.permissions.includes('execution:limits:raise'),
         });
       }
 
@@ -308,11 +306,7 @@ export function registerUnitRoutes(app: FastifyInstance): void {
 async function recordUnitAudit(
   request: FastifyRequest,
   action:
-    | 'unit.created'
-    | 'unit.signalled'
-    | 'unit.restarted'
-    | 'unit.killed'
-    | 'unit.limits-applied',
+    'unit.created' | 'unit.signalled' | 'unit.restarted' | 'unit.killed' | 'unit.limits-applied',
   unitId: string,
   metadata: Record<string, unknown>
 ): Promise<void> {
